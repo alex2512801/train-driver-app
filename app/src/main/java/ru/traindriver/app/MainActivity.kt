@@ -4,19 +4,29 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.widget.Button
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import ru.traindriver.app.location.GpsLocationProvider
 import ru.traindriver.app.route.ChainageFormatter
+import ru.traindriver.app.route.Direction
+import ru.traindriver.app.route.DirectionSelection
+import ru.traindriver.app.route.PathStatus
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var coordinateText: TextView
+    private lateinit var directionInfoText: TextView
+    private lateinit var directionButton: Button
+    private lateinit var pathButton: Button
     private lateinit var gpsLocationProvider: GpsLocationProvider
+
+    // Направление/путь задаёт машинист вручную (ТЗ раздел 3) — по GPS это не определить.
+    private var directionSelection = DirectionSelection(Direction.EVEN, 2)
 
     // Калибровка (см. RouteTrack.Companion) приблизительная — см. README.
     private val routeTrack: RouteTrack by lazy {
@@ -41,7 +51,22 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         coordinateText = findViewById(R.id.coordinateText)
+        directionInfoText = findViewById(R.id.directionInfoText)
+        directionButton = findViewById(R.id.directionButton)
+        pathButton = findViewById(R.id.pathButton)
         gpsLocationProvider = GpsLocationProvider(this)
+
+        directionButton.setOnClickListener {
+            val newDirection = directionSelection.direction.opposite()
+            directionSelection = DirectionSelection(newDirection, directionSelection.physicalPath)
+            updateDirectionUi()
+        }
+        pathButton.setOnClickListener {
+            val newPath = if (directionSelection.physicalPath == 1) 2 else 1
+            directionSelection = DirectionSelection(directionSelection.direction, newPath)
+            updateDirectionUi()
+        }
+        updateDirectionUi()
 
         if (hasLocationPermission()) {
             startLocationUpdates()
@@ -53,6 +78,18 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         gpsLocationProvider.stop()
         super.onDestroy()
+    }
+
+    private fun updateDirectionUi() {
+        val s = directionSelection
+        directionButton.text = if (s.direction == Direction.EVEN) "Чётное" else "Нечётное"
+        pathButton.text = "Путь ${s.physicalPath}"
+
+        val statusText = if (s.pathStatus == PathStatus.CORRECT) "правильный" else "неправильный"
+        val datasetText = if (s.effectiveDataset == Direction.EVEN) "чётный" else "нечётный"
+        val picketsText = if (s.picketsGrowing) "растут" else "убывают"
+        directionInfoText.text =
+            "Путь $statusText, датасет: $datasetText, пикеты $picketsText"
     }
 
     private fun hasLocationPermission(): Boolean =

@@ -1,21 +1,54 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Временный технический экран. Настоящий главный экран (шапка, график ступеней,
-    пиктограммы и т.д. — см. ТЗ, раздел 7) будет сделан отдельным шагом.
+    пиктограммы и т.д. — см. ТЗ, раздел 7) будет сделан отдельным шагом. Кнопки ниже —
+    только чтобы проверить логику направления/пути (ТЗ, раздел 3), не финальный вид.
 -->
-<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#000000">
+    android:background="#000000"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="24dp">
 
     <TextView
         android:id="@+id/coordinateText"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_gravity="center"
         android:text="@string/waiting_for_gps"
         android:textColor="#FFFFFF"
         android:textSize="40sp"
         android:gravity="center" />
 
-</FrameLayout>
+    <TextView
+        android:id="@+id/directionInfoText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:textColor="#AAAAAA"
+        android:textSize="18sp"
+        android:gravity="center" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="32dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/directionButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Чётное" />
+
+        <Button
+            android:id="@+id/pathButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="Путь 2" />
+
+    </LinearLayout>
+
+</LinearLayout>
