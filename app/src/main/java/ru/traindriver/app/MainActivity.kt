@@ -16,6 +16,8 @@ import ru.traindriver.app.route.DirectionSelection
 import ru.traindriver.app.route.PathStatus
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
+import ru.traindriver.app.route.SpeedLimitAssetLoader
+import ru.traindriver.app.ui.TrackProfileView
 
 class MainActivity : AppCompatActivity() {
 
@@ -23,6 +25,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var directionInfoText: TextView
     private lateinit var directionButton: Button
     private lateinit var pathButton: Button
+    private lateinit var trackProfileView: TrackProfileView
     private lateinit var gpsLocationProvider: GpsLocationProvider
 
     // Направление/путь задаёт машинист вручную (ТЗ раздел 3) — по GPS это не определить.
@@ -54,7 +57,10 @@ class MainActivity : AppCompatActivity() {
         directionInfoText = findViewById(R.id.directionInfoText)
         directionButton = findViewById(R.id.directionButton)
         pathButton = findViewById(R.id.pathButton)
+        trackProfileView = findViewById(R.id.trackProfileView)
         gpsLocationProvider = GpsLocationProvider(this)
+
+        trackProfileView.setSpeedLimits(SpeedLimitAssetLoader.loadSpeedLimits(this))
 
         directionButton.setOnClickListener {
             val newDirection = directionSelection.direction.opposite()
@@ -90,6 +96,8 @@ class MainActivity : AppCompatActivity() {
         val picketsText = if (s.picketsGrowing) "растут" else "убывают"
         directionInfoText.text =
             "Путь $statusText, датасет: $datasetText, пикеты $picketsText"
+
+        trackProfileView.setDirection(s.effectiveDataset)
     }
 
     private fun hasLocationPermission(): Boolean =
@@ -109,6 +117,7 @@ class MainActivity : AppCompatActivity() {
         gpsLocationProvider.start { location ->
             val chainageM = routeTrack.chainageMetersFor(location.latitude, location.longitude)
             coordinateText.text = ChainageFormatter.format(chainageM)
+            trackProfileView.setTrainPositionM(chainageM)
         }
     }
 }

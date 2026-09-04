@@ -23,4 +23,7 @@ object ChainageFormatter {
 
         return "${km}км ${pk}пк"
     }
+
+    /** Обратное преобразование: начало пикета [pk] километра [km] в метрах от начала маршрута. */
+    fun toMeters(km: Int, pk: Int): Double = (km - 1) * 1000.0 + (pk - 1) * 100.0
 }

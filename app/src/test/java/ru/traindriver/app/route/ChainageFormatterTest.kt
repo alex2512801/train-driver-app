@@ -35,4 +35,11 @@ class ChainageFormatterTest {
     fun `negative input is clamped to route start`() {
         assertEquals("1км 1пк", ChainageFormatter.format(-100.0))
     }
+
+    @Test
+    fun `toMeters is the inverse of format`() {
+        assertEquals(0.0, ChainageFormatter.toMeters(1, 1), 0.0)
+        assertEquals(6_234_600.0, ChainageFormatter.toMeters(6235, 7), 0.0)
+        assertEquals("6235км 7пк", ChainageFormatter.format(ChainageFormatter.toMeters(6235, 7)))
+    }
 }

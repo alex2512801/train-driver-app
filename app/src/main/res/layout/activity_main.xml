@@ -1,39 +1,46 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Временный технический экран. Настоящий главный экран (шапка, график ступеней,
-    пиктограммы и т.д. — см. ТЗ, раздел 7) будет сделан отдельным шагом. Кнопки ниже —
-    только чтобы проверить логику направления/пути (ТЗ, раздел 3), не финальный вид.
+    Временный технический экран. Настоящий главный экран (шапка, линия сигналов,
+    пиктограммы и т.д. — см. ТЗ, раздел 7) будет достраиваться отдельными шагами.
+    TrackProfileView ниже — первый срез главного экрана: километровая линейка и
+    ступенчатый график ограничений скорости, ещё не проверенный на реальном устройстве.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000"
-    android:orientation="vertical"
-    android:gravity="center"
-    android:padding="24dp">
+    android:orientation="vertical">
 
     <TextView
         android:id="@+id/coordinateText"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
         android:text="@string/waiting_for_gps"
         android:textColor="#FFFFFF"
-        android:textSize="40sp"
+        android:textSize="36sp"
         android:gravity="center" />
 
     <TextView
         android:id="@+id/directionInfoText"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
         android:textColor="#AAAAAA"
-        android:textSize="18sp"
+        android:textSize="16sp"
         android:gravity="center" />
+
+    <ru.traindriver.app.ui.TrackProfileView
+        android:id="@+id/trackProfileView"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="8dp" />
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="16dp"
         android:orientation="horizontal">
 
         <Button
