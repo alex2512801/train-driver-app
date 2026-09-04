@@ -92,7 +92,14 @@ def is_usable_speed(value):
     return isinstance(value, (int, float))
 
 
-def parse_sheet(ws, direction, growing):
+# Corrections for cells that are corrupted/unreadable in the source file, confirmed by the
+# driver against the paper original. Keyed by (sheet name, location text).
+KNOWN_CORRECTIONS = {
+    ("Хилок-КРМ", "6159 пк 2 - 6162 пк 8"): 80,  # cell held 'S()' instead of a number
+}
+
+
+def parse_sheet(ws, sheet_name, direction, growing):
     rows = []
     track_specific = []
     unparsed = []
@@ -118,7 +125,10 @@ def parse_sheet(ws, direction, growing):
 
         km_start, pk_start, km_end, pk_end, had_typo_fix = parsed
 
-        if not is_usable_speed(main_speed):
+        corrected_speed = KNOWN_CORRECTIONS.get((sheet_name, location_text))
+        if corrected_speed is not None:
+            main_speed = corrected_speed
+        elif not is_usable_speed(main_speed):
             unparsed.append({
                 "text": location_text,
                 "reason": f"main speed cell is not a plain number: {main_speed!r}",
@@ -139,6 +149,8 @@ def parse_sheet(ws, direction, growing):
             entry["empty_wagons_speed_kmh"] = empty_wagons_speed
         if had_typo_fix:
             entry["note"] = "cyrillic-lookalike digits normalized, verify against paper source"
+        if corrected_speed is not None:
+            entry["note"] = "speed confirmed by driver against paper source (source cell was corrupted)"
         rows.append(entry)
 
     return rows, track_specific, unparsed
@@ -156,7 +168,7 @@ def main():
 
     for sheet_name, meta in SHEETS.items():
         ws = wb[sheet_name]
-        rows, track_specific, unparsed = parse_sheet(ws, meta["direction"], meta["growing"])
+        rows, track_specific, unparsed = parse_sheet(ws, sheet_name, meta["direction"], meta["growing"])
         print(f"{sheet_name}: {len(rows)} parsed, {len(track_specific)} track-specific, "
               f"{len(unparsed)} unparsed")
         all_rows.extend(rows)
@@ -172,7 +184,8 @@ def main():
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(all_rows, f, ensure_ascii=False, separators=(",", ":"))
 
-    typo_fixes = [r for r in all_rows if "note" in r]
+    typo_fixes = [r for r in all_rows if r.get("note", "").startswith("cyrillic-lookalike")]
+    corrections = [r for r in all_rows if r.get("note", "").startswith("speed confirmed")]
     print(f"\nTotal: {len(all_rows)} speed-limit rows, {len(all_track_specific)} "
           f"track-specific (not included), {len(all_unparsed)} unparsed (need review)")
     print(f"Wrote {out_path}")
@@ -182,6 +195,11 @@ def main():
         for r in typo_fixes:
             print(f"  {r['source_text']!r} -> {r['km_start']} пк{r['pk_start']} - "
                   f"{r['km_end']} пк{r['pk_end']}")
+
+    if corrections:
+        print(f"\n--- {len(corrections)} corrupted cells fixed from driver-confirmed values ---")
+        for r in corrections:
+            print(f"  {r['source_text']!r} -> {r['speed_kmh']} км/ч")
 
     if all_unparsed:
         print(f"\n--- {len(all_unparsed)} unparsed rows (need review) ---")
