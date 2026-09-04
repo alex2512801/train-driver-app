@@ -10,13 +10,22 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import ru.traindriver.app.location.GpsLocationProvider
 import ru.traindriver.app.route.ChainageFormatter
+import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var coordinateText: TextView
     private lateinit var gpsLocationProvider: GpsLocationProvider
-    private val routeTrack: RouteTrack by lazy { RouteTrack.placeholderRoute() }
+
+    // Калибровка (см. RouteTrack.Companion) приблизительная — см. README.
+    private val routeTrack: RouteTrack by lazy {
+        RouteTrack(
+            rawPoints = RouteAssetLoader.loadLatLonList(this, RouteTrack.HILOK_CHERNYSHEVSK_ASSET),
+            startChainageM = RouteTrack.HILOK_START_KM * 1000.0,
+            lengthCorrectionFactor = RouteTrack.HILOK_CHERNYSHEVSK_LENGTH_CORRECTION
+        )
+    }
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->

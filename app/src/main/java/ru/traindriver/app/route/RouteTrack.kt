@@ -6,12 +6,24 @@ import kotlin.math.sqrt
 /**
  * Полилиния железнодорожного пути с накопленным километражем (пикетажем) вдоль неё.
  *
- * Реальная линия пути должна выгружаться из OpenStreetMap (Overpass Turbo, ~86 800 точек —
- * см. ТЗ, раздел 1) и импортироваться в приложение вместе с остальными данными (раздел 2).
- * Пока такого файла нет, здесь используется короткая заглушка из нескольких точек, чтобы
- * можно было проверить саму логику "GPS -> ближайшая точка пути -> км+пк".
+ * Линия строится из точек, выгруженных из OpenStreetMap (см. ТЗ, раздел 1). Для реального
+ * маршрута перегона Хилок — Карымская — Чернышевск-Забайкальский точки загружаются из
+ * assets через [RouteAssetLoader], а константы калибровки лежат в [RouteTrack.Companion].
+ *
+ * @param rawPoints точки пути по порядку, от начала маршрута к концу.
+ * @param startChainageM пикетаж первой точки маршрута (в метрах). Для реального маршрута
+ *   это абсолютный км по нумерации РЖД (например, ~5 930 000 м = км 5930), а не 0 —
+ *   именно так получаются "настоящие" номера км, а не "км 1" от произвольного начала.
+ * @param lengthCorrectionFactor поправочный коэффициент на длину, которым компенсируется
+ *   систематическое укорочение линии при её упрощении в OSM (сглаженные кривые короче
+ *   реальных). Подобран по разнице между длиной этой полилинии и разницей реальных
+ *   км в начале и конце маршрута (см. профиль пути) — грубая оценка, а не точная калибровка.
  */
-class RouteTrack(rawPoints: List<LatLon>) {
+class RouteTrack(
+    rawPoints: List<LatLon>,
+    startChainageM: Double = 0.0,
+    private val lengthCorrectionFactor: Double = 1.0
+) {
 
     private class Node(val lat: Double, val lon: Double, val chainageM: Double)
 
@@ -24,19 +36,19 @@ class RouteTrack(rawPoints: List<LatLon>) {
 
     init {
         require(rawPoints.size >= 2) { "Маршрут должен содержать минимум 2 точки" }
-        var chainage = 0.0
-        val built = mutableListOf(Node(rawPoints[0].lat, rawPoints[0].lon, 0.0))
+        var chainage = startChainageM
+        val built = mutableListOf(Node(rawPoints[0].lat, rawPoints[0].lon, chainage))
         for (i in 1 until rawPoints.size) {
             val prev = toXY(rawPoints[i - 1].lat, rawPoints[i - 1].lon)
             val cur = toXY(rawPoints[i].lat, rawPoints[i].lon)
-            chainage += distance(prev, cur)
+            chainage += distance(prev, cur) * lengthCorrectionFactor
             built.add(Node(rawPoints[i].lat, rawPoints[i].lon, chainage))
         }
         nodes = built
     }
 
-    /** Полная длина маршрута (в метрах) от первой до последней точки. */
-    val totalLengthM: Double get() = nodes.last().chainageM
+    /** Пикетаж последней точки маршрута (в метрах, с учётом [startChainageM]). */
+    val endChainageM: Double get() = nodes.last().chainageM
 
     /**
      * Проецирует точку [lat]/[lon] на ближайший отрезок пути и возвращает
@@ -92,18 +104,22 @@ class RouteTrack(rawPoints: List<LatLon>) {
 
     companion object {
         /**
-         * ЗАГЛУШКА: примерные координаты станций перегона Хилок — Карымская —
-         * Чернышевск-Забайкальский, нужны только чтобы было на чём проверить проекцию
-         * GPS-точки на путь. Точность этих координат НЕ гарантирована и пикетаж,
-         * полученный по ним, не соответствует реальному km+пк на местности.
-         * Заменить на реальную линию пути, когда появится выгрузка из OSM/Overpass.
+         * Точка отсчёта реального маршрута: ближайший узел линии к станции Хилок,
+         * ~5930 км по нумерации РЖД (прочитано с профиля пути "Хилок-Крм.pdf", левый край
+         * первой страницы). ПРИБЛИЗИТЕЛЬНО — нужен точный якорь (GPS + реальный км+пк
+         * в одной точке), чтобы подтвердить или поправить это значение.
          */
-        fun placeholderRoute(): RouteTrack = RouteTrack(
-            listOf(
-                LatLon(51.3549, 110.4692), // Хилок (примерно)
-                LatLon(51.2033, 116.0522), // Карымская (примерно)
-                LatLon(52.5192, 117.7519)  // Чернышевск-Забайкальский (примерно)
-            )
-        )
+        const val HILOK_START_KM = 5930.0
+
+        /**
+         * Поправка на укорочение линии при её упрощении в OSM: длина построенной по
+         * export.geojson полилинии Хилок → Чернышевск-Забайкальский — 642.8 км, а по
+         * профилям пути реальная разница километров на участке — 659 км (6589 − 5930).
+         * 659 / 642.8 ≈ 1.025.
+         */
+        const val HILOK_CHERNYSHEVSK_LENGTH_CORRECTION = 659.0 / 642.8
+
+        /** Имя файла в assets/ с точками реального маршрута Хилок — Чернышевск-Забайкальский. */
+        const val HILOK_CHERNYSHEVSK_ASSET = "route_hilok_chernyshevsk.json"
     }
 }

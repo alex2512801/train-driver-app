@@ -35,7 +35,16 @@ class RouteTrackTest {
     }
 
     @Test
-    fun `total length is close to sum of straight segments`() {
-        assert(abs(track.totalLengthM) > 0.0)
+    fun `end chainage is positive`() {
+        assert(abs(track.endChainageM) > 0.0)
+    }
+
+    @Test
+    fun `startChainageM offsets the whole route`() {
+        val offsetTrack = RouteTrack(
+            listOf(LatLon(55.0, 37.0), LatLon(55.0, 37.01)),
+            startChainageM = 5_930_000.0
+        )
+        assert(offsetTrack.chainageMetersFor(55.0, 37.0) >= 5_930_000.0)
     }
 }
