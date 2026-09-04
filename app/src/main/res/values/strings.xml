@@ -1,0 +1,7 @@
+<resources>
+    <!-- Название приложения пока не выбрано (см. ТЗ, раздел 1) — временное кодовое имя. -->
+    <string name="app_name">TrainDriverApp</string>
+    <string name="waiting_for_gps">Ожидание GPS…</string>
+    <string name="location_permission_denied">Нет разрешения на доступ к местоположению</string>
+    <string name="gps_provider_disabled">GPS отключён в настройках устройства</string>
+</resources>

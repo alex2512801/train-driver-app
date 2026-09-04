@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Временный технический экран. Настоящий главный экран (шапка, график ступеней,
+    пиктограммы и т.д. — см. ТЗ, раздел 7) будет сделан отдельным шагом.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <TextView
+        android:id="@+id/coordinateText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="@string/waiting_for_gps"
+        android:textColor="#FFFFFF"
+        android:textSize="40sp"
+        android:gravity="center" />
+
+</FrameLayout>
