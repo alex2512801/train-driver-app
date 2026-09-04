@@ -47,4 +47,18 @@ class SpeedLimitResolverTest {
         val at = ChainageFormatter.toMeters(6000, 1)
         assertNull(resolver.speedAt(Direction.EVEN, at))
     }
+
+    @Test
+    fun `findNextChange finds where the narrow exception ends`() {
+        val at = ChainageFormatter.toMeters(5932, 8) // внутри узкого исключения, скорость 50
+        val next = resolver.findNextChange(Direction.EVEN, at, forward = true)
+        assertEquals(60, next?.speedLimit?.speedKmh)
+        assertEquals(400.0, next?.distanceM, 0.1)
+    }
+
+    @Test
+    fun `findNextChange returns null when nothing changes ahead`() {
+        val at = ChainageFormatter.toMeters(5934, 0) // внутри широкого диапазона, до конца данных
+        assertNull(resolver.findNextChange(Direction.EVEN, at, forward = true, maxLookaheadM = 100.0))
+    }
 }

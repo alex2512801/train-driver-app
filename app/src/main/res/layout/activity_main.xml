@@ -1,46 +1,70 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Временный технический экран. Настоящий главный экран (шапка, линия сигналов,
-    пиктограммы и т.д. — см. ТЗ, раздел 7) будет достраиваться отдельными шагами.
-    TrackProfileView ниже — первый срез главного экрана: километровая линейка и
-    ступенчатый график ограничений скорости, ещё не проверенный на реальном устройстве.
+    Временный технический экран. Настоящий главный экран (значки сигналов/станций,
+    пиктограммы, профиль рельефа и т.д. — см. ТЗ, раздел 7 и раздел 14 с макетами) будет
+    достраиваться отдельными шагами. TrackProfileView ниже — километровая линейка и
+    ступенчатый график ограничений скорости, сверено с макетом, но ещё не проверено на
+    реальном устройстве.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000"
-    android:orientation="vertical">
+    android:orientation="vertical"
+    android:padding="8dp">
 
-    <TextView
-        android:id="@+id/coordinateText"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:text="@string/waiting_for_gps"
-        android:textColor="#FFFFFF"
-        android:textSize="36sp"
-        android:gravity="center" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <TextView
+            android:id="@+id/coordinateText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="@string/waiting_for_gps"
+            android:textColor="#FFFFFF"
+            android:textSize="26sp" />
+
+        <TextView
+            android:id="@+id/timeText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp" />
+
+    </LinearLayout>
 
     <TextView
         android:id="@+id/directionInfoText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textColor="#AAAAAA"
-        android:textSize="16sp"
-        android:gravity="center" />
+        android:textSize="14sp" />
 
     <ru.traindriver.app.ui.TrackProfileView
         android:id="@+id/trackProfileView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="8dp" />
+        android:layout_marginTop="4dp" />
+
+    <TextView
+        android:id="@+id/statusBarText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:fontFamily="monospace" />
 
     <LinearLayout
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
-        android:layout_marginBottom="16dp"
+        android:layout_marginTop="8dp"
         android:orientation="horizontal">
 
         <Button

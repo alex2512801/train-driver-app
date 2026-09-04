@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 import kotlin.math.ceil
@@ -13,14 +14,18 @@ import ru.traindriver.app.route.SpeedLimit
 import ru.traindriver.app.route.SpeedLimitResolver
 
 /**
- * Первый, самый простой срез главного экрана (ТЗ раздел 7) — то, на чём держится всё
- * остальное: километровая/пикетная линейка и ступенчатый график постоянных ограничений
- * скорости. Пока НЕ реализовано (сознательно, отдельными следующими шагами): шапка,
- * линия сигналов и их таблички, пиктограммы, профиль рельефа, штриховка временных
- * ограничений, день/ночь. Цвета — из ночной палитры ТЗ (раздел 7), день/ночь пока нет.
+ * Срез главного экрана (ТЗ раздел 7) — километровая/пикетная линейка и ступенчатый график
+ * постоянных ограничений скорости, со шкалой скорости и числами на самих ступенях (сверено
+ * с макетом из раздела 14 ТЗ — "Главный экран (ночной режим)").
  *
- * Внешний вид ЕЩЁ НЕ ПРОВЕРЕН на реальном экране (в этой среде разработки нет Android SDK,
- * см. README) — пропорции и читаемость нужно будет поправить по факту.
+ * Пока НЕ реализовано (сознательно, отдельными следующими шагами): линия сигналов и их
+ * таблички, значки сигналов/станций, пиктограммы, профиль рельефа, штриховка временных
+ * ограничений (нет данных о временных ограничениях — только постоянные), штриховка
+ * "короткого участка повышенной скорости" (ТЗ раздел 9), день/ночь. Цвета — из ночной
+ * палитры ТЗ (раздел 7).
+ *
+ * Внешний вид ПРОВЕРЕН пока только на HTML-макете (см. чат), не на реальном устройстве —
+ * в этой среде разработки нет Android SDK, см. README.
  */
 class TrackProfileView @JvmOverloads constructor(
     context: Context,
@@ -30,10 +35,15 @@ class TrackProfileView @JvmOverloads constructor(
     companion object {
         private const val MAX_SPEED_KMH = 100f
         private const val SAMPLE_STEP_M = 20.0
-        private const val RULER_HEIGHT_PX = 90f
+        private const val RULER_HEIGHT_PX = 70f
+        private const val AXIS_WIDTH_PX = 60f
         private const val KM_LINE_LENGTH_M = 1000.0
         private const val PICKET_LENGTH_M = 100.0
+        private const val MIN_SEGMENT_PX_FOR_LABEL = 36f
+        private val AXIS_SPEEDS = intArrayOf(100, 80, 60, 40, 20)
     }
+
+    private data class Segment(val startM: Double, val endM: Double, val speedKmh: Int)
 
     private var speedLimits: List<SpeedLimit> = emptyList()
     private var resolver = SpeedLimitResolver(emptyList())
@@ -61,7 +71,20 @@ class TrackProfileView @JvmOverloads constructor(
     }
     private val kmTextPaint = Paint().apply {
         color = Color.WHITE
-        textSize = 28f
+        textSize = 26f
+        textAlign = Paint.Align.CENTER
+        isAntiAlias = true
+    }
+    private val axisTextPaint = Paint().apply {
+        color = Color.rgb(178, 178, 178)
+        textSize = 22f
+        textAlign = Paint.Align.LEFT
+        isAntiAlias = true
+    }
+    private val stepNumberPaint = Paint().apply {
+        color = Color.WHITE
+        textSize = 40f
+        typeface = Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.CENTER
         isAntiAlias = true
     }
@@ -95,35 +118,70 @@ class TrackProfileView @JvmOverloads constructor(
         val fromM = trainPositionM - behindM
         val toM = trainPositionM + aheadM
         val spanM = toM - fromM
+        val graphLeft = AXIS_WIDTH_PX
+        val graphWidth = width - AXIS_WIDTH_PX
         val stepAreaHeight = height - RULER_HEIGHT_PX
 
-        fun xFor(meters: Double): Float = ((meters - fromM) / spanM * width).toFloat()
+        fun xFor(meters: Double): Float = graphLeft + ((meters - fromM) / spanM * graphWidth).toFloat()
         fun yForSpeed(speedKmh: Int): Float =
             stepAreaHeight * (1f - (speedKmh.coerceIn(0, 100) / MAX_SPEED_KMH))
 
-        drawSpeedSteps(canvas, fromM, toM, ::xFor, ::yForSpeed, stepAreaHeight)
+        val segments = computeSegments(fromM, toM)
+
+        drawSpeedSteps(canvas, segments, ::xFor, ::yForSpeed, stepAreaHeight)
+        drawSpeedAxis(canvas, ::yForSpeed)
         drawKmRuler(canvas, fromM, toM, ::xFor, stepAreaHeight)
         drawTrainMarker(canvas, ::xFor)
         drawCurrentSpeedLabel(canvas)
     }
 
-    private fun drawSpeedSteps(
-        canvas: Canvas,
-        fromM: Double,
-        toM: Double,
-        xFor: (Double) -> Float,
-        yForSpeed: (Int) -> Float,
-        stepAreaHeight: Float
-    ) {
+    /** Склеивает соседние сэмплы с одинаковой скоростью в один непрерывный участок —
+     * иначе не на чем аккуратно центрировать подпись числа на ступени. */
+    private fun computeSegments(fromM: Double, toM: Double): List<Segment> {
+        val segments = mutableListOf<Segment>()
+        var segStart = fromM
+        var segSpeed = resolver.speedAt(direction, fromM + SAMPLE_STEP_M / 2)?.speedKmh
         var m = fromM
         while (m < toM) {
             val next = (m + SAMPLE_STEP_M).coerceAtMost(toM)
             val mid = (m + next) / 2.0
-            val limit = resolver.speedAt(direction, mid)
-            if (limit != null) {
-                canvas.drawRect(xFor(m), yForSpeed(limit.speedKmh), xFor(next), stepAreaHeight, stepPaint)
+            val speed = resolver.speedAt(direction, mid)?.speedKmh
+            if (speed != segSpeed) {
+                if (segSpeed != null) segments.add(Segment(segStart, m, segSpeed))
+                segStart = m
+                segSpeed = speed
             }
             m = next
+        }
+        if (segSpeed != null) segments.add(Segment(segStart, toM, segSpeed))
+        return segments
+    }
+
+    private fun drawSpeedSteps(
+        canvas: Canvas,
+        segments: List<Segment>,
+        xFor: (Double) -> Float,
+        yForSpeed: (Int) -> Float,
+        stepAreaHeight: Float
+    ) {
+        for (segment in segments) {
+            val x0 = xFor(segment.startM)
+            val x1 = xFor(segment.endM)
+            val top = yForSpeed(segment.speedKmh)
+            canvas.drawRect(x0, top, x1, stepAreaHeight, stepPaint)
+
+            if (x1 - x0 >= MIN_SEGMENT_PX_FOR_LABEL) {
+                val metrics = stepNumberPaint.fontMetrics
+                val textY = (top + stepAreaHeight) / 2f - (metrics.ascent + metrics.descent) / 2f
+                canvas.drawText(segment.speedKmh.toString(), (x0 + x1) / 2f, textY, stepNumberPaint)
+            }
+        }
+    }
+
+    private fun drawSpeedAxis(canvas: Canvas, yForSpeed: (Int) -> Float) {
+        for (speed in AXIS_SPEEDS) {
+            val y = yForSpeed(speed)
+            canvas.drawText(speed.toString(), 4f, y + 8f, axisTextPaint)
         }
     }
 
@@ -159,7 +217,7 @@ class TrackProfileView @JvmOverloads constructor(
             val kmBoundary = kmIndex * KM_LINE_LENGTH_M
             val centerM = kmBoundary + KM_LINE_LENGTH_M / 2
             if (centerM in fromM..toM) {
-                canvas.drawText((kmIndex + 1).toString(), xFor(centerM), rulerBottom - 20f, kmTextPaint)
+                canvas.drawText((kmIndex + 1).toString(), xFor(centerM), rulerBottom - 18f, kmTextPaint)
             }
         }
     }
@@ -172,6 +230,6 @@ class TrackProfileView @JvmOverloads constructor(
     private fun drawCurrentSpeedLabel(canvas: Canvas) {
         val limit = resolver.speedAt(direction, trainPositionM)
         val text = if (limit != null) "V=${limit.speedKmh} км/ч" else "V=?"
-        canvas.drawText(text, 16f, 36f, speedTextPaint)
+        canvas.drawText(text, AXIS_WIDTH_PX, 30f, speedTextPaint)
     }
 }
