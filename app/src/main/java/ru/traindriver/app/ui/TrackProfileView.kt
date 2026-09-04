@@ -210,14 +210,15 @@ class TrackProfileView @JvmOverloads constructor(
             }
         }
 
-        // Номер км по центру каждого километрового столбца, как на профилях пути.
+        // Номер км по центру каждого километрового столбца, как на профилях пути. Обычный
+        // км+пк (ChainageFormatter.format) — без +1, это НЕ формат КЛУБ-У.
         val firstKmIndex = floor(fromM / KM_LINE_LENGTH_M).toLong()
         val lastKmIndex = floor(toM / KM_LINE_LENGTH_M).toLong()
         for (kmIndex in firstKmIndex..lastKmIndex) {
             val kmBoundary = kmIndex * KM_LINE_LENGTH_M
             val centerM = kmBoundary + KM_LINE_LENGTH_M / 2
             if (centerM in fromM..toM) {
-                canvas.drawText((kmIndex + 1).toString(), xFor(centerM), rulerBottom - 18f, kmTextPaint)
+                canvas.drawText(kmIndex.toString(), xFor(centerM), rulerBottom - 18f, kmTextPaint)
             }
         }
     }

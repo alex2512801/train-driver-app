@@ -41,6 +41,13 @@ class MainActivity : AppCompatActivity() {
     // Направление/путь задаёт машинист вручную (ТЗ раздел 3) — по GPS это не определить.
     private var directionSelection = DirectionSelection(Direction.EVEN, 2)
 
+    // По тапу на координату (см. onCreate) переключается обычный км+пк / формат КЛУБ-У.
+    private var showKlubU = false
+    private var lastChainageM = 0.0
+
+    private fun formatCoordinate(chainageM: Double): String =
+        if (showKlubU) ChainageFormatter.formatKlubU(chainageM) else ChainageFormatter.format(chainageM)
+
     // Калибровка (см. RouteTrack.Companion) приблизительная — см. README.
     private val routeTrack: RouteTrack by lazy {
         RouteTrack(
@@ -89,6 +96,12 @@ class MainActivity : AppCompatActivity() {
         pathButton = findViewById(R.id.pathButton)
         trackProfileView = findViewById(R.id.trackProfileView)
         gpsLocationProvider = GpsLocationProvider(this)
+
+        // "Координата (км+пк, по тапу переключается в формат КЛУБ-У)" — ТЗ раздел 7.
+        coordinateText.setOnClickListener {
+            showKlubU = !showKlubU
+            coordinateText.text = formatCoordinate(lastChainageM)
+        }
 
         trackProfileView.setSpeedLimits(speedLimits)
         timeHandler.post(timeUpdater)
@@ -148,7 +161,8 @@ class MainActivity : AppCompatActivity() {
 
         gpsLocationProvider.start { location ->
             val chainageM = routeTrack.chainageMetersFor(location.latitude, location.longitude)
-            coordinateText.text = ChainageFormatter.format(chainageM)
+            lastChainageM = chainageM
+            coordinateText.text = formatCoordinate(chainageM)
             trackProfileView.setTrainPositionM(chainageM)
             statusBarText.text = buildStatusBarText(location, chainageM)
         }
