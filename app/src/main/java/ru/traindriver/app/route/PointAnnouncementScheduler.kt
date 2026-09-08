@@ -1,12 +1,17 @@
 package ru.traindriver.app.route
 
 /**
- * Разовое голосовое оповещение о точке впереди по ходу движения, за [thresholdM] метров до
+ * Разовое голосовое оповещение о точке впереди по ходу движения, за [thresholdOf] метров до
  * неё (ТЗ раздел 6 — например "Впереди проба тормозов!" за 2000 м). Каждая точка объявляется
  * не более одного раза за проезд: как только она попала в зону порога (или уже осталась
  * позади — например, приложение запустили, когда поезд уже был рядом), помечается
  * объявленной и больше не возвращается — не хотим объявлять задним числом или повторно на
  * каждый GPS-тик, пока едем внутри зоны.
+ *
+ * [thresholdOf] — функция, а не одно число на весь список: порог может отличаться от точки к
+ * точке (например у станций — обычно 1500 м до предвходного, но 3000 м там, где вместо
+ * предвходного объявляется сам входной сигнал станции — см. StationAnnouncement.thresholdM
+ * и README, "Лесная"/"Яблоновая").
  *
  * Параметризован по [T] нарочно — та же логика подходит для любых будущих point-based
  * оповещений (переезд/КТСМ/станция/обрывное место — как только появятся координаты, см.
@@ -15,7 +20,7 @@ package ru.traindriver.app.route
 class PointAnnouncementScheduler<T>(
     private val points: List<T>,
     private val chainageOf: (T) -> Double,
-    private val thresholdM: Double
+    private val thresholdOf: (T) -> Double
 ) {
     private val announced = mutableSetOf<T>()
 
@@ -28,7 +33,7 @@ class PointAnnouncementScheduler<T>(
                 announced.add(point) // проехали, не попав в порог — не объявляем задним числом
                 continue
             }
-            if (distance <= thresholdM) {
+            if (distance <= thresholdOf(point)) {
                 announced.add(point)
                 return point
             }

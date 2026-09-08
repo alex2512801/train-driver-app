@@ -4,19 +4,27 @@ import android.content.Context
 import org.json.JSONArray
 
 /**
- * Точка "предвходного" сигнала станции (ТЗ раздел 6, "Внимание! Впереди станция!" за 1500 м).
- * "Предвходной" — не входной сигнал станции (Ч/Н) и не сама станция, а последний перегонный
- * светофор перед входным: т.2 для чётного направления, т.1 для нечётного (см.
- * tools/build_station_announcements.py — проверено на реальных данных, Гыршелун).
+ * Точка, за [thresholdM] метров до которой играть "Внимание! Впереди станция!" (ТЗ раздел 6).
+ * Обычно это "предвходной" — не входной сигнал станции (Ч/Н) и не сама станция, а последний
+ * перегонный светофор перед входным: т.2 для чётного направления, т.1 для нечётного (см.
+ * tools/build_station_announcements.py — проверено на реальных данных, Гыршелун), порог 1500 м.
+ *
+ * Исключение — станции без проходных светофоров автоблокировки на этом перегоне (Лесная/
+ * Яблоновая — машинист объяснил, что там другая система сигнализации, т.2/т.1 просто не
+ * существует): для них [chainageM] — это позиция САМОГО входного сигнала (Ч/Н), а [thresholdM]
+ * увеличен до 3000 м, чтобы объявление всё равно звучало заранее.
  */
 data class StationAnnouncement(
     val stationName: String,
     val direction: Direction,
-    val chainageM: Double
+    val chainageM: Double,
+    val thresholdM: Double
 )
 
 /** Читает station_announcements.json в список [StationAnnouncement]. */
 object StationAnnouncementAssetLoader {
+
+    private const val DEFAULT_THRESHOLD_M = 1500.0
 
     fun loadStationAnnouncements(
         context: Context,
@@ -32,7 +40,8 @@ object StationAnnouncementAssetLoader {
                     obj.getInt("predvhodnoy_km"),
                     obj.getInt("predvhodnoy_pk")
                 )
-                add(StationAnnouncement(obj.getString("station"), direction, chainageM))
+                val thresholdM = obj.optDouble("threshold_m", DEFAULT_THRESHOLD_M)
+                add(StationAnnouncement(obj.getString("station"), direction, chainageM, thresholdM))
             }
         }
     }

@@ -140,10 +140,10 @@ class MainActivity : AppCompatActivity() {
     // именно точки "впереди" зависит от effectiveDataset.
     private val voiceAnnouncer by lazy { VoiceAnnouncer(this) }
     private val brakeTests by lazy { BrakeTestAssetLoader.loadBrakeTests(this) }
-    private var brakeTestScheduler = PointAnnouncementScheduler<BrakeTest>(emptyList(), { it.chainageM }, thresholdM = 2000.0)
+    private var brakeTestScheduler = PointAnnouncementScheduler<BrakeTest>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
     private val stationAnnouncements by lazy { StationAnnouncementAssetLoader.loadStationAnnouncements(this) }
     private var stationScheduler =
-        PointAnnouncementScheduler<StationAnnouncement>(emptyList(), { it.chainageM }, thresholdM = 1500.0)
+        PointAnnouncementScheduler<StationAnnouncement>(emptyList(), { it.chainageM }, thresholdOf = { it.thresholdM })
 
     // "Параметры" (ТЗ раздел 5 / раздел 12.2) — пока диалог поверх главного экрана (кнопка
     // paramsButton, см. showTrainParamsDialog), не отдельный подэкран меню, самого меню в
@@ -332,10 +332,10 @@ class MainActivity : AppCompatActivity() {
         // планировщика с нуля (а не просто фильтруем на лету) — иначе точки, уже объявленные
         // при старом направлении, ошибочно считались бы объявленными и при новом.
         val relevantBrakeTests = brakeTests.filter { it.direction == s.effectiveDataset }
-        brakeTestScheduler = PointAnnouncementScheduler(relevantBrakeTests, { it.chainageM }, thresholdM = 2000.0)
+        brakeTestScheduler = PointAnnouncementScheduler(relevantBrakeTests, { it.chainageM }, thresholdOf = { 2000.0 })
 
         val relevantStations = stationAnnouncements.filter { it.direction == s.effectiveDataset }
-        stationScheduler = PointAnnouncementScheduler(relevantStations, { it.chainageM }, thresholdM = 1500.0)
+        stationScheduler = PointAnnouncementScheduler(relevantStations, { it.chainageM }, thresholdOf = { it.thresholdM })
 
         refreshTrackProfileRestrictions()
     }
