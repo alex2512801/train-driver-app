@@ -70,6 +70,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pathButton: Button
     private lateinit var paramsButton: Button
     private lateinit var restrictionsButton: Button
+    private lateinit var dayNightButton: Button
+    private var isDayMode = false
     private lateinit var trackProfileView: TrackProfileView
     private lateinit var gpsLocationProvider: GpsLocationProvider
 
@@ -201,6 +203,7 @@ class MainActivity : AppCompatActivity() {
         pathButton = findViewById(R.id.pathButton)
         paramsButton = findViewById(R.id.paramsButton)
         restrictionsButton = findViewById(R.id.restrictionsButton)
+        dayNightButton = findViewById(R.id.dayNightButton)
         trackProfileView = findViewById(R.id.trackProfileView)
         gpsLocationProvider = GpsLocationProvider(this)
         arrivalWindow = findViewById(R.id.arrivalWindow)
@@ -236,6 +239,11 @@ class MainActivity : AppCompatActivity() {
         }
         paramsButton.setOnClickListener { showTrainParamsDialog() }
         restrictionsButton.setOnClickListener { showRestrictionsDialog() }
+        dayNightButton.setOnClickListener {
+            isDayMode = !isDayMode
+            dayNightButton.text = if (isDayMode) "☀️" else "🌙"
+            trackProfileView.setDayMode(isDayMode)
+        }
         arrivalToggleButton.setOnClickListener {
             arrivalWindowVisible = !arrivalWindowVisible
             refreshArrivalWindow()

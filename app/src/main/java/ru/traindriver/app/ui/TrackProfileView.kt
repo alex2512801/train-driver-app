@@ -26,7 +26,7 @@ import ru.traindriver.app.route.SpeedLimitResolver
  * таблички, значки сигналов/станций, профиль рельефа, штриховка
  * "короткого участка повышенной скорости" (эффективная скорость уже считается —
  * ShortSegmentSpeedResolver, ТЗ раздел 9 — но зеркальная штриховка "\" на этом графике
- * пока не рисуется), день/ночь. Цвета — из ночной палитры ТЗ (раздел 7).
+ * пока не рисуется). Цвета — из ночной палитры ТЗ (раздел 7); день/ночь — см. [setDayMode].
  *
  * Ряд пиктограмм ограничений (начало/конец опасного места, жёлтый/зелёный щит) по ТЗ должен
  * сидеть на нижнем крае профиля рельефа — раз самого профиля в реальном экране ещё нет (см.
@@ -173,6 +173,52 @@ class TrackProfileView @JvmOverloads constructor(
     private val yellowShieldColor = Color.rgb(255, 230, 0)
     private val greenShieldColor = Color.rgb(58, 194, 90)
 
+    // Фон САМОГО графика (не всего экрана — шапка и статусная строка день/ночь не касается,
+    // см. setDayMode) — чёрный ночью, белый днём. Рисуется первым в onDraw, под всем остальным.
+    private val backgroundPaint = Paint().apply { color = Color.BLACK }
+
+    // День/ночь (ТЗ раздел 14): "Дневной режим — полный цветовой негатив каждого элемента
+    // (чёрное↔белое, любой серый — в свой дополнительный цвет)". Исключения — то, что ДОЛЖНО
+    // выглядеть одинаково реально в обоих режимах, а не как инвертированная схема: зелёная
+    // полоска поезда (ТЗ прямо оговаривает это для нижней зелёной полосы на профиле рельефа —
+    // здесь тот же принцип применён к обеим зелёным полоскам поезда, которые есть в этом
+    // срезе экрана) и пиктограммы временных ограничений (опасное место/жёлтый/зелёный щит —
+    // это чертежи настоящих путевых знаков с фиксированными цветами, не часть тёмной палитры).
+    private var isDayMode = false
+
+    init {
+        applyPalette()
+    }
+
+    private fun negate(color: Int): Int =
+        Color.rgb(255 - Color.red(color), 255 - Color.green(color), 255 - Color.blue(color))
+
+    private fun applyPalette() {
+        fun c(nightColor: Int): Int = if (isDayMode) negate(nightColor) else nightColor
+
+        backgroundPaint.color = c(Color.BLACK)
+        stepPaint.color = c(Color.rgb(160, 159, 164))
+        kmLinePaint.color = c(Color.rgb(178, 178, 178))
+        picketLinePaint.color = c(Color.rgb(178, 178, 178))
+        kmTextPaint.color = c(Color.WHITE)
+        axisTextPaint.color = c(Color.rgb(178, 178, 178))
+        stepNumberPaint.color = c(Color.WHITE)
+        speedTextPaint.color = c(Color.WHITE)
+        hatchLinePaint.color = c(Color.WHITE)
+        hatchBorderPaint.color = c(Color.WHITE)
+        restrictionNumberPaint.color = c(Color.WHITE)
+        // trainMarkerPaint/trainStripePaint (зелёная полоска поезда) и все пиктограммные
+        // Paint'ы (opasnoe*/shield*) сознательно НЕ входят сюда — исключения, см. комментарий
+        // у isDayMode выше.
+    }
+
+    /** ТЗ раздел 14 — негатив только у самого графика (эта View), не у шапки/статусной строки. */
+    fun setDayMode(day: Boolean) {
+        isDayMode = day
+        applyPalette()
+        invalidate()
+    }
+
     fun setSpeedLimits(limits: List<SpeedLimit>) {
         speedLimits = limits
         resolver = SpeedLimitResolver(limits)
@@ -204,6 +250,9 @@ class TrackProfileView @JvmOverloads constructor(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (width == 0 || height == 0) return
+
+        // Фон именно этого View (не всего экрана) — чёрный ночью / белый днём (ТЗ раздел 14).
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
 
         val fromM = trainPositionM - behindM
         val toM = trainPositionM + aheadM
