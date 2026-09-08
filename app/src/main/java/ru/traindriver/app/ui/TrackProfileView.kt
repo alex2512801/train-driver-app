@@ -21,8 +21,13 @@ import ru.traindriver.app.route.SpeedLimitResolver
  * Пока НЕ реализовано (сознательно, отдельными следующими шагами): линия сигналов и их
  * таблички, значки сигналов/станций, пиктограммы, профиль рельефа, штриховка временных
  * ограничений (нет данных о временных ограничениях — только постоянные), штриховка
- * "короткого участка повышенной скорости" (ТЗ раздел 9), день/ночь. Цвета — из ночной
- * палитры ТЗ (раздел 7).
+ * "короткого участка повышенной скорости" (эффективная скорость уже считается —
+ * ShortSegmentSpeedResolver, ТЗ раздел 9 — но зеркальная штриховка "\" на этом графике
+ * пока не рисуется), день/ночь. Цвета — из ночной палитры ТЗ (раздел 7).
+ *
+ * Полоска физической длины состава ([setTrainLengthM]) рисуется от головы (GPS-координата)
+ * назад на реальную длину (TrainComposition.lengthM — условная длина × 14 м + локомотив,
+ * ТЗ раздел 5), а не на произвольную иллюстративную константу.
  *
  * Внешний вид ПРОВЕРЕН пока только на HTML-макете (см. чат), не на реальном устройстве —
  * в этой среде разработки нет Android SDK, см. README.
@@ -50,6 +55,12 @@ class TrackProfileView @JvmOverloads constructor(
     private var direction: Direction = Direction.EVEN
     private var trainPositionM: Double = 0.0
 
+    // Физическая длина состава (TrainComposition.lengthM — условная длина в усл. вагонах ×
+    // 14 м + длина локомотива, ТЗ раздел 5), а не произвольная константа для масштаба —
+    // задаётся вызывающим кодом через setTrainLengthM. Полоска поезда рисуется от головы
+    // (GPS-координата, trainPositionM) назад ровно на эту длину.
+    private var trainLengthM: Double = 0.0
+
     // 3000 м позади / 5000 м впереди — как в официальном описании экрана ИСАВП-РТ
     // ("основное_окно_сокр.pdf", область 25).
     /** Сколько метров показывать позади/впереди головы поезда. */
@@ -68,6 +79,12 @@ class TrackProfileView @JvmOverloads constructor(
     private val trainMarkerPaint = Paint().apply {
         color = Color.rgb(44, 255, 39)
         strokeWidth = 5f
+    }
+    // Полоска физической длины поезда — та же зелень, что и позиционная линия, но толще и
+    // короче (только вдоль границы ступеней/линейки, не на всю высоту, см. ТЗ раздел 7).
+    private val trainStripePaint = Paint().apply {
+        color = Color.rgb(44, 255, 39)
+        strokeWidth = 8f
     }
     private val kmTextPaint = Paint().apply {
         color = Color.WHITE
@@ -111,6 +128,12 @@ class TrackProfileView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** [meters] — TrainComposition.lengthM (условная длина × 14 м + локомотив), не число вагонов. */
+    fun setTrainLengthM(meters: Double) {
+        trainLengthM = meters
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (width == 0 || height == 0) return
@@ -131,7 +154,7 @@ class TrackProfileView @JvmOverloads constructor(
         drawSpeedSteps(canvas, segments, ::xFor, ::yForSpeed, stepAreaHeight)
         drawSpeedAxis(canvas, ::yForSpeed)
         drawKmRuler(canvas, fromM, toM, ::xFor, stepAreaHeight)
-        drawTrainMarker(canvas, ::xFor)
+        drawTrainMarker(canvas, ::xFor, stepAreaHeight)
         drawCurrentSpeedLabel(canvas)
     }
 
@@ -223,9 +246,17 @@ class TrackProfileView @JvmOverloads constructor(
         }
     }
 
-    private fun drawTrainMarker(canvas: Canvas, xFor: (Double) -> Float) {
-        val x = xFor(trainPositionM)
-        canvas.drawLine(x, 0f, x, height.toFloat(), trainMarkerPaint)
+    private fun drawTrainMarker(canvas: Canvas, xFor: (Double) -> Float, stepAreaHeight: Float) {
+        val headX = xFor(trainPositionM)
+        canvas.drawLine(headX, 0f, headX, height.toFloat(), trainMarkerPaint)
+
+        // Физическая длина состава — от головы (GPS) назад, вдоль границы ступеней/линейки.
+        // trainLengthM == 0.0 (длина ещё не задана вызывающим кодом) — полоску не рисуем,
+        // остаётся только позиционная линия выше.
+        if (trainLengthM > 0.0) {
+            val tailX = xFor(trainPositionM - trainLengthM)
+            canvas.drawLine(tailX, stepAreaHeight, headX, stepAreaHeight, trainStripePaint)
+        }
     }
 
     private fun drawCurrentSpeedLabel(canvas: Canvas) {

@@ -25,6 +25,7 @@ import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
 import ru.traindriver.app.route.SpeedLimitAssetLoader
 import ru.traindriver.app.route.SpeedLimitResolver
+import ru.traindriver.app.route.TrainComposition
 import ru.traindriver.app.ui.TrackProfileView
 
 class MainActivity : AppCompatActivity() {
@@ -59,6 +60,13 @@ class MainActivity : AppCompatActivity() {
 
     private val speedLimits by lazy { SpeedLimitAssetLoader.loadSpeedLimits(this) }
     private val speedLimitResolver by lazy { SpeedLimitResolver(speedLimits) }
+
+    // ВРЕМЕННАЯ заглушка: экрана "Параметры" (ТЗ раздел 5) в реальном приложении ещё нет —
+    // машинист пока не может ввести серию локомотива/условную длину состава, поэтому здесь
+    // жёстко задано то же значение по умолчанию, что и в HTML-макете (3ЭС5К, 58 усл. ваг.),
+    // просто чтобы полоска поезда на графике не пустовала. Заменить на реальный ввод, когда
+    // появится сам экран.
+    private val trainComposition = TrainComposition(locomotiveSeries = "3ЭС5К", conditionalLengthUslVag = 58.0)
 
     // РЖД всегда работает по московскому времени (ТЗ раздел 7) — местное берём из часового
     // пояса самого телефона, оба видны одновременно.
@@ -104,6 +112,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         trackProfileView.setSpeedLimits(speedLimits)
+        trackProfileView.setTrainLengthM(trainComposition.lengthM)
         timeHandler.post(timeUpdater)
 
         directionButton.setOnClickListener {

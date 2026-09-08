@@ -122,8 +122,10 @@ class ShortSegmentSpeedResolverTest {
     @Test
     fun `real Khilok data has a genuine 100m spike shorter than a real train`() {
         // Настоящие числа из app assets/speed_limits.json (чётное): 6105900-6106000 (100 м) —
-        // 80 км/ч зажато между 60 и 60 (см. README раздел 9). Состав из мокапа (3ЭС5К + 40
-        // гружёных/порожних вагонов) — примерно 52.5 + 40*14 ≈ 613 м, точно длиннее 100 м.
+        // 80 км/ч зажато между 60 и 60 (см. README раздел 9). Длина состава — не число физических
+        // вагонов, а условная длина (усл. вагоны × 14 м + локомотив, см. TrainComposition) —
+        // дефолт из макета (3ЭС5К, 58 усл.ваг.) даёт 864.5 м, с большим запасом длиннее 100 м.
+        val train = TrainComposition(locomotiveSeries = "3ЭС5К", conditionalLengthUslVag = 58.0)
         val resolver = ShortSegmentSpeedResolver(
             listOf(
                 limit(6_095_500.0, 6_105_900.0, 60),
@@ -131,7 +133,7 @@ class ShortSegmentSpeedResolverTest {
                 limit(6_106_000.0, 6_120_700.0, 60),
             )
         )
-        val result = resolver.effectiveSpeedAt(Direction.EVEN, 6_105_950.0, trainLengthM = 613.0)
+        val result = resolver.effectiveSpeedAt(Direction.EVEN, 6_105_950.0, trainLengthM = train.lengthM)
         assertEquals(80, result?.naturalSpeedKmh)
         assertEquals(60, result?.effectiveSpeedKmh)
         assertTrue(result!!.isShortSegment)
