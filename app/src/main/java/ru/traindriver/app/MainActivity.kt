@@ -7,9 +7,17 @@ import android.location.Location
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
+import android.text.TextWatcher
+import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.EditText
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import java.text.SimpleDateFormat
@@ -20,12 +28,15 @@ import ru.traindriver.app.location.GpsLocationProvider
 import ru.traindriver.app.route.ChainageFormatter
 import ru.traindriver.app.route.Direction
 import ru.traindriver.app.route.DirectionSelection
+import ru.traindriver.app.route.LocomotiveTable
 import ru.traindriver.app.route.PathStatus
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
 import ru.traindriver.app.route.SpeedLimitAssetLoader
 import ru.traindriver.app.route.SpeedLimitResolver
 import ru.traindriver.app.route.TrainComposition
+import ru.traindriver.app.route.TrainParams
+import ru.traindriver.app.route.TrainParamsStore
 import ru.traindriver.app.ui.TrackProfileView
 
 class MainActivity : AppCompatActivity() {
@@ -36,6 +47,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusBarText: TextView
     private lateinit var directionButton: Button
     private lateinit var pathButton: Button
+    private lateinit var paramsButton: Button
     private lateinit var trackProfileView: TrackProfileView
     private lateinit var gpsLocationProvider: GpsLocationProvider
 
@@ -61,12 +73,12 @@ class MainActivity : AppCompatActivity() {
     private val speedLimits by lazy { SpeedLimitAssetLoader.loadSpeedLimits(this) }
     private val speedLimitResolver by lazy { SpeedLimitResolver(speedLimits) }
 
-    // ВРЕМЕННАЯ заглушка: экрана "Параметры" (ТЗ раздел 5) в реальном приложении ещё нет —
-    // машинист пока не может ввести серию локомотива/условную длину состава, поэтому здесь
-    // жёстко задано то же значение по умолчанию, что и в HTML-макете (3ЭС5К, 58 усл. ваг.),
-    // просто чтобы полоска поезда на графике не пустовала. Заменить на реальный ввод, когда
-    // появится сам экран.
-    private val trainComposition = TrainComposition(locomotiveSeries = "3ЭС5К", conditionalLengthUslVag = 58.0)
+    // "Параметры" (ТЗ раздел 5 / раздел 12.2) — пока диалог поверх главного экрана (кнопка
+    // paramsButton, см. showTrainParamsDialog), не отдельный подэкран меню, самого меню в
+    // реальном приложении ещё нет. Значения сохраняются между запусками (TrainParamsStore) —
+    // до первого сохранения используются те же дефолты, что и в HTML-макете.
+    private val trainParamsStore by lazy { TrainParamsStore(this) }
+    private var trainParams: TrainParams = TrainParamsStore.DEFAULT
 
     // РЖД всегда работает по московскому времени (ТЗ раздел 7) — местное берём из часового
     // пояса самого телефона, оба видны одновременно.
@@ -102,6 +114,7 @@ class MainActivity : AppCompatActivity() {
         statusBarText = findViewById(R.id.statusBarText)
         directionButton = findViewById(R.id.directionButton)
         pathButton = findViewById(R.id.pathButton)
+        paramsButton = findViewById(R.id.paramsButton)
         trackProfileView = findViewById(R.id.trackProfileView)
         gpsLocationProvider = GpsLocationProvider(this)
 
@@ -111,8 +124,9 @@ class MainActivity : AppCompatActivity() {
             coordinateText.text = formatCoordinate(lastChainageM)
         }
 
+        trainParams = trainParamsStore.load()
         trackProfileView.setSpeedLimits(speedLimits)
-        trackProfileView.setTrainLengthM(trainComposition.lengthM)
+        trackProfileView.setTrainLengthM(trainParams.composition.lengthM)
         timeHandler.post(timeUpdater)
 
         directionButton.setOnClickListener {
@@ -125,6 +139,7 @@ class MainActivity : AppCompatActivity() {
             directionSelection = DirectionSelection(directionSelection.direction, newPath)
             updateDirectionUi()
         }
+        paramsButton.setOnClickListener { showTrainParamsDialog() }
         updateDirectionUi()
 
         if (hasLocationPermission()) {
@@ -153,6 +168,97 @@ class MainActivity : AppCompatActivity() {
 
         trackProfileView.setDirection(s.effectiveDataset)
     }
+
+    // "Параметры" (ТЗ раздел 5): серия локомотива -> вес/длина автоматически по таблице
+    // (LocomotiveTable), брутто/нетто/кол-во вагонов -> тара на вагон автоматически, условная
+    // длина состава (усл. ваг.) -> полная физическая длина автоматически (см. TrainComposition:
+    // усл. ваг. × 14 м + длина локомотива). Все "авто" поля пересчитываются на лету при вводе.
+    private fun showTrainParamsDialog() {
+        val view = layoutInflater.inflate(R.layout.dialog_train_params, null)
+        val seriesSpinner = view.findViewById<Spinner>(R.id.locoSeriesSpinner)
+        val numberInput = view.findViewById<EditText>(R.id.locoNumberInput)
+        val weightText = view.findViewById<TextView>(R.id.locoWeightText)
+        val lengthText = view.findViewById<TextView>(R.id.locoLengthText)
+        val bruttoInput = view.findViewById<EditText>(R.id.wagonBruttoInput)
+        val nettoInput = view.findViewById<EditText>(R.id.wagonNettoInput)
+        val countInput = view.findViewById<EditText>(R.id.wagonCountInput)
+        val tareText = view.findViewById<TextView>(R.id.wagonTareText)
+        val condLengthInput = view.findViewById<EditText>(R.id.condLengthInput)
+        val composedLengthText = view.findViewById<TextView>(R.id.composedLengthText)
+
+        val seriesNames = LocomotiveTable.SERIES.keys.toList()
+        seriesSpinner.adapter =
+            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, seriesNames)
+
+        val current = trainParams
+        seriesSpinner.setSelection(seriesNames.indexOf(current.locomotiveSeries).coerceAtLeast(0))
+        numberInput.setText(current.locoNumber)
+        bruttoInput.setText(formatNumber(current.bruttoT))
+        nettoInput.setText(formatNumber(current.nettoT))
+        countInput.setText(current.wagonCount.toString())
+        condLengthInput.setText(formatNumber(current.conditionalLengthUslVag))
+
+        fun refreshAuto() {
+            val series = seriesNames.getOrNull(seriesSpinner.selectedItemPosition) ?: current.locomotiveSeries
+            val spec = LocomotiveTable.SERIES.getValue(series)
+            weightText.text = "Вес (авто): ${formatNumber(spec.weightT)} т"
+            lengthText.text = "Длина (авто): ${formatNumber(spec.lengthM)} м"
+
+            val brutto = bruttoInput.text.toString().toDoubleOrNull() ?: 0.0
+            val netto = nettoInput.text.toString().toDoubleOrNull() ?: 0.0
+            val count = countInput.text.toString().toIntOrNull() ?: 0
+            tareText.text = if (count > 0) {
+                "Тара/вагон (авто): ${"%.1f".format((brutto - netto) / count)} т"
+            } else {
+                "Тара/вагон (авто): —"
+            }
+
+            val condLength = condLengthInput.text.toString().toDoubleOrNull() ?: 0.0
+            val totalLength = condLength * TrainComposition.CONDITIONAL_WAGON_LENGTH_M + spec.lengthM
+            composedLengthText.text = "Полная длина (авто): ${"%.1f".format(totalLength)} м"
+        }
+
+        val watcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+            override fun afterTextChanged(s: Editable?) = refreshAuto()
+        }
+        bruttoInput.addTextChangedListener(watcher)
+        nettoInput.addTextChangedListener(watcher)
+        countInput.addTextChangedListener(watcher)
+        condLengthInput.addTextChangedListener(watcher)
+        seriesSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) =
+                refreshAuto()
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        refreshAuto()
+
+        AlertDialog.Builder(this)
+            .setTitle("Параметры")
+            .setView(view)
+            .setPositiveButton("Сохранить") { _, _ ->
+                val newParams = TrainParams(
+                    locomotiveSeries = seriesNames.getOrNull(seriesSpinner.selectedItemPosition)
+                        ?: current.locomotiveSeries,
+                    locoNumber = numberInput.text.toString(),
+                    bruttoT = bruttoInput.text.toString().toDoubleOrNull() ?: current.bruttoT,
+                    nettoT = nettoInput.text.toString().toDoubleOrNull() ?: current.nettoT,
+                    wagonCount = countInput.text.toString().toIntOrNull() ?: current.wagonCount,
+                    conditionalLengthUslVag = (condLengthInput.text.toString().toDoubleOrNull()
+                        ?: current.conditionalLengthUslVag).coerceAtLeast(0.0)
+                )
+                trainParams = newParams
+                trainParamsStore.save(newParams)
+                trackProfileView.setTrainLengthM(newParams.composition.lengthM)
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    /** "4200" вместо "4200.0" для целых значений — как в HTML-макете. */
+    private fun formatNumber(value: Double): String =
+        if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
 
     private fun hasLocationPermission(): Boolean =
         ContextCompat.checkSelfPermission(

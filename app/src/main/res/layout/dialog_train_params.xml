@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    "Параметры" (ТЗ раздел 5 / раздел 12.2) — пока диалог поверх главного экрана, а не
+    отдельный полноценный подэкран меню (самого меню в реальном приложении ещё нет, см.
+    activity_main.xml). Поля и порядок — как в HTML-макете: Локомотив (серия/номер/вес и
+    длина автоматически по таблице серий) и Вагоны (брутто/нетто/кол-во, тара автоматически),
+    плюс условная длина состава отдельным полем.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#000000">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ЛОКОМОТИВ"
+            android:textColor="#5AAADC"
+            android:textSize="12sp"
+            android:layout_marginBottom="8dp" />
+
+        <Spinner
+            android:id="@+id/locoSeriesSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content" />
+
+        <EditText
+            android:id="@+id/locoNumberInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="Номер"
+            android:inputType="number"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#777777" />
+
+        <TextView
+            android:id="@+id/locoWeightText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#AAAAAA"
+            android:text="Вес (авто): — т" />
+
+        <TextView
+            android:id="@+id/locoLengthText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="#AAAAAA"
+            android:text="Длина (авто): — м" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="16dp"
+            android:background="#222222" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ВАГОНЫ"
+            android:textColor="#5AAADC"
+            android:textSize="12sp"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/wagonBruttoInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Брутто, т"
+            android:inputType="numberDecimal"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#777777" />
+
+        <EditText
+            android:id="@+id/wagonNettoInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="Нетто, т"
+            android:inputType="numberDecimal"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#777777" />
+
+        <EditText
+            android:id="@+id/wagonCountInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="Кол-во физ. вагонов"
+            android:inputType="number"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#777777" />
+
+        <TextView
+            android:id="@+id/wagonTareText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#AAAAAA"
+            android:text="Тара/вагон (авто): — т" />
+
+        <View
+            android:layout_width="match_parent"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="16dp"
+            android:background="#222222" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="ДЛИНА СОСТАВА"
+            android:textColor="#5AAADC"
+            android:textSize="12sp"
+            android:layout_marginBottom="8dp" />
+
+        <EditText
+            android:id="@+id/condLengthInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Условная длина, усл. ваг."
+            android:inputType="numberDecimal"
+            android:textColor="#FFFFFF"
+            android:textColorHint="#777777" />
+
+        <TextView
+            android:id="@+id/composedLengthText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:textColor="#AAAAAA"
+            android:text="Полная длина (авто): — м" />
+
+    </LinearLayout>
+</ScrollView>
