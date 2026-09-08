@@ -34,6 +34,12 @@ object ChainageFormatter {
         return "${km + 1}км ${pk}пк"
     }
 
+    /** "км.пк" с пк в 2 разряда — список ограничений (ТЗ раздел 11, "6312.03" в ТЗ-макете). */
+    fun formatDot(totalMeters: Double): String {
+        val (km, pk) = kmPk(totalMeters)
+        return "$km.${pk.toString().padStart(2, '0')}"
+    }
+
     private fun kmPk(totalMeters: Double): Pair<Int, Int> {
         val clamped = totalMeters.coerceAtLeast(0.0)
         val kmIndex = floor(clamped / 1000.0)

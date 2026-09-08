@@ -40,6 +40,11 @@ import ru.traindriver.app.route.DirectionSelection
 import ru.traindriver.app.route.LocomotiveTable
 import ru.traindriver.app.route.PathStatus
 import ru.traindriver.app.route.PointAnnouncementScheduler
+import ru.traindriver.app.route.Restriction
+import ru.traindriver.app.route.RestrictionField
+import ru.traindriver.app.route.RestrictionFormFields
+import ru.traindriver.app.route.RestrictionInputParser
+import ru.traindriver.app.route.RestrictionInputResult
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
 import ru.traindriver.app.route.SpeedLimitAssetLoader
@@ -51,6 +56,7 @@ import ru.traindriver.app.route.TrainComposition
 import ru.traindriver.app.route.TrainParams
 import ru.traindriver.app.route.TrainParamsStore
 import ru.traindriver.app.route.nearestStationName
+import ru.traindriver.app.route.sortedForDirection
 import ru.traindriver.app.ui.TrackProfileView
 
 class MainActivity : AppCompatActivity() {
@@ -62,6 +68,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var directionButton: Button
     private lateinit var pathButton: Button
     private lateinit var paramsButton: Button
+    private lateinit var restrictionsButton: Button
     private lateinit var trackProfileView: TrackProfileView
     private lateinit var gpsLocationProvider: GpsLocationProvider
 
@@ -84,6 +91,13 @@ class MainActivity : AppCompatActivity() {
     // "Место стоянки" в истории (ТЗ раздел 10) — станция, если остановка в её пределах, иначе
     // км+пк (см. Station.kt, nearestStationName — приближение, без точных границ вход/выход).
     private val stations by lazy { StationAssetLoader.loadStations(this) }
+
+    // "Ограничения" (ТЗ раздел 11) — временные ограничения скорости, введённые машинистом.
+    // Живут только в памяти на время сессии (ни ТЗ, ни макет не говорят о сохранении между
+    // запусками — см. Restriction.kt). Пока не влияют на V= в статусной строке и не рисуются
+    // на графике штриховкой (в макете рисуются) — это отдельный, ещё не сделанный шаг
+    // (интеграция с TrackProfileView/SpeedLimitResolver, см. README).
+    private val restrictions = mutableListOf<Restriction>()
 
     // Направление/путь задаёт машинист вручную (ТЗ раздел 3) — по GPS это не определить.
     private var directionSelection = DirectionSelection(Direction.EVEN, 2)
@@ -175,6 +189,7 @@ class MainActivity : AppCompatActivity() {
         directionButton = findViewById(R.id.directionButton)
         pathButton = findViewById(R.id.pathButton)
         paramsButton = findViewById(R.id.paramsButton)
+        restrictionsButton = findViewById(R.id.restrictionsButton)
         trackProfileView = findViewById(R.id.trackProfileView)
         gpsLocationProvider = GpsLocationProvider(this)
         arrivalWindow = findViewById(R.id.arrivalWindow)
@@ -209,6 +224,7 @@ class MainActivity : AppCompatActivity() {
             updateDirectionUi()
         }
         paramsButton.setOnClickListener { showTrainParamsDialog() }
+        restrictionsButton.setOnClickListener { showRestrictionsDialog() }
         arrivalToggleButton.setOnClickListener {
             arrivalWindowVisible = !arrivalWindowVisible
             refreshArrivalWindow()
@@ -402,6 +418,100 @@ class MainActivity : AppCompatActivity() {
     /** "4200" вместо "4200.0" для целых значений — как в HTML-макете. */
     private fun formatNumber(value: Double): String =
         if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
+
+    // "Ограничения" (ТЗ раздел 11) — та же форма, что и в HTML-макете (км/пк начала и конца,
+    // скорость, путь), но полями обычной телефонной клавиатуры вместо самодельной цифровой
+    // накладки из макета (см. dialog_restrictions.xml). "Добавить" не закрывает диалог — можно
+    // сразу вводить следующее ограничение, список тут же обновляется и пересортировывается.
+    private fun showRestrictionsDialog() {
+        val view = layoutInflater.inflate(R.layout.dialog_restrictions, null)
+        val startKmInput = view.findViewById<EditText>(R.id.restrictionStartKmInput)
+        val startPkInput = view.findViewById<EditText>(R.id.restrictionStartPkInput)
+        val endKmInput = view.findViewById<EditText>(R.id.restrictionEndKmInput)
+        val endPkInput = view.findViewById<EditText>(R.id.restrictionEndPkInput)
+        val speedInput = view.findViewById<EditText>(R.id.restrictionSpeedInput)
+        val pathInput = view.findViewById<EditText>(R.id.restrictionPathInput)
+        val errorText = view.findViewById<TextView>(R.id.restrictionErrorText)
+        val addButton = view.findViewById<Button>(R.id.restrictionAddButton)
+        val rowsContainer = view.findViewById<LinearLayout>(R.id.restrictionRowsContainer)
+
+        fun refreshRestrictionsList() {
+            rowsContainer.removeAllViews()
+            for (r in restrictions.sortedForDirection(directionSelection.effectiveDataset)) {
+                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                val info = TextView(this).apply {
+                    val endTxt = if (r.endM == r.startM) "—" else ChainageFormatter.formatDot(r.endM)
+                    text = "%-8s %-8s %3d  %s".format(
+                        ChainageFormatter.formatDot(r.startM), endTxt, r.speedKmh, r.path?.toString() ?: "—"
+                    )
+                    setTextColor(0xFFFFFFFF.toInt())
+                    typeface = android.graphics.Typeface.MONOSPACE
+                    textSize = 12f
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                val delete = TextView(this).apply {
+                    text = "✕"
+                    setTextColor(0xFFE05A5A.toInt())
+                    setPadding(16, 0, 0, 0)
+                    setOnClickListener {
+                        restrictions.remove(r)
+                        refreshRestrictionsList()
+                    }
+                }
+                row.addView(info)
+                row.addView(delete)
+                rowsContainer.addView(row)
+            }
+        }
+
+        val fieldInputs = mapOf(
+            RestrictionField.START_KM to startKmInput,
+            RestrictionField.START_PK to startPkInput,
+            RestrictionField.END_KM to endKmInput,
+            RestrictionField.END_PK to endPkInput,
+            RestrictionField.SPEED to speedInput,
+            RestrictionField.PATH to pathInput
+        )
+
+        addButton.setOnClickListener {
+            val fields = RestrictionFormFields(
+                startKm = startKmInput.text.toString(),
+                startPk = startPkInput.text.toString(),
+                endKm = endKmInput.text.toString(),
+                endPk = endPkInput.text.toString(),
+                speed = speedInput.text.toString(),
+                path = pathInput.text.toString()
+            )
+            when (val result = RestrictionInputParser.parse(fields)) {
+                is RestrictionInputResult.Success -> {
+                    restrictions.add(result.restriction)
+                    for (input in fieldInputs.values) input.text.clear()
+                    errorText.visibility = View.GONE
+                    highlightRestrictionFields(emptySet(), fieldInputs)
+                    refreshRestrictionsList()
+                }
+                is RestrictionInputResult.Error -> {
+                    errorText.text = result.message
+                    errorText.visibility = View.VISIBLE
+                    highlightRestrictionFields(result.fields, fieldInputs)
+                }
+            }
+        }
+
+        refreshRestrictionsList()
+
+        AlertDialog.Builder(this)
+            .setTitle("Ограничения")
+            .setView(view)
+            .setPositiveButton("Закрыть", null)
+            .show()
+    }
+
+    private fun highlightRestrictionFields(fields: Set<RestrictionField>, inputs: Map<RestrictionField, EditText>) {
+        for ((field, input) in inputs) {
+            input.setBackgroundColor(if (field in fields) 0x33E05A5A else 0x00000000)
+        }
+    }
 
     private fun hasLocationPermission(): Boolean =
         ContextCompat.checkSelfPermission(
