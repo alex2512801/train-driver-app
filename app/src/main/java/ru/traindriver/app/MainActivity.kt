@@ -16,6 +16,7 @@ import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
@@ -45,9 +46,11 @@ import ru.traindriver.app.route.SpeedLimitAssetLoader
 import ru.traindriver.app.route.SpeedLimitResolver
 import ru.traindriver.app.route.StationAnnouncement
 import ru.traindriver.app.route.StationAnnouncementAssetLoader
+import ru.traindriver.app.route.StationAssetLoader
 import ru.traindriver.app.route.TrainComposition
 import ru.traindriver.app.route.TrainParams
 import ru.traindriver.app.route.TrainParamsStore
+import ru.traindriver.app.route.nearestStationName
 import ru.traindriver.app.ui.TrackProfileView
 
 class MainActivity : AppCompatActivity() {
@@ -62,20 +65,25 @@ class MainActivity : AppCompatActivity() {
     private lateinit var trackProfileView: TrackProfileView
     private lateinit var gpsLocationProvider: GpsLocationProvider
 
-    // Окошко прибытия/отправления + история остановок (ТЗ раздел 10). История сама по себе
-    // накапливается внутри трекера (arrivalDepartureTracker.history) — в этом шаге подключено
-    // только само окошко (кнопка в шапке — arrivalToggleButton), панель истории пока не
-    // подключена к UI (ждёт кнопки в реальной шапке, см. README шаг 22).
+    // Окошко прибытия/отправления + история остановок (ТЗ раздел 10).
     private lateinit var arrivalWindow: View
     private lateinit var arrivalTimeText: TextView
     private lateinit var arrivalMidText: TextView
     private lateinit var arrivalDepartureText: TextView
     private lateinit var arrivalToggleButton: Button
+    private lateinit var historyPanel: View
+    private lateinit var historyRowsContainer: LinearLayout
+    private lateinit var historyToggleButton: Button
     private lateinit var toneGenerator: ToneGenerator
     private val arrivalDepartureTracker = ArrivalDepartureTracker()
     private var arrivalWindowVisible = true
+    private var historyPanelVisible = false
     private var lastSpeedKmh = 0.0
     private val arrivalWallFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+
+    // "Место стоянки" в истории (ТЗ раздел 10) — станция, если остановка в её пределах, иначе
+    // км+пк (см. Station.kt, nearestStationName — приближение, без точных границ вход/выход).
+    private val stations by lazy { StationAssetLoader.loadStations(this) }
 
     // Направление/путь задаёт машинист вручную (ТЗ раздел 3) — по GPS это не определить.
     private var directionSelection = DirectionSelection(Direction.EVEN, 2)
@@ -141,6 +149,7 @@ class MainActivity : AppCompatActivity() {
                 toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 400)
             }
             refreshArrivalWindow()
+            if (historyPanelVisible) refreshStopHistory()
 
             timeHandler.postDelayed(this, 1000)
         }
@@ -173,6 +182,9 @@ class MainActivity : AppCompatActivity() {
         arrivalMidText = findViewById(R.id.arrivalMidText)
         arrivalDepartureText = findViewById(R.id.arrivalDepartureText)
         arrivalToggleButton = findViewById(R.id.arrivalToggleButton)
+        historyPanel = findViewById(R.id.stopHistoryPanel)
+        historyRowsContainer = findViewById(R.id.stopHistoryRows)
+        historyToggleButton = findViewById(R.id.historyToggleButton)
         toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, ToneGenerator.MAX_VOLUME)
 
         // "Координата (км+пк, по тапу переключается в формат КЛУБ-У)" — ТЗ раздел 7.
@@ -200,6 +212,10 @@ class MainActivity : AppCompatActivity() {
         arrivalToggleButton.setOnClickListener {
             arrivalWindowVisible = !arrivalWindowVisible
             refreshArrivalWindow()
+        }
+        historyToggleButton.setOnClickListener {
+            historyPanelVisible = !historyPanelVisible
+            refreshStopHistory()
         }
         updateDirectionUi()
 
@@ -244,6 +260,32 @@ class MainActivity : AppCompatActivity() {
     private fun formatDuration(ms: Long): String {
         val totalSec = (ms / 1000).coerceAtLeast(0)
         return "%02d:%02d:%02d".format(totalSec / 3600, (totalSec % 3600) / 60, totalSec % 60)
+    }
+
+    // ТЗ раздел 10: "Место стоянки" | Приб | Отпр | "Время стоянки", одна компактная строка на
+    // остановку. Панель полупрозрачная — не модалка (см. arrivalWindow выше), пересобирается
+    // целиком на каждый тик, пока видна (список коротких, накладных расходов не создаёт).
+    private fun refreshStopHistory() {
+        historyPanel.visibility = if (historyPanelVisible) View.VISIBLE else View.GONE
+        if (!historyPanelVisible) return
+
+        historyRowsContainer.removeAllViews()
+        for (rec in arrivalDepartureTracker.history) {
+            val place = nearestStationName(rec.locationM, directionSelection.effectiveDataset, stations)
+                ?: ChainageFormatter.format(rec.locationM)
+            val row = TextView(this).apply {
+                text = "%-14s %5s %5s %8s".format(
+                    place,
+                    arrivalWallFormat.format(Date(rec.arrivalTime)),
+                    arrivalWallFormat.format(Date(rec.departureTime)),
+                    formatDuration(rec.durationMs)
+                )
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 11f
+                typeface = android.graphics.Typeface.MONOSPACE
+            }
+            historyRowsContainer.addView(row)
+        }
     }
 
     private fun updateDirectionUi() {

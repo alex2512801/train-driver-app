@@ -98,6 +98,36 @@
 
         </LinearLayout>
 
+        <!-- История остановок (ТЗ раздел 10) — отдельная компактная полупрозрачная панель,
+             справа, тоже поверх графика. Каждая остановка — одна строка: место | приб | отпр |
+             время стоянки. Не модалка — та же логика, что у arrivalWindow выше. -->
+        <LinearLayout
+            android:id="@+id/stopHistoryPanel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:orientation="vertical"
+            android:background="#CC1A1A1A"
+            android:padding="6dp"
+            android:visibility="gone">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="4dp"
+                android:text="История остановок"
+                android:textAllCaps="true"
+                android:textColor="#999999"
+                android:textSize="10sp" />
+
+            <LinearLayout
+                android:id="@+id/stopHistoryRows"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+        </LinearLayout>
+
     </FrameLayout>
 
     <TextView
@@ -142,6 +172,13 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
             android:text="Стоянка ⏱" />
+
+        <Button
+            android:id="@+id/historyToggleButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="История" />
 
     </LinearLayout>
 
