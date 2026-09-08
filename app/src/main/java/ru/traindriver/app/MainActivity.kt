@@ -39,6 +39,8 @@ import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
 import ru.traindriver.app.route.SpeedLimitAssetLoader
 import ru.traindriver.app.route.SpeedLimitResolver
+import ru.traindriver.app.route.StationAnnouncement
+import ru.traindriver.app.route.StationAnnouncementAssetLoader
 import ru.traindriver.app.route.TrainComposition
 import ru.traindriver.app.route.TrainParams
 import ru.traindriver.app.route.TrainParamsStore
@@ -78,16 +80,19 @@ class MainActivity : AppCompatActivity() {
     private val speedLimits by lazy { SpeedLimitAssetLoader.loadSpeedLimits(this) }
     private val speedLimitResolver by lazy { SpeedLimitResolver(speedLimits) }
 
-    // Голосовые оповещения (ТЗ раздел 6). Из всего списка координаты впереди по маршруту пока
-    // есть только у пробы тормозов (brake_tests.json, шаг 5) — остальные фразы (переезд, КТСМ,
-    // станция, обрывное место, временное ограничение) уже записаны и лежат в res/raw, но
-    // сыграть их пока НЕЧЕМ: ни для одной из них нет координат в присланных данных (см.
-    // README) — это отдельная, ещё не решённая задача. brakeTestScheduler пересобирается при
-    // каждой смене направления (см. updateDirectionUi) — какие именно точки "впереди" зависит
-    // от effectiveDataset.
+    // Голосовые оповещения (ТЗ раздел 6). Координаты впереди по маршруту пока есть только для
+    // пробы тормозов (brake_tests.json, шаг 5) и предвходного станции (station_announcements.json,
+    // выведено из track_signals.json/track_stations.json — шаг 21). Переезд/КТСМ/обрывное
+    // место/временное ограничение — фразы записаны и лежат в res/raw, но сыграть их пока
+    // НЕЧЕМ: ни для одной из них нет координат ни в одном источнике (см. README). Оба
+    // планировщика пересобираются при смене направления/пути (см. updateDirectionUi) — какие
+    // именно точки "впереди" зависит от effectiveDataset.
     private val voiceAnnouncer by lazy { VoiceAnnouncer(this) }
     private val brakeTests by lazy { BrakeTestAssetLoader.loadBrakeTests(this) }
     private var brakeTestScheduler = PointAnnouncementScheduler<BrakeTest>(emptyList(), { it.chainageM }, thresholdM = 2000.0)
+    private val stationAnnouncements by lazy { StationAnnouncementAssetLoader.loadStationAnnouncements(this) }
+    private var stationScheduler =
+        PointAnnouncementScheduler<StationAnnouncement>(emptyList(), { it.chainageM }, thresholdM = 1500.0)
 
     // "Параметры" (ТЗ раздел 5 / раздел 12.2) — пока диалог поверх главного экрана (кнопка
     // paramsButton, см. showTrainParamsDialog), не отдельный подэкран меню, самого меню в
@@ -186,11 +191,14 @@ class MainActivity : AppCompatActivity() {
         trackProfileView.setDirection(s.effectiveDataset)
 
         // Смена направления/пути меняет, какой датасет действует (effectiveDataset) — значит
-        // и какие именно точки пробы тормозов вообще относятся к пути впереди. Пересобираем
-        // планировщик с нуля (а не просто фильтруем на лету) — иначе точки, уже объявленные
+        // и какие именно точки впереди по пути вообще относятся к делу. Пересобираем оба
+        // планировщика с нуля (а не просто фильтруем на лету) — иначе точки, уже объявленные
         // при старом направлении, ошибочно считались бы объявленными и при новом.
         val relevantBrakeTests = brakeTests.filter { it.direction == s.effectiveDataset }
         brakeTestScheduler = PointAnnouncementScheduler(relevantBrakeTests, { it.chainageM }, thresholdM = 2000.0)
+
+        val relevantStations = stationAnnouncements.filter { it.direction == s.effectiveDataset }
+        stationScheduler = PointAnnouncementScheduler(relevantStations, { it.chainageM }, thresholdM = 1500.0)
     }
 
     // "Параметры" (ТЗ раздел 5): серия локомотива -> вес/длина автоматически по таблице
@@ -308,6 +316,10 @@ class MainActivity : AppCompatActivity() {
             val brakeTest = brakeTestScheduler.update(chainageM, directionSelection.picketsGrowing)
             if (brakeTest != null) {
                 voiceAnnouncer.play(if (brakeTest.doubleTrain) Announcement.BRAKE_TEST_DOUBLE else Announcement.BRAKE_TEST)
+            }
+
+            if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
+                voiceAnnouncer.play(Announcement.STATION)
             }
         }
     }
