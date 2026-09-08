@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""
+Извлекает литеры и км+пк-положения светофоров из графических профилей пути —
+4 PDF-документа, присланных машинистом: "Хилок-Крм.pdf", "Крм-Хилок.pdf",
+"Крм-Чернышевск.pdf", "Чернышевск-Крм.pdf" (в репозиторий не кладём — большие
+файлы; положи их рядом со скриптом или передай путь к папке первым
+аргументом). См. ТЗ раздел 1 ("Реальный профиль пути (высоты, сигналы,
+пикеты) в PDF") и раздел 4 (грамматика литер светофоров).
+
+До этого шага km+пк светофоров не было НИГДЕ в присланных данных — ни в
+режимных картах, ни в файлах жёлтых сигналов (см. `parse_yellow_signals.py`,
+раздел "не хватает привязки сигналов к км+пк" в README, шаг 4). Единственное
+место, где сигнал нарисован рядом с km+пк-линейкой — это как раз эти профили.
+
+Как это устроено в исходном PDF (на каждой странице — полоса ~14-15 км пути):
+  - жирный "километровый" ряд (чёрные плашки с 4-значным км),
+  - над и под ним — мелкие цифры 1..10 (номер пикета внутри км, пикет = 100 м),
+  - иконки светофоров (текст-литера рядом с иконкой) выше линии рельефа,
+  - красная зубчатая строка под км-рядом — значения уклона (здесь не используется).
+
+Метод: по x-координате жирных км-плашек строится сетка "км", по x-координате
+мелких цифр 1..10 рядом с этой же строкой — сетка "пикет". Для каждого
+текста-кандидата на литеру светофора (см. SIG_PATTERN) берётся его x-центр и
+находится ближайший пикет в этой сетке — это и даёт км+пк светофора.
+Проверено вручную по картинке на первой странице "Хилок-Крм.pdf": все 15
+найденных светофоров совпали и по литере, и по км+пк (отклонение x-центра
+текста от центра пикета — не больше 1.1pt, то есть текст в исходнике рисуется
+строго по центру своего пикета, привязка не приблизительная).
+
+Литеры светофоров (грамматика ТЗ раздел 4): Ч/Н — входной; ЧА — вход. Чита-2
+(особый случай); ЧМ2А и т.п. — маршрутный; Ч7 и т.п. — выходной; голые числа —
+автоблокировка (т.NN у машиниста); ЧД/НД — предвходной на неправильном пути.
+В самих PDF грамматика чуть шире задокументированной в ТЗ (встречаются ЧС,
+Ч2-4, Н3з, НН — не описаны в ТЗ явно, но по контексту это тоже настоящие
+литеры), поэтому SIG_PATTERN широкий (буква Ч/Н + до 5 букв/цифр/дефис), а не
+точное перечисление форм.
+
+Каждому найденному светофору проставлено direction — "чётное"/"нечётное" по
+тому же соглашению, что уже используется в макете (Хилок→Карымская и
+Карымская→Чернышевск — чётное; обратно — нечётное) — соответствует имени
+исходного PDF-файла.
+
+НЕ РЕШЕНО ЭТИМ СКРИПТОМ (важно):
+  - "НТ" — это не светофор, а отметка "опробование тормозов" (красная
+    пунктирная линия с подписью вида "40/1000"), исключена явно по тексту.
+  - На некоторых станционных страницах одна и та же литера/км+пк встречается
+    дважды — один раз в синем кружке (обычный режим), второй раз в красном
+    кружке с подписью "средний" под ним (видимо, вариант для среднего
+    тормозного коэффициента). Это НЕ второй физический светофор — дубли по
+    (name, km, pk) схлопываются в один, но что именно означает "средний"-
+    вариант и не нужно ли его всё же хранить отдельно — открытый вопрос.
+  - Оба документа одного перегона (например Хилок-Крм.pdf и Крм-Хилок.pdf)
+    рисуют один и тот же участок пути с двух концов, поэтому должны бы
+    показывать одни и те же физические светофоры — но по факту совпадает
+    только ~83% записей (остальное — либо расхождение на 1 пикет при
+    типографской привязке в самом исходнике, либо реально разные литеры,
+    относящиеся к разным путям/направлениям в одной точке). Файлы НЕ сведены
+    в одну "истину" — оба сохранены в выходном JSON как есть, с полем
+    `source`, чтобы не потерять и не исказить данные додумыванием.
+  - Уклон (зубчатая красная строка) и профиль высоты (чёрная волнистая линия)
+    не извлекаются вообще — только текст, координатной привязки к линии
+    рельефа этот подход не даёт. Отдельная, более сложная задача на будущее.
+  - Сопоставление этих сигналов с записями в `yellow_signal_warnings.json`
+    (по литере "От"/"До") — тоже отдельный, ещё не сделанный шаг.
+"""
+import re
+import json
+import sys
+import bisect
+
+import fitz
+
+SIG_PATTERN = re.compile(r'^[ЧН][A-Za-zА-Яа-я0-9-]{0,5}$|^\d{1,2}$')
+NON_SIGNAL_EXACT = {'НТ'}
+
+# (имя файла, направление, сегмент)
+SOURCE_FILES = [
+    ("Хилок-Крм.pdf", "чётное", "Хилок — Карымская"),
+    ("Крм-Хилок.pdf", "нечётное", "Хилок — Карымская"),
+    ("Крм-Чернышевск.pdf", "чётное", "Карымская — Чернышевск-Забайкальский"),
+    ("Чернышевск-Крм.pdf", "нечётное", "Карымская — Чернышевск-Забайкальский"),
+]
+
+
+def extract_signals_from_page(page):
+    words = page.get_text('words')
+
+    km_words = []
+    for w in words:
+        x0, y0, x1, y1, text = w[:5]
+        if re.fullmatch(r'\d{4}', text) and (y1 - y0) > 18:
+            km_words.append((x0, y0, x1, y1, int(text)))
+    km_words.sort(key=lambda w: w[0])
+    if not km_words:
+        return []
+    km_row_y0 = km_words[0][1]
+
+    picket_words = []
+    for w in words:
+        x0, y0, x1, y1, text = w[:5]
+        t = text.strip()
+        if re.fullmatch(r'\d{1,2}', t) and (y1 - y0) < 12:
+            val = int(t)
+            if 1 <= val <= 10 and abs(y0 - km_row_y0) < 20:
+                picket_words.append(((x0 + x1) / 2, val))
+
+    def find_km_for_x(x):
+        for i in range(len(km_words)):
+            left = km_words[i][0]
+            right = km_words[i + 1][0] if i + 1 < len(km_words) else float('inf')
+            if left - 3 <= x < right - 3:
+                return km_words[i][4]
+        return None
+
+    picket_map = []
+    for xc, pk in picket_words:
+        km = find_km_for_x(xc)
+        if km is not None:
+            picket_map.append((xc, km, pk))
+    picket_map.sort()
+
+    if len(picket_map) < 5:
+        return []
+
+    signals = []
+    for w in words:
+        x0, y0, x1, y1, text = w[:5]
+        t = text.strip()
+        if (y1 - y0) >= 20:
+            continue
+        if y0 >= km_row_y0 - 20:
+            continue
+        if t in NON_SIGNAL_EXACT:
+            continue
+        if not SIG_PATTERN.fullmatch(t):
+            continue
+        if re.fullmatch(r'\d{1,2}', t) and int(t) > 21:
+            continue
+        xc = (x0 + x1) / 2
+        signals.append((xc, y0, t))
+
+    xs = [p[0] for p in picket_map]
+    results = []
+    for xc, y0, name in signals:
+        idx = bisect.bisect_left(xs, xc)
+        candidates = []
+        if idx > 0:
+            candidates.append(picket_map[idx - 1])
+        if idx < len(picket_map):
+            candidates.append(picket_map[idx])
+        best = min(candidates, key=lambda p: abs(p[0] - xc))
+        results.append({'name': name, 'km': best[1], 'pk': best[2],
+                         'off': round(abs(best[0] - xc), 1)})
+
+    # Схлопнуть дубли той же литеры на том же пикете (см. докстринг модуля).
+    dedup = {}
+    for r in results:
+        key = (r['name'], r['km'], r['pk'])
+        if key not in dedup or r['off'] < dedup[key]['off']:
+            dedup[key] = r
+    return sorted(dedup.values(), key=lambda r: (r['km'], r['pk']))
+
+
+def extract_signals_from_pdf(path):
+    doc = fitz.open(path)
+    all_results = []
+    for page in doc:
+        all_results.extend(extract_signals_from_page(page))
+    # Финальный дедуп по всему документу (на случай дубля на стыке страниц).
+    dedup = {}
+    for r in all_results:
+        key = (r['name'], r['km'], r['pk'])
+        if key not in dedup or r['off'] < dedup[key]['off']:
+            dedup[key] = r
+    return sorted(dedup.values(), key=lambda r: (r['km'], r['pk']))
+
+
+def main():
+    src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
+    out_path = sys.argv[2] if len(sys.argv) > 2 else "track_signals.json"
+
+    all_entries = []
+    for fname, direction, segment in SOURCE_FILES:
+        results = extract_signals_from_pdf(f"{src_dir}/{fname}")
+        print(f"{fname}: {len(results)} signals")
+        for r in results:
+            all_entries.append({
+                "segment": segment,
+                "direction": direction,
+                "source": fname,
+                "name": r["name"],
+                "km": r["km"],
+                "pk": r["pk"],
+            })
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(all_entries, f, ensure_ascii=False, separators=(",", ":"))
+
+    print(f"\nTotal: {len(all_entries)} entries")
+    print(f"Wrote {out_path}")
+
+
+if __name__ == "__main__":
+    main()
