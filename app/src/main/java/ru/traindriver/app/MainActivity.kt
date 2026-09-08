@@ -24,12 +24,17 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
+import ru.traindriver.app.audio.Announcement
+import ru.traindriver.app.audio.VoiceAnnouncer
 import ru.traindriver.app.location.GpsLocationProvider
+import ru.traindriver.app.route.BrakeTest
+import ru.traindriver.app.route.BrakeTestAssetLoader
 import ru.traindriver.app.route.ChainageFormatter
 import ru.traindriver.app.route.Direction
 import ru.traindriver.app.route.DirectionSelection
 import ru.traindriver.app.route.LocomotiveTable
 import ru.traindriver.app.route.PathStatus
+import ru.traindriver.app.route.PointAnnouncementScheduler
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
 import ru.traindriver.app.route.SpeedLimitAssetLoader
@@ -72,6 +77,17 @@ class MainActivity : AppCompatActivity() {
 
     private val speedLimits by lazy { SpeedLimitAssetLoader.loadSpeedLimits(this) }
     private val speedLimitResolver by lazy { SpeedLimitResolver(speedLimits) }
+
+    // Голосовые оповещения (ТЗ раздел 6). Из всего списка координаты впереди по маршруту пока
+    // есть только у пробы тормозов (brake_tests.json, шаг 5) — остальные фразы (переезд, КТСМ,
+    // станция, обрывное место, временное ограничение) уже записаны и лежат в res/raw, но
+    // сыграть их пока НЕЧЕМ: ни для одной из них нет координат в присланных данных (см.
+    // README) — это отдельная, ещё не решённая задача. brakeTestScheduler пересобирается при
+    // каждой смене направления (см. updateDirectionUi) — какие именно точки "впереди" зависит
+    // от effectiveDataset.
+    private val voiceAnnouncer by lazy { VoiceAnnouncer(this) }
+    private val brakeTests by lazy { BrakeTestAssetLoader.loadBrakeTests(this) }
+    private var brakeTestScheduler = PointAnnouncementScheduler<BrakeTest>(emptyList(), { it.chainageM }, thresholdM = 2000.0)
 
     // "Параметры" (ТЗ раздел 5 / раздел 12.2) — пока диалог поверх главного экрана (кнопка
     // paramsButton, см. showTrainParamsDialog), не отдельный подэкран меню, самого меню в
@@ -152,6 +168,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         gpsLocationProvider.stop()
         timeHandler.removeCallbacks(timeUpdater)
+        voiceAnnouncer.release()
         super.onDestroy()
     }
 
@@ -167,6 +184,13 @@ class MainActivity : AppCompatActivity() {
             "Путь $statusText, датасет: $datasetText, пикеты $picketsText"
 
         trackProfileView.setDirection(s.effectiveDataset)
+
+        // Смена направления/пути меняет, какой датасет действует (effectiveDataset) — значит
+        // и какие именно точки пробы тормозов вообще относятся к пути впереди. Пересобираем
+        // планировщик с нуля (а не просто фильтруем на лету) — иначе точки, уже объявленные
+        // при старом направлении, ошибочно считались бы объявленными и при новом.
+        val relevantBrakeTests = brakeTests.filter { it.direction == s.effectiveDataset }
+        brakeTestScheduler = PointAnnouncementScheduler(relevantBrakeTests, { it.chainageM }, thresholdM = 2000.0)
     }
 
     // "Параметры" (ТЗ раздел 5): серия локомотива -> вес/длина автоматически по таблице
@@ -280,6 +304,11 @@ class MainActivity : AppCompatActivity() {
             coordinateText.text = formatCoordinate(chainageM)
             trackProfileView.setTrainPositionM(chainageM)
             statusBarText.text = buildStatusBarText(location, chainageM)
+
+            val brakeTest = brakeTestScheduler.update(chainageM, directionSelection.picketsGrowing)
+            if (brakeTest != null) {
+                voiceAnnouncer.play(if (brakeTest.doubleTrain) Announcement.BRAKE_TEST_DOUBLE else Announcement.BRAKE_TEST)
+            }
         }
     }
 
