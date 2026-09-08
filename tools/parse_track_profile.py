@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """
-Извлекает литеры и км+пк-положения светофоров из графических профилей пути —
-4 PDF-документа, присланных машинистом: "Хилок-Крм.pdf", "Крм-Хилок.pdf",
-"Крм-Чернышевск.pdf", "Чернышевск-Крм.pdf" (в репозиторий не кладём — большие
-файлы; положи их рядом со скриптом или передай путь к папке первым
-аргументом). См. ТЗ раздел 1 ("Реальный профиль пути (высоты, сигналы,
-пикеты) в PDF") и раздел 4 (грамматика литер светофоров).
+Извлекает литеры и км+пк-положения светофоров, А ТАКЖЕ названия и км+пк станций из
+графических профилей пути — 4 PDF-документа, присланных машинистом: "Хилок-Крм.pdf",
+"Крм-Хилок.pdf", "Крм-Чернышевск.pdf", "Чернышевск-Крм.pdf" (в репозиторий не кладём —
+большие файлы; положи их рядом со скриптом или передай путь к папке первым аргументом).
+См. ТЗ раздел 1 ("Реальный профиль пути (высоты, сигналы, пикеты) в PDF") и раздел 4
+(грамматика литер светофоров).
+
+Названия станций нужны отдельно от сигналов — привязка сигнала к станции (см.
+`match_yellow_signals.py`) для голых литер "Ч"/"Н" (входной светофор — они одинаково
+называются на КАЖДОЙ станции, поэтому по одной литере не определить, к какой станции
+относится конкретная запись без знания её приблизительного км).
 
 До этого шага km+пк светофоров не было НИГДЕ в присланных данных — ни в
 режимных картах, ни в файлах жёлтых сигналов (см. `parse_yellow_signals.py`,
@@ -64,14 +69,19 @@
 как есть (`source`/`direction` у каждой записи) — это не два конфликтующих
 варианта одной истины, а взаимно дополняющие наборы данных.
 
+Названия станций (extract_stations_from_page/pdf) находятся тем же способом, что и
+сигналы (та же сетка км+пикет из build_picket_map), но по другому текстовому признаку:
+название станции набрано тем же жирным шрифтом и той же высотой (~21.6pt), что и сами
+км-плашки, только буквами (STATION_PATTERN), а не цифрами — и специально исключено из
+сигналов диапазоном высоты (сигналы: <20pt, станции: 18-25pt, крупнее — уже другие
+надписи вроде "Остановка"/"Опробование [тормозов]", 35-46pt, тоже отсечены).
+
 НЕ РЕШЕНО ЭТИМ СКРИПТОМ (важно):
   - "НТ" — это не светофор, а отметка "опробование тормозов" (красная
     пунктирная линия с подписью вида "40/1000"), исключена явно по тексту.
   - Уклон (зубчатая красная строка) и профиль высоты (чёрная волнистая линия)
     не извлекаются вообще — только текст, координатной привязки к линии
     рельефа этот подход не даёт. Отдельная, более сложная задача на будущее.
-  - Сопоставление этих сигналов с записями в `yellow_signal_warnings.json`
-    (по литере "От"/"До") — тоже отдельный, ещё не сделанный шаг.
   - Средний путь встречается только на одной странице в каждом из двух
     документов Хилок-Крм/Крм-Хилок (перегон Тургутуй — Яблоновая) — если он
     также есть где-то на участке Карымская — Чернышевск-Забайкальский под
@@ -79,6 +89,10 @@
     (детектор "средний" привязан только к тексту подписи, не к станции, так
     что он сработает где угодно — но стоит перепроверить визуально, если
     появятся новые PDF с похожей структурой).
+  - У Карымской и Чернышевска-Забайкальского несколько подписей "Парк"/"Шилка"
+    на разных х-позициях (станционные парки/подъезды) — сохранены как отдельные
+    станции с тем же именем "Парк" на разном км; расшифровка, какой это парк,
+    не сделана (в графике это не подписано отдельным текстом).
 """
 import re
 import json
@@ -99,9 +113,9 @@ SOURCE_FILES = [
 ]
 
 
-def extract_signals_from_page(page):
-    words = page.get_text('words')
-
+def build_picket_map(words):
+    """Строит (км-плашки, y их строки, отсортированный [(x_центр, км, пк)]) — общая
+    геометрия и для сигналов, и для названий станций (см. extract_stations_from_page)."""
     km_words = []
     for w in words:
         x0, y0, x1, y1, text = w[:5]
@@ -109,7 +123,7 @@ def extract_signals_from_page(page):
             km_words.append((x0, y0, x1, y1, int(text)))
     km_words.sort(key=lambda w: w[0])
     if not km_words:
-        return []
+        return [], None, []
     km_row_y0 = km_words[0][1]
 
     picket_words = []
@@ -135,6 +149,76 @@ def extract_signals_from_page(page):
         if km is not None:
             picket_map.append((xc, km, pk))
     picket_map.sort()
+
+    return km_words, km_row_y0, picket_map
+
+
+def nearest_picket(picket_map, xc):
+    xs = [p[0] for p in picket_map]
+    idx = bisect.bisect_left(xs, xc)
+    candidates = []
+    if idx > 0:
+        candidates.append(picket_map[idx - 1])
+    if idx < len(picket_map):
+        candidates.append(picket_map[idx])
+    best = min(candidates, key=lambda p: abs(p[0] - xc))
+    return best, round(abs(best[0] - xc), 1)
+
+
+# Название станции — тем же жирным шрифтом и той же высоты (~21.6pt), что и км-плашки,
+# но буквами, не цифрами. Отдельно от сигналов: сигналы фильтруются высотой < 20pt именно
+# чтобы НЕ подхватывать названия станций — так что здесь диапазон высот другой (18-25pt),
+# а не "то, что осталось". Диапазон верхней границы (25pt) отсекает более крупные надписи
+# вроде "Остановка"/"Опробование" (тормозов) — те высотой 35-46pt, это другая подпись, не
+# название станции.
+STATION_PATTERN = re.compile(r'^[А-ЯЁ][а-яёА-ЯЁ-]{2,}$')
+
+
+def extract_stations_from_page(page):
+    words = page.get_text('words')
+    km_words, km_row_y0, picket_map = build_picket_map(words)
+    if km_row_y0 is None or len(picket_map) < 5:
+        return []
+
+    stations = []
+    for w in words:
+        x0, y0, x1, y1, text = w[:5]
+        t = text.strip()
+        h = y1 - y0
+        if not (18 <= h <= 25):
+            continue
+        if not STATION_PATTERN.fullmatch(t):
+            continue
+        xc = (x0 + x1) / 2
+        best, off = nearest_picket(picket_map, xc)
+        stations.append({'name': t, 'km': best[1], 'pk': best[2], 'off': off})
+
+    dedup = {}
+    for r in stations:
+        key = (r['name'], r['km'], r['pk'])
+        if key not in dedup or r['off'] < dedup[key]['off']:
+            dedup[key] = r
+    return sorted(dedup.values(), key=lambda r: (r['km'], r['pk']))
+
+
+def extract_stations_from_pdf(path):
+    doc = fitz.open(path)
+    all_results = []
+    for page in doc:
+        all_results.extend(extract_stations_from_page(page))
+    dedup = {}
+    for r in all_results:
+        key = (r['name'], r['km'], r['pk'])
+        if key not in dedup or r['off'] < dedup[key]['off']:
+            dedup[key] = r
+    return sorted(dedup.values(), key=lambda r: (r['km'], r['pk']))
+
+
+def extract_signals_from_page(page):
+    words = page.get_text('words')
+    km_words, km_row_y0, picket_map = build_picket_map(words)
+    if km_row_y0 is None:
+        return []
 
     if len(picket_map) < 5:
         return []
@@ -169,18 +253,10 @@ def extract_signals_from_page(page):
         track = 'средний' if is_average_track(xc, y1) else None
         signals.append((xc, y0, t, track))
 
-    xs = [p[0] for p in picket_map]
     results = []
     for xc, y0, name, track in signals:
-        idx = bisect.bisect_left(xs, xc)
-        candidates = []
-        if idx > 0:
-            candidates.append(picket_map[idx - 1])
-        if idx < len(picket_map):
-            candidates.append(picket_map[idx])
-        best = min(candidates, key=lambda p: abs(p[0] - xc))
-        results.append({'name': name, 'km': best[1], 'pk': best[2], 'track': track,
-                         'off': round(abs(best[0] - xc), 1)})
+        best, off = nearest_picket(picket_map, xc)
+        results.append({'name': name, 'km': best[1], 'pk': best[2], 'track': track, 'off': off})
 
     # Схлопнуть дубли той же литеры на том же пикете и пути (см. докстринг
     # модуля — но НЕ схлопывать разные пути между собой, см. "средний").
@@ -208,14 +284,17 @@ def extract_signals_from_pdf(path):
 
 def main():
     src_dir = sys.argv[1] if len(sys.argv) > 1 else "."
-    out_path = sys.argv[2] if len(sys.argv) > 2 else "track_signals.json"
+    signals_out = sys.argv[2] if len(sys.argv) > 2 else "track_signals.json"
+    stations_out = sys.argv[3] if len(sys.argv) > 3 else "track_stations.json"
 
-    all_entries = []
+    all_signals = []
+    all_stations = []
     for fname, direction, segment in SOURCE_FILES:
         results = extract_signals_from_pdf(f"{src_dir}/{fname}")
-        print(f"{fname}: {len(results)} signals")
+        stations = extract_stations_from_pdf(f"{src_dir}/{fname}")
+        print(f"{fname}: {len(results)} signals, {len(stations)} stations")
         for r in results:
-            all_entries.append({
+            all_signals.append({
                 "segment": segment,
                 "direction": direction,
                 "source": fname,
@@ -224,12 +303,23 @@ def main():
                 "pk": r["pk"],
                 "track": r["track"],
             })
+        for s in stations:
+            all_stations.append({
+                "segment": segment,
+                "direction": direction,
+                "source": fname,
+                "name": s["name"],
+                "km": s["km"],
+                "pk": s["pk"],
+            })
 
-    with open(out_path, "w", encoding="utf-8") as f:
-        json.dump(all_entries, f, ensure_ascii=False, separators=(",", ":"))
+    with open(signals_out, "w", encoding="utf-8") as f:
+        json.dump(all_signals, f, ensure_ascii=False, separators=(",", ":"))
+    with open(stations_out, "w", encoding="utf-8") as f:
+        json.dump(all_stations, f, ensure_ascii=False, separators=(",", ":"))
 
-    print(f"\nTotal: {len(all_entries)} entries")
-    print(f"Wrote {out_path}")
+    print(f"\nTotal: {len(all_signals)} signals, {len(all_stations)} stations")
+    print(f"Wrote {signals_out}, {stations_out}")
 
 
 if __name__ == "__main__":
