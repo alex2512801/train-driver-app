@@ -23,15 +23,28 @@
 попавшийся "2"/"1" на самом деле принадлежал совсем другой станции, за 10+ км). Вместо этого
 здесь объявляем за 3000 м до самого ВХОДНОГО сигнала станции (Ч/Н, обычный путь, не Ч/НД).
 
-НЕ РЕШЕНО (честно, по каждой станции своя причина — не натягивал совпадение силой):
+КАРЫМСКАЯ (KARYMSKAYA_ARRIVALS) — машинист объяснил: физически это одна станция, но состоит
+из двух "парков" — Парк Д с одной стороны (со стороны Хилка) и Парк Г с другой (со стороны
+Чернышевска). "Карымская" как отдельная точка не объявляется вообще — объявление идёт перед
+ОДНИМ из парков, тем, через который прибываешь: т.2 перед Парком Д (чётное, Хилок-Крм.pdf) и
+т.1 перед Парком Г (нечётное, Чернышевск-Крм.pdf). Два других направление×сегмент для
+Карымской (нечётное Крм-Хилок.pdf, чётное Крм-Чернышевск.pdf) — это ОТПРАВЛЕНИЕ от Карымской
+(документ начинается прямо на ней), там объявлять нечего, как и с Хилоком.
+`track_stations.json` даёт для каждого из двух прибывающих направлений ДВЕ строки "Парк" —
+это оба парка, случайно попавшие на одну и ту же страницу профиля (без буквы Д/Г, извлечение
+их не различает); по объяснению машиниста берётся только ближняя (та, что встречается первой
+по ходу движения) — она и есть парк со стороны прибытия, вторая просто отбрасывается, чтобы
+не объявлять дважды.
+
+НЕ РЕШЕНО (честно, по каждой причина своя — не натягивал совпадение силой):
   - Хилок (чётное, начало маршрута документа) — перед ней самой на этой странице ничего нет,
     т.2 просто не существует в покрытии Хилок-Крм.pdf (начинается прямо с Хилока).
-  - Карымская/"Парк" (везде, оба направления, оба сегмента) и Шилка (частично) — крупные
-    станции со сложными горловинами (та же причина, что в README шаг 14 для
-    match_yellow_signals.py: маршрутные светофоры горловины не всегда попадают в разбор
-    линейного профиля) — этот случай ждёт координат от машиниста отдельно, вместе с К1.
-Итог — 76 станций из 85 (89%, было 74 до ENTRANCE_OVERRIDES), остальные не резолвятся,
-оставлены без записи (не подставлено наугад).
+  - Шилка (частично, 1 из 6 строк) — та же причина, что и раньше у Карымской (сложная
+    горловина), но лишь один случай, не разбирался отдельно.
+Итог — 73 объявления из 85 строк track_stations.json (86%; знаменатель включает дублирующиеся
+строки "Парк"/"Карымская", каждая из которых теперь даёт максимум одно объявление на весь
+комплекс вместо нескольких — см. KARYMSKAYA_ARRIVALS), остальные не резолвятся, оставлены без
+записи (не подставлено наугад).
 """
 import json
 import sys
@@ -46,26 +59,42 @@ ENTRANCE_OVERRIDES = {
     ('Яблоновая', 'нечётное', 'Крм-Хилок.pdf'): ('Н', 3000),
 }
 
+# Имена, которые относятся к комплексу "Карымская" (сама станция + оба парка) — исключаются
+# из обычного цикла по track_stations.json целиком и обрабатываются отдельно, см. ниже.
+KARYMSKAYA_NAMES = {'Карымская', 'Парк'}
+
+# (direction, source) прибытия -> ближний парк ищем по этому источнику имени (та строка "Парк",
+# что встречается ПЕРВОЙ по ходу движения: наименьший км для чётного, наибольший для нечётного
+# — см. docstring выше), а т.2/т.1 — обычным способом от найденной точки парка.
+KARYMSKAYA_ARRIVALS = {
+    ('чётное', 'Хилок-Крм.pdf'): {'pick': 'min', 'predvhodnoy_name': '2'},
+    ('нечётное', 'Чернышевск-Крм.pdf'): {'pick': 'max', 'predvhodnoy_name': '1'},
+}
+
 
 def chainage(km, pk):
     return km * 1000 + (pk - 1) * 100
 
 
-def resolve_override(station, signals, entrance_name, threshold_m):
-    candidates = [
-        s for s in signals
-        if s['direction'] == station['direction']
-        and s['source'] == station['source']
-        and s['name'] == entrance_name
-    ]
+def find_nearest_named(direction, source, target_chainage, name, signals, tolerance_m):
+    candidates = [s for s in signals if s['direction'] == direction and s['source'] == source and s['name'] == name]
     if not candidates:
-        return None, 'override_not_found'
+        return None, 'not_found'
+    best = min(candidates, key=lambda s: abs(chainage(s['km'], s['pk']) - target_chainage))
+    dist = abs(chainage(best['km'], best['pk']) - target_chainage)
+    if dist > tolerance_m:
+        return None, 'too_far'
+    return best, None
 
+
+def resolve_override(station, signals, entrance_name, threshold_m):
     station_chainage = chainage(station['km'], station['pk'])
-    best = min(candidates, key=lambda s: abs(chainage(s['km'], s['pk']) - station_chainage))
-    dist = abs(chainage(best['km'], best['pk']) - station_chainage)
-    if dist > ENTRANCE_OVERRIDE_TOLERANCE_M:
-        return None, 'override_too_far'
+    best, reason = find_nearest_named(
+        station['direction'], station['source'], station_chainage, entrance_name, signals,
+        ENTRANCE_OVERRIDE_TOLERANCE_M
+    )
+    if best is None:
+        return None, f'override_{reason}'
 
     return {
         'station': station['name'],
@@ -76,6 +105,42 @@ def resolve_override(station, signals, entrance_name, threshold_m):
         'predvhodnoy_pk': best['pk'],
         'threshold_m': threshold_m,
     }, None
+
+
+def resolve_karymskaya_arrivals(stations, signals):
+    """Строит записи для двух парков Карымской (см. docstring модуля, KARYMSKAYA_ARRIVALS)."""
+    results = []
+    skipped = []
+    for (direction, source), cfg in KARYMSKAYA_ARRIVALS.items():
+        park_rows = [
+            s for s in stations
+            if s['name'] == 'Парк' and s['direction'] == direction and s['source'] == source
+        ]
+        if not park_rows:
+            skipped.append(({'name': 'Карымская', 'direction': direction, 'source': source}, 'park_not_found'))
+            continue
+
+        picker = min if cfg['pick'] == 'min' else max
+        park = picker(park_rows, key=lambda s: chainage(s['km'], s['pk']))
+        park_chainage = chainage(park['km'], park['pk'])
+
+        best, reason = find_nearest_named(
+            direction, source, park_chainage, cfg['predvhodnoy_name'], signals, STATION_TOLERANCE_M
+        )
+        if best is None:
+            skipped.append((park, f'karymskaya_{reason}'))
+            continue
+
+        results.append({
+            'station': 'Карымская',
+            'segment': park['segment'],
+            'direction': direction,
+            'source': source,
+            'predvhodnoy_km': best['km'],
+            'predvhodnoy_pk': best['pk'],
+            'threshold_m': DEFAULT_THRESHOLD_M,
+        })
+    return results, skipped
 
 
 def main():
@@ -90,7 +155,15 @@ def main():
 
     results = []
     skipped = []
+
+    karymskaya_results, karymskaya_skipped = resolve_karymskaya_arrivals(stations, signals)
+    results.extend(karymskaya_results)
+    skipped.extend(karymskaya_skipped)
+
     for station in stations:
+        if station['name'] in KARYMSKAYA_NAMES:
+            continue  # обработано отдельно выше (resolve_karymskaya_arrivals)
+
         override_key = (station['name'], station['direction'], station['source'])
         if override_key in ENTRANCE_OVERRIDES:
             entrance_name, threshold_m = ENTRANCE_OVERRIDES[override_key]
