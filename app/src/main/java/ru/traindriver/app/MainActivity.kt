@@ -44,6 +44,7 @@ import ru.traindriver.app.route.Restriction
 import ru.traindriver.app.route.RestrictionField
 import ru.traindriver.app.route.RestrictionFormFields
 import ru.traindriver.app.route.RestrictionInputParser
+import ru.traindriver.app.route.RestrictionAwareSpeedResolver
 import ru.traindriver.app.route.RestrictionInputResult
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
@@ -565,13 +566,21 @@ class MainActivity : AppCompatActivity() {
     private fun buildStatusBarText(location: Location, chainageM: Double): String {
         val vf = if (location.hasSpeed()) "Vф=${(location.speed * 3.6).toInt()}" else "Vф=?"
 
-        val next = speedLimitResolver.findNextChange(
+        // V=/S= должны учитывать и постоянные ограничения (speedLimitResolver), и введённые
+        // машинистом временные (restrictions, ТЗ раздел 11) — иначе строка врала бы, если
+        // впереди временное ограничение ближе или строже постоянного. Список тот же самый,
+        // что уже отфильтрован по текущему пути для графика (refreshTrackProfileRestrictions).
+        val effectiveResolver = RestrictionAwareSpeedResolver(
+            speedLimitResolver,
+            restrictions.filter { it.path == null || it.path == directionSelection.physicalPath }
+        )
+        val next = effectiveResolver.findNextChange(
             direction = directionSelection.effectiveDataset,
             fromMeters = chainageM,
             forward = directionSelection.picketsGrowing
         )
         val nextText = if (next != null) {
-            "V=${next.speedLimit.speedKmh} S=${next.distanceM.toInt()}м"
+            "V=${next.speedKmh} S=${next.distanceM.toInt()}м"
         } else {
             "V=? S=?"
         }

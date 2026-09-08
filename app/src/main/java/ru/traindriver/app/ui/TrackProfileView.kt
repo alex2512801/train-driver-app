@@ -449,8 +449,12 @@ class TrackProfileView @JvmOverloads constructor(
     }
 
     private fun drawCurrentSpeedLabel(canvas: Canvas) {
-        val limit = resolver.speedAt(direction, trainPositionM)
-        val text = if (limit != null) "V=${limit.speedKmh} км/ч" else "V=?"
+        // Активное временное ограничение (ТЗ раздел 11) побеждает постоянное в своей точке —
+        // та же логика, что и в MainActivity.buildStatusBarText (RestrictionAwareSpeedResolver),
+        // здесь без отдельного класса: restrictions уже отфильтрованы по пути вызывающим кодом.
+        val activeRestriction = restrictions.firstOrNull { trainPositionM in it.startM..it.endM }
+        val speedKmh = activeRestriction?.speedKmh ?: resolver.speedAt(direction, trainPositionM)?.speedKmh
+        val text = if (speedKmh != null) "V=$speedKmh км/ч" else "V=?"
         canvas.drawText(text, AXIS_WIDTH_PX, 30f, speedTextPaint)
     }
 }
