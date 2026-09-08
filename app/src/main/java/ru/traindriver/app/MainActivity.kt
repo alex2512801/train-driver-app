@@ -94,10 +94,20 @@ class MainActivity : AppCompatActivity() {
 
     // "Ограничения" (ТЗ раздел 11) — временные ограничения скорости, введённые машинистом.
     // Живут только в памяти на время сессии (ни ТЗ, ни макет не говорят о сохранении между
-    // запусками — см. Restriction.kt). Пока не влияют на V= в статусной строке и не рисуются
-    // на графике штриховкой (в макете рисуются) — это отдельный, ещё не сделанный шаг
-    // (интеграция с TrackProfileView/SpeedLimitResolver, см. README).
+    // запусками — см. Restriction.kt). Рисуются на графике (штриховка + пиктограммы, ТЗ
+    // раздел 7/8 — см. TrackProfileView.setRestrictions), но пока не влияют на V= в статусной
+    // строке (speedLimitResolver учитывает только постоянные ограничения) — это отдельный,
+    // ещё не сделанный шаг.
     private val restrictions = mutableListOf<Restriction>()
+
+    // Ограничение с заданным путём показывается только на этом пути (ТЗ раздел 11: "число —
+    // по стандартному правилу чётный/нечётный"); path == null — на любом (это "правильный
+    // путь текущего направления", каким бы он ни был).
+    private fun refreshTrackProfileRestrictions() {
+        trackProfileView.setRestrictions(
+            restrictions.filter { it.path == null || it.path == directionSelection.physicalPath }
+        )
+    }
 
     // Направление/путь задаёт машинист вручную (ТЗ раздел 3) — по GPS это не определить.
     private var directionSelection = DirectionSelection(Direction.EVEN, 2)
@@ -326,6 +336,8 @@ class MainActivity : AppCompatActivity() {
 
         val relevantStations = stationAnnouncements.filter { it.direction == s.effectiveDataset }
         stationScheduler = PointAnnouncementScheduler(relevantStations, { it.chainageM }, thresholdM = 1500.0)
+
+        refreshTrackProfileRestrictions()
     }
 
     // "Параметры" (ТЗ раздел 5): серия локомотива -> вес/длина автоматически по таблице
@@ -456,6 +468,7 @@ class MainActivity : AppCompatActivity() {
                     setOnClickListener {
                         restrictions.remove(r)
                         refreshRestrictionsList()
+                        refreshTrackProfileRestrictions()
                     }
                 }
                 row.addView(info)
@@ -489,6 +502,7 @@ class MainActivity : AppCompatActivity() {
                     errorText.visibility = View.GONE
                     highlightRestrictionFields(emptySet(), fieldInputs)
                     refreshRestrictionsList()
+                    refreshTrackProfileRestrictions()
                 }
                 is RestrictionInputResult.Error -> {
                     errorText.text = result.message

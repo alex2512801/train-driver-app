@@ -8,22 +8,30 @@ import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 import kotlin.math.ceil
+import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.sin
 import ru.traindriver.app.route.Direction
+import ru.traindriver.app.route.Restriction
 import ru.traindriver.app.route.SpeedLimit
 import ru.traindriver.app.route.SpeedLimitResolver
 
 /**
  * Срез главного экрана (ТЗ раздел 7) — километровая/пикетная линейка и ступенчатый график
  * постоянных ограничений скорости, со шкалой скорости и числами на самих ступенях (сверено
- * с макетом из раздела 14 ТЗ — "Главный экран (ночной режим)").
+ * с макетом из раздела 14 ТЗ — "Главный экран (ночной режим)"), плюс штриховка и пиктограммы
+ * временных ограничений (ТЗ раздел 11, см. [setRestrictions]).
  *
  * Пока НЕ реализовано (сознательно, отдельными следующими шагами): линия сигналов и их
- * таблички, значки сигналов/станций, пиктограммы, профиль рельефа, штриховка временных
- * ограничений (нет данных о временных ограничениях — только постоянные), штриховка
+ * таблички, значки сигналов/станций, профиль рельефа, штриховка
  * "короткого участка повышенной скорости" (эффективная скорость уже считается —
  * ShortSegmentSpeedResolver, ТЗ раздел 9 — но зеркальная штриховка "\" на этом графике
  * пока не рисуется), день/ночь. Цвета — из ночной палитры ТЗ (раздел 7).
+ *
+ * Ряд пиктограмм ограничений (начало/конец опасного места, жёлтый/зелёный щит) по ТЗ должен
+ * сидеть на нижнем крае профиля рельефа — раз самого профиля в реальном экране ещё нет (см.
+ * выше), пиктограммы временно рисуются в зоне km-линейки, сразу под ступенями. Как только
+ * профиль появится — переставить туда (см. README).
  *
  * Полоска физической длины состава ([setTrainLengthM]) рисуется от головы (GPS-координата)
  * назад на реальную длину (TrainComposition.lengthM — условная длина × 14 м + локомотив,
@@ -46,6 +54,15 @@ class TrackProfileView @JvmOverloads constructor(
         private const val PICKET_LENGTH_M = 100.0
         private const val MIN_SEGMENT_PX_FOR_LABEL = 36f
         private val AXIS_SPEEDS = intArrayOf(100, 80, 60, 40, 20)
+
+        // Пиктограммы ограничений (ТЗ раздел 8/11).
+        private const val PICTOGRAM_SIZE_PX = 11f
+        private const val PICTOGRAM_ROW_OFFSET_PX = 16f
+        private const val PICTOGRAM_MIN_HATCH_WIDTH_PX = 4f
+
+        // "Жёлтый щит стоит на расстоянии ровно 1 км... перед знаком «начало опасного места»;
+        // зелёный щит — ровно 1 км после знака «конец опасного места»" (ТЗ раздел 8).
+        private const val SHIELD_OFFSET_M = 1000.0
     }
 
     private data class Segment(val startM: Double, val endM: Double, val speedKmh: Int)
@@ -54,6 +71,10 @@ class TrackProfileView @JvmOverloads constructor(
     private var resolver = SpeedLimitResolver(emptyList())
     private var direction: Direction = Direction.EVEN
     private var trainPositionM: Double = 0.0
+
+    // Временные ограничения (ТЗ раздел 11) — уже отфильтрованы вызывающим кодом по текущему
+    // пути (см. MainActivity.refreshTrackProfileRestrictions), здесь просто рисуются все.
+    private var restrictions: List<Restriction> = emptyList()
 
     // Физическая длина состава (TrainComposition.lengthM — условная длина в усл. вагонах ×
     // 14 м + длина локомотива, ТЗ раздел 5), а не произвольная константа для масштаба —
@@ -112,6 +133,46 @@ class TrackProfileView @JvmOverloads constructor(
         isAntiAlias = true
     }
 
+    // Штриховка временного ограничения (ТЗ раздел 7: "диагональной штриховкой поверх той же
+    // непрерывной ступени... У штриховки — тонкая видимая окантовка").
+    private val hatchLinePaint = Paint().apply {
+        color = Color.WHITE
+        strokeWidth = 1.5f
+        style = Paint.Style.STROKE
+        isAntiAlias = true
+    }
+    private val hatchBorderPaint = Paint().apply {
+        color = Color.WHITE
+        strokeWidth = 1f
+        style = Paint.Style.STROKE
+    }
+    private val restrictionNumberPaint = Paint().apply {
+        color = Color.WHITE
+        textSize = 24f
+        typeface = Typeface.DEFAULT_BOLD
+        textAlign = Paint.Align.CENTER
+        isAntiAlias = true
+    }
+
+    // Пиктограмма "опасное место" (ТЗ раздел 8): белый круг + чёрное кольцо-обод вплотную к
+    // краю + чёрная перекладина той же толщины, что и кольцо, через центр; 8 белых точек на
+    // кольце + 3 на перекладине. "Конец опасного места" — тот же знак, повёрнутый на 90°.
+    private val opasnoeWhitePaint = Paint().apply { color = Color.WHITE; isAntiAlias = true }
+    private val opasnoeBlackPaint = Paint().apply { color = Color.rgb(17, 17, 17); isAntiAlias = true }
+    private val opasnoeRingPaint = Paint().apply {
+        color = Color.rgb(17, 17, 17)
+        style = Paint.Style.STROKE
+        isAntiAlias = true
+    }
+
+    // Жёлтый/зелёный щит (ТЗ раздел 8): белая рамка → более толстая чёрная рамка → цветная
+    // заливка внутри — три концентричных квадрата.
+    private val shieldWhitePaint = Paint().apply { color = Color.WHITE }
+    private val shieldBlackPaint = Paint().apply { color = Color.BLACK }
+    private val shieldColorPaint = Paint()
+    private val yellowShieldColor = Color.rgb(255, 230, 0)
+    private val greenShieldColor = Color.rgb(58, 194, 90)
+
     fun setSpeedLimits(limits: List<SpeedLimit>) {
         speedLimits = limits
         resolver = SpeedLimitResolver(limits)
@@ -134,6 +195,12 @@ class TrackProfileView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** Список уже отфильтрован вызывающим кодом по текущему пути (ТЗ раздел 11). */
+    fun setRestrictions(list: List<Restriction>) {
+        restrictions = list
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (width == 0 || height == 0) return
@@ -152,8 +219,10 @@ class TrackProfileView @JvmOverloads constructor(
         val segments = computeSegments(fromM, toM)
 
         drawSpeedSteps(canvas, segments, ::xFor, ::yForSpeed, stepAreaHeight)
+        drawRestrictionHatching(canvas, fromM, toM, ::xFor, ::yForSpeed)
         drawSpeedAxis(canvas, ::yForSpeed)
         drawKmRuler(canvas, fromM, toM, ::xFor, stepAreaHeight)
+        drawRestrictionPictograms(canvas, fromM, toM, ::xFor, stepAreaHeight)
         drawTrainMarker(canvas, ::xFor, stepAreaHeight)
         drawCurrentSpeedLabel(canvas)
     }
@@ -199,6 +268,126 @@ class TrackProfileView @JvmOverloads constructor(
                 canvas.drawText(segment.speedKmh.toString(), (x0 + x1) / 2f, textY, stepNumberPaint)
             }
         }
+    }
+
+    /**
+     * ТЗ раздел 7: "Участки временных ограничений показаны диагональной штриховкой поверх той
+     * же непрерывной ступени — сама ступень при этом не разрывается... Высота штриховки всегда
+     * считается от значения самого ограничения" — то есть от верха шкалы (speed=100) вниз до
+     * y самого ограничения, независимо от высоты ступени под ней, с окантовкой и отдельным
+     * (пониженным) числом внутри.
+     */
+    private fun drawRestrictionHatching(
+        canvas: Canvas,
+        fromM: Double,
+        toM: Double,
+        xFor: (Double) -> Float,
+        yForSpeed: (Int) -> Float
+    ) {
+        if (restrictions.isEmpty()) return
+        val scaleTop = yForSpeed(100)
+        for (r in restrictions) {
+            if (r.endM < fromM || r.startM > toM) continue
+            var x0 = xFor(r.startM.coerceAtLeast(fromM))
+            var x1 = xFor(r.endM.coerceAtMost(toM))
+            // Точечное ограничение получает минимальную видимую ширину — иначе штриховка
+            // нулевой ширины была бы не видна вовсе (та же логика, что и в HTML-макете).
+            if (x1 - x0 < PICTOGRAM_MIN_HATCH_WIDTH_PX) {
+                val cx = (x0 + x1) / 2f
+                x0 = cx - PICTOGRAM_MIN_HATCH_WIDTH_PX / 2f
+                x1 = cx + PICTOGRAM_MIN_HATCH_WIDTH_PX / 2f
+            }
+            val yBottom = yForSpeed(r.speedKmh)
+
+            canvas.save()
+            canvas.clipRect(x0, scaleTop, x1, yBottom)
+            val w = x1 - x0
+            val h = yBottom - scaleTop
+            var d = -h
+            while (d < w) {
+                canvas.drawLine(x0 + d, scaleTop + h, x0 + d + h, scaleTop, hatchLinePaint)
+                d += 9f
+            }
+            canvas.restore()
+
+            canvas.drawRect(x0, scaleTop, x1, yBottom, hatchBorderPaint)
+
+            val metrics = restrictionNumberPaint.fontMetrics
+            val textY = (scaleTop + yBottom) / 2f - (metrics.ascent + metrics.descent) / 2f
+            canvas.drawText(r.speedKmh.toString(), (x0 + x1) / 2f, textY, restrictionNumberPaint)
+        }
+    }
+
+    /**
+     * Пиктограммы начала/конца опасного места + жёлтый/зелёный щит (ТЗ раздел 8/11) — см.
+     * doc-комментарий класса про временное место в зоне km-линейки (профиля рельефа ещё нет).
+     */
+    private fun drawRestrictionPictograms(
+        canvas: Canvas,
+        fromM: Double,
+        toM: Double,
+        xFor: (Double) -> Float,
+        stepAreaHeight: Float
+    ) {
+        if (restrictions.isEmpty()) return
+        val rowY = stepAreaHeight + PICTOGRAM_ROW_OFFSET_PX
+        for (r in restrictions) {
+            if (r.startM in fromM..toM) {
+                drawOpasnoeGlyph(canvas, xFor(r.startM), rowY, PICTOGRAM_SIZE_PX, rotated = false)
+            }
+            if (r.endM in fromM..toM) {
+                drawOpasnoeGlyph(canvas, xFor(r.endM), rowY, PICTOGRAM_SIZE_PX, rotated = true)
+            }
+            val yellowM = r.startM - SHIELD_OFFSET_M
+            if (yellowM in fromM..toM) {
+                drawShieldGlyph(canvas, xFor(yellowM), rowY, PICTOGRAM_SIZE_PX, yellowShieldColor)
+            }
+            val greenM = r.endM + SHIELD_OFFSET_M
+            if (greenM in fromM..toM) {
+                drawShieldGlyph(canvas, xFor(greenM), rowY, PICTOGRAM_SIZE_PX, greenShieldColor)
+            }
+        }
+    }
+
+    private fun drawOpasnoeGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, rotated: Boolean) {
+        // Точные размеры с чертежа (ТЗ раздел 8): Ø550мм общий, кольцо/перекладина 100мм
+        // толщиной, световозвращатели (точки) Ø51мм — внешний край кольца вплотную к краю круга.
+        val ringW = s * (100f / 275f)
+        val r = s - ringW / 2f
+        canvas.save()
+        canvas.translate(cx, cy)
+        if (rotated) canvas.rotate(90f)
+
+        canvas.drawCircle(0f, 0f, s, opasnoeWhitePaint)
+        opasnoeRingPaint.strokeWidth = ringW
+        canvas.drawCircle(0f, 0f, r, opasnoeRingPaint)
+        canvas.drawRect(-s, -ringW / 2f, s, ringW / 2f, opasnoeBlackPaint)
+
+        // 8 белых отверстий по кольцу (циферблат, от 12 часов по часовой стрелке) + 3 в
+        // перекладине — вместе с 2 крайними на кольце (3 и 9 часов) дают 5 точек на центральной
+        // линии, равномерно от -r до +r.
+        val dotR = s * (51f / 2f / 275f)
+        for (i in 0 until 8) {
+            val angle = Math.toRadians((-90 + i * 45).toDouble())
+            canvas.drawCircle((cos(angle) * r).toFloat(), (sin(angle) * r).toFloat(), dotR, opasnoeWhitePaint)
+        }
+        for (f in floatArrayOf(-0.5f, 0f, 0.5f)) {
+            canvas.drawCircle(f * r, 0f, dotR, opasnoeWhitePaint)
+        }
+        canvas.restore()
+    }
+
+    private fun drawShieldGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, fillColor: Int) {
+        // Точные размеры с чертежа щита (ТЗ раздел 8): сторона 470мм, белая полоса 25мм,
+        // чёрная полоса 25мм (обе от внешнего края) — цветная заливка занимает всё остальное.
+        val halfMm = 235f
+        val borderMm = 25f
+        val inset1 = s * (borderMm / halfMm)
+        val inset2 = s * ((borderMm * 2f) / halfMm)
+        canvas.drawRect(cx - s, cy - s, cx + s, cy + s, shieldWhitePaint)
+        canvas.drawRect(cx - s + inset1, cy - s + inset1, cx + s - inset1, cy + s - inset1, shieldBlackPaint)
+        shieldColorPaint.color = fillColor
+        canvas.drawRect(cx - s + inset2, cy - s + inset2, cx + s - inset2, cy + s - inset2, shieldColorPaint)
     }
 
     private fun drawSpeedAxis(canvas: Canvas, yForSpeed: (Int) -> Float) {
