@@ -4,6 +4,8 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
 import android.location.Location
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -27,6 +29,8 @@ import java.util.TimeZone
 import ru.traindriver.app.audio.Announcement
 import ru.traindriver.app.audio.VoiceAnnouncer
 import ru.traindriver.app.location.GpsLocationProvider
+import ru.traindriver.app.route.ArrivalDepartureState
+import ru.traindriver.app.route.ArrivalDepartureTracker
 import ru.traindriver.app.route.BrakeTest
 import ru.traindriver.app.route.BrakeTestAssetLoader
 import ru.traindriver.app.route.ChainageFormatter
@@ -57,6 +61,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var paramsButton: Button
     private lateinit var trackProfileView: TrackProfileView
     private lateinit var gpsLocationProvider: GpsLocationProvider
+
+    // Окошко прибытия/отправления + история остановок (ТЗ раздел 10). История сама по себе
+    // накапливается внутри трекера (arrivalDepartureTracker.history) — в этом шаге подключено
+    // только само окошко (кнопка в шапке — arrivalToggleButton), панель истории пока не
+    // подключена к UI (ждёт кнопки в реальной шапке, см. README шаг 22).
+    private lateinit var arrivalWindow: View
+    private lateinit var arrivalTimeText: TextView
+    private lateinit var arrivalMidText: TextView
+    private lateinit var arrivalDepartureText: TextView
+    private lateinit var arrivalToggleButton: Button
+    private lateinit var toneGenerator: ToneGenerator
+    private val arrivalDepartureTracker = ArrivalDepartureTracker()
+    private var arrivalWindowVisible = true
+    private var lastSpeedKmh = 0.0
+    private val arrivalWallFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
     // Направление/путь задаёт машинист вручную (ТЗ раздел 3) — по GPS это не определить.
     private var directionSelection = DirectionSelection(Direction.EVEN, 2)
@@ -112,6 +131,17 @@ class MainActivity : AppCompatActivity() {
         override fun run() {
             val now = Date()
             timeText.text = "МСК ${mskFormat.format(now)}\nМест ${localFormat.format(now)}"
+
+            // Средняя строка окошка прибытия/отправления должна тикать вживую каждую секунду,
+            // даже когда GPS не шлёт новых точек (поезд стоит на месте — minDistanceM в
+            // GpsLocationProvider может вообще не сработать). Поэтому тикаем отсюда, тем же
+            // раз-в-секунду хендлером, а не только из GPS-колбэка — так же ловятся и
+            // чисто временные переходы (5 минут после отправления, 25 минут стоянки).
+            if (arrivalDepartureTracker.onUpdate(lastSpeedKmh, now.time, lastChainageM)) {
+                toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 400)
+            }
+            refreshArrivalWindow()
+
             timeHandler.postDelayed(this, 1000)
         }
     }
@@ -138,6 +168,12 @@ class MainActivity : AppCompatActivity() {
         paramsButton = findViewById(R.id.paramsButton)
         trackProfileView = findViewById(R.id.trackProfileView)
         gpsLocationProvider = GpsLocationProvider(this)
+        arrivalWindow = findViewById(R.id.arrivalWindow)
+        arrivalTimeText = findViewById(R.id.arrivalTimeText)
+        arrivalMidText = findViewById(R.id.arrivalMidText)
+        arrivalDepartureText = findViewById(R.id.arrivalDepartureText)
+        arrivalToggleButton = findViewById(R.id.arrivalToggleButton)
+        toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, ToneGenerator.MAX_VOLUME)
 
         // "Координата (км+пк, по тапу переключается в формат КЛУБ-У)" — ТЗ раздел 7.
         coordinateText.setOnClickListener {
@@ -161,6 +197,10 @@ class MainActivity : AppCompatActivity() {
             updateDirectionUi()
         }
         paramsButton.setOnClickListener { showTrainParamsDialog() }
+        arrivalToggleButton.setOnClickListener {
+            arrivalWindowVisible = !arrivalWindowVisible
+            refreshArrivalWindow()
+        }
         updateDirectionUi()
 
         if (hasLocationPermission()) {
@@ -174,7 +214,36 @@ class MainActivity : AppCompatActivity() {
         gpsLocationProvider.stop()
         timeHandler.removeCallbacks(timeUpdater)
         voiceAnnouncer.release()
+        toneGenerator.release()
         super.onDestroy()
+    }
+
+    // ТЗ раздел 10. Показывается только пока state != Hidden И машинист не скрыл окно кнопкой.
+    // "—:—:—" для отправления, пока поезд стоит (ещё не уехал) — как в HTML-макете/ТЗ-раскадровке.
+    private fun refreshArrivalWindow() {
+        val s = arrivalDepartureTracker.state
+        val visible = arrivalWindowVisible && s !is ArrivalDepartureState.Hidden
+        arrivalWindow.visibility = if (visible) View.VISIBLE else View.GONE
+        if (!visible) return
+
+        when (s) {
+            is ArrivalDepartureState.Stopped -> {
+                arrivalTimeText.text = "Прибытие: ${arrivalWallFormat.format(Date(s.arrivalTime))}"
+                arrivalMidText.text = formatDuration(System.currentTimeMillis() - s.arrivalTime)
+                arrivalDepartureText.text = "Отправление: —:—:—"
+            }
+            is ArrivalDepartureState.JustDeparted -> {
+                arrivalTimeText.text = "Прибытие: ${arrivalWallFormat.format(Date(s.arrivalTime))}"
+                arrivalMidText.text = "${formatDuration(s.stopDurationMs)} → итог"
+                arrivalDepartureText.text = "Отправление: ${arrivalWallFormat.format(Date(s.departureTime))}"
+            }
+            is ArrivalDepartureState.Hidden -> Unit
+        }
+    }
+
+    private fun formatDuration(ms: Long): String {
+        val totalSec = (ms / 1000).coerceAtLeast(0)
+        return "%02d:%02d:%02d".format(totalSec / 3600, (totalSec % 3600) / 60, totalSec % 60)
     }
 
     private fun updateDirectionUi() {
@@ -309,6 +378,7 @@ class MainActivity : AppCompatActivity() {
         gpsLocationProvider.start { location ->
             val chainageM = routeTrack.chainageMetersFor(location.latitude, location.longitude)
             lastChainageM = chainageM
+            if (location.hasSpeed()) lastSpeedKmh = location.speed * 3.6
             coordinateText.text = formatCoordinate(chainageM)
             trackProfileView.setTrainPositionM(chainageM)
             statusBarText.text = buildStatusBarText(location, chainageM)

@@ -44,12 +44,61 @@
         android:textColor="#AAAAAA"
         android:textSize="14sp" />
 
-    <ru.traindriver.app.ui.TrackProfileView
-        android:id="@+id/trackProfileView"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginTop="4dp" />
+        android:layout_marginTop="4dp">
+
+        <ru.traindriver.app.ui.TrackProfileView
+            android:id="@+id/trackProfileView"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- Окошко прибытия/отправления (ТЗ раздел 10) — не отдельный экран, сидит поверх
+             графика (график остаётся видимым/активным вокруг), фон непрозрачный для контраста.
+             Показывается/скрывается через arrivalToggleButton, gone по умолчанию (состояние
+             Hidden — едем, стоянок ещё не было). -->
+        <LinearLayout
+            android:id="@+id/arrivalWindow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|start"
+            android:orientation="vertical"
+            android:background="#FF000000"
+            android:padding="6dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/arrivalTimeText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:fontFamily="monospace" />
+
+            <TextView
+                android:id="@+id/arrivalMidText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:fontFamily="monospace" />
+
+            <TextView
+                android:id="@+id/arrivalDepartureText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:fontFamily="monospace" />
+
+        </LinearLayout>
+
+    </FrameLayout>
 
     <TextView
         android:id="@+id/statusBarText"
@@ -86,6 +135,13 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
             android:text="Параметры" />
+
+        <Button
+            android:id="@+id/arrivalToggleButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="Стоянка ⏱" />
 
     </LinearLayout>
 
