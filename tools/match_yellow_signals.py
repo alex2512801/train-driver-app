@@ -59,32 +59,30 @@ STATION_SUFFIX_RE = re.compile(r'^вх\.\s*(\S+)\s+ст\.\s*(.+)$')
 TOCHKA_RE = re.compile(r'^т\.(\d{1,2})$')
 RANGE_RE = re.compile(r'\s*-\s*')
 
-# location в yellow_signal_warnings.json -> имя станции в track_stations.json (то, что
-# отличается только оформлением: "(парк Д)"/полное офиц. имя вместо короткого на схеме).
-#
-# ИСПРАВЛЕНО (см. README): раньше здесь было только 6 станций, а остальные location считались
-# unresolved:out_of_scope — предполагалось, что это участок Карымская — Чита — Шилка, для
-# которого профилей нет. Ошибка: у Антипихи, Дарасуна, Маккавеево, Могзона, Новой, Тайдута и
-# Туринской на самом деле ЕСТЬ станции в track_stations.json — это малые промежуточные станции
-# внутри уже разобранных Хилок-Карымская/Карымская-Чернышевск, а не участок за Карымской.
-# Обнаружено машинистом при пересылке схематических планов этих станций — они реально нужны.
-# Настоящий out_of_scope — только то, чего в track_stations.json нет вообще: Чита-1/2,
-# Шилка-товарная (участок Карымская — Чита — Шилка, туда профилей действительно нет).
-LOCATION_TO_STATION = {
-    'Хилок': 'Хилок',
-    'Карымская': 'Карымская',
+# location в yellow_signal_warnings.json -> имя станции в track_stations.json. Раньше здесь
+# лежал захардкоженный список из 6 станций, и всё остальное молча считалось
+# unresolved:out_of_scope (предполагалось, что это неразобранный участок Карымская — Чита —
+# Шилка). Баг: у доброго десятка малых промежуточных станций (Антипиха, Атамановка, Гонгота,
+# Дарасун, Домна, Зубарево, Кадала, Казаново, Кручина, Куэнга, Маккавеево, Могзон, Новая,
+# Приисковая, Тайдут, Тарская, Туринская, Укурей, Урульга, Харагун, Холбон, Хушенга,
+# Черновская и другие) ЕСТЬ станции в track_stations.json — они внутри уже разобранных
+# Хилок-Карымская/Карымская-Чернышевск, а не за Карымской. Обнаружено машинистом при
+# пересылке схематических планов станций. Теперь список строится из САМОГО track_stations.json
+# (build_location_to_station ниже), а не дублируется руками — так этот баг не повторится, если
+# найдётся ещё одна пропущенная станция. Настоящий out_of_scope — то, чего в
+# track_stations.json нет вообще: Чита-1/2, Шилка-товарная (участок Карымская — Чита — Шилка,
+# для которого профилей пути действительно нет).
+LOCATION_ALIASES = {
     'Карымская (парк Д)': 'Карымская',
     'Чернышевск-Забайкальский': 'Чернышевск',
-    'Яблоновая': 'Яблоновая',
-    'Тургутуй': 'Тургутуй',
-    'Антипиха': 'Антипиха',
-    'Дарасун': 'Дарасун',
-    'Маккавеево': 'Маккавеево',
-    'Могзон': 'Могзон',
-    'Новая': 'Новая',
-    'Тайдут': 'Тайдут',
-    'Туринская': 'Туринская',
 }
+
+
+def build_location_to_station(track_stations):
+    names = {s['name'] for s in track_stations} - {'Парк'}  # "Парк" — часть комплекса Карымской, не отдельная location
+    location_to_station = {name: name for name in names}
+    location_to_station.update(LOCATION_ALIASES)
+    return location_to_station
 
 DIR_MAP = {'even': 'чётное', 'odd': 'нечётное'}
 
@@ -109,7 +107,7 @@ def build_indices(track_signals, track_stations):
     return signals_idx, stations_idx
 
 
-def resolve_one(raw_name, direction_key, location, signals_idx, stations_idx):
+def resolve_one(raw_name, direction_key, location, signals_idx, stations_idx, location_to_station):
     """Возвращает (km, pk, resolution) или (None, None, 'unresolved:<reason>')."""
     name = raw_name.strip()
 
@@ -129,7 +127,7 @@ def resolve_one(raw_name, direction_key, location, signals_idx, stations_idx):
 
     name = normalize_signal_name(name)
 
-    station_name = LOCATION_TO_STATION.get(location)
+    station_name = location_to_station.get(location)
     if station_name is None:
         return None, None, 'unresolved:out_of_scope'
 
@@ -166,6 +164,7 @@ def main():
         track_stations = json.load(f)
 
     signals_idx, stations_idx = build_indices(track_signals, track_stations)
+    location_to_station = build_location_to_station(track_stations)
 
     resolution_counts = defaultdict(int)
     for entry in yellow:
@@ -173,6 +172,7 @@ def main():
         for prefix, field in (('from', 'from_signal'), ('to', 'to_signal')):
             km, pk, resolution = resolve_one(
                 entry[field], direction_key, entry['location'], signals_idx, stations_idx,
+                location_to_station,
             )
             entry[f'{prefix}_km'] = km
             entry[f'{prefix}_pk'] = pk
