@@ -95,7 +95,12 @@ class MainActivity : AppCompatActivity() {
     private var arrivalWindowVisible = true
     private var historyPanelVisible = false
     private var lastSpeedKmh = 0.0
-    private val arrivalWallFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+    // Прибытие/отправление (окошко стоянки + история) — всегда по МСК, независимо от часового
+    // пояса самого телефона: РЖД работает по московскому времени (см. комментарий у mskFormat
+    // ниже), местное — только для справки в основных часах, а не для этих событий.
+    private val arrivalWallFormat = SimpleDateFormat("HH:mm", Locale.getDefault()).apply {
+        timeZone = TimeZone.getTimeZone("Europe/Moscow")
+    }
 
     // "Место стоянки" в истории (ТЗ раздел 10) — станция, если остановка в её пределах, иначе
     // км+пк (см. Station.kt, nearestStationName — приближение, без точных границ вход/выход).
