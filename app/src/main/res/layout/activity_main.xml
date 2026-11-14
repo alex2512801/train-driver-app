@@ -1,16 +1,24 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Главный экран (ТЗ раздел 7, сверено с HTML-макетом "Ступени Хилока" — шапка там же,
-    .phone-header). Слева направо в шапке, порядок уточнён машинистом: км+пк | станция
-    назначения (следующая по ходу, не конечная) | Чётное/Нечётное | Путь | К1 | ⏱ окошко
-    стоянки | 📋 история | ⚠ ограничения (настоящий чёрно-белый знак "начало опасного места",
-    OpasnoeIconView) | день/ночь | Параметры | МСК/местное время — время специально в самом
-    конце, машинист попросил перенести его туда. "Меню" (ТЗ раздел 12, со всеми подразделами)
-    и список SIM/заряд батареи из макета сюда ЕЩЁ НЕ добавлены — это отдельный, пока не
-    сделанный шаг (см. README/чат); "Параметры" поэтому временно остаётся обычной кнопкой в
-    шапке, а не пунктом меню. К1 (переключатель сигналов среднего пути Тургутуй — Яблоновая)
-    добавлен только как кнопка — сама логика переключения путей для него ещё не реализована
-    (см. README), поэтому пока только показывает короткое сообщение по нажатию.
+    .phone-header). Шапка — ДВЕ строки (машинист попросил: одной строкой не помещалось на
+    экран, приходилось листать свайпом вбок — так весь список элементов виден сразу, без
+    прокрутки). Порядок (как уточнил машинист), читать по строкам сверху вниз, в каждой
+    строке слева направо:
+      Строка 1: км+пк | станция назначения (следующая по ходу, не конечная) | Чётное/
+                Нечётное | Путь | К1 | ⏱ окошко стоянки | 📋 история
+      Строка 2: ⚠ ограничения (настоящий чёрно-белый знак "начало опасного места",
+                OpasnoeIconView) | день/ночь | Параметры | МСК/местное время (специально
+                в конце) | уровень сигнала SIM (SignalBarsView + тип сети)
+    Экран открывается развёрнуто на весь экран, системная строка состояния телефона скрыта
+    программно (MainActivity.hideSystemUi) — поэтому своя собственная шапка и показывает
+    время и сигнал SIM, как раньше показывала системная.
+    "Меню" (ТЗ раздел 12, со всеми подразделами) и заряд батареи из макета сюда ЕЩЁ НЕ
+    добавлены — это отдельный, пока не сделанный шаг (см. README/чат); "Параметры" поэтому
+    временно остаётся обычной кнопкой в шапке, а не пунктом меню. К1 (переключатель сигналов
+    среднего пути Тургутуй — Яблоновая) добавлен только как кнопка — сама логика переключения
+    путей для него ещё не реализована (см. README), поэтому пока только показывает короткое
+    сообщение по нажатию.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -18,6 +26,7 @@
     android:background="#000000"
     android:orientation="vertical">
 
+    <!-- Строка 1 шапки. -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -31,8 +40,8 @@
             android:gravity="center_vertical"
             android:paddingStart="8dp"
             android:paddingEnd="8dp"
-            android:paddingTop="6dp"
-            android:paddingBottom="6dp">
+            android:paddingTop="4dp"
+            android:paddingBottom="2dp">
 
             <!-- 1. Координата км+пк — по тапу переключается в формат КЛУБ-У. -->
             <TextView
@@ -98,7 +107,26 @@
                 android:layout_marginStart="4dp"
                 android:text="📋" />
 
-            <View style="@style/HeaderDivider" />
+        </LinearLayout>
+
+    </HorizontalScrollView>
+
+    <!-- Строка 2 шапки. -->
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:scrollbars="none"
+        android:overScrollMode="never">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="4dp">
 
             <!-- 8. Ограничения (ТЗ раздел 11) — настоящий чёрно-белый знак "начало опасного
                  места" (ГОСТ, тот же чертёж, что и пиктограмма на графике), не текст/эмодзи,
@@ -140,6 +168,36 @@
                 android:fontFamily="monospace"
                 android:textSize="18sp"
                 android:lineSpacingExtra="2dp" />
+
+            <View style="@style/HeaderDivider" />
+
+            <!-- 12. Уровень сигнала SIM-карты + тип сети (ТЗ раздел 7, HTML-макет .hdr-sim) —
+                 своя замена системной строке состояния, которую мы теперь скрываем (см.
+                 MainActivity.hideSystemUi). -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:paddingStart="6dp">
+
+                <ru.traindriver.app.ui.SignalBarsView
+                    android:id="@+id/signalBarsView"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+                <TextView
+                    android:id="@+id/simNetworkText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:textColor="#FFFFFF"
+                    android:textStyle="bold"
+                    android:fontFamily="monospace"
+                    android:textSize="16sp"
+                    android:text="—" />
+
+            </LinearLayout>
 
         </LinearLayout>
 

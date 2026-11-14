@@ -3,6 +3,9 @@
 
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Уровень сигнала SIM-карты в шапке (ТЗ раздел 7, блок SIM) — без этого разрешения
+         Android не отдаёт настоящую силу сигнала/тип сети. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
     <application
         android:allowBackup="true"

@@ -9,6 +9,9 @@ import android.media.ToneGenerator
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.telephony.PhoneStateListener
+import android.telephony.SignalStrength
+import android.telephony.TelephonyManager
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
@@ -67,6 +70,7 @@ import ru.traindriver.app.route.nearestStationName
 import ru.traindriver.app.route.nextStationAhead
 import ru.traindriver.app.route.sortedForDirection
 import ru.traindriver.app.ui.OpasnoeIconView
+import ru.traindriver.app.ui.SignalBarsView
 import ru.traindriver.app.ui.TrackProfileView
 
 class MainActivity : AppCompatActivity() {
@@ -82,6 +86,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var paramsButton: Button
     private lateinit var restrictionsButton: OpasnoeIconView
     private lateinit var dayNightButton: Button
+    private lateinit var signalBarsView: SignalBarsView
+    private lateinit var simNetworkText: TextView
+    private var telephonyManager: TelephonyManager? = null
+
+    // Уровень сигнала SIM (ТЗ раздел 7, шапка) — своя замена системной строке состояния,
+    // которую мы теперь скрываем целиком (см. hideSystemUi). PhoneStateListener устарел в
+    // пользу TelephonyCallback (API 31+), но у нас minSdk=26, а он по-прежнему работает на
+    // всех версиях вплоть до текущей targetSdk — заводить два разных пути ради одной функции
+    // не стали.
+    @Suppress("DEPRECATION")
+    private val phoneStateListener = object : PhoneStateListener() {
+        override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
+            signalBarsView.level = signalStrength.level
+        }
+    }
     private var isDayMode = false
     private lateinit var trackProfileView: TrackProfileView
     private lateinit var gpsLocationProvider: GpsLocationProvider
@@ -218,9 +237,18 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+    // Разрешение на уровень сигнала SIM (ТЗ раздел 7, шапка) — отдельное от геолокации,
+    // поэтому отдельный launcher; если машинист откажет — просто остаётся "—" в шапке,
+    // ничего не падает.
+    private val requestPhoneStatePermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) startPhoneSignalUpdates()
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        hideSystemUi()
 
         coordinateText = findViewById(R.id.coordinateText)
         destinationText = findViewById(R.id.destinationText)
@@ -233,6 +261,8 @@ class MainActivity : AppCompatActivity() {
         paramsButton = findViewById(R.id.paramsButton)
         restrictionsButton = findViewById(R.id.restrictionsButton)
         dayNightButton = findViewById(R.id.dayNightButton)
+        signalBarsView = findViewById(R.id.signalBarsView)
+        simNetworkText = findViewById(R.id.simNetworkText)
         trackProfileView = findViewById(R.id.trackProfileView)
         gpsLocationProvider = GpsLocationProvider(this)
         arrivalWindow = findViewById(R.id.arrivalWindow)
@@ -301,6 +331,64 @@ class MainActivity : AppCompatActivity() {
         } else {
             requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
+
+        if (hasPhoneStatePermission()) {
+            startPhoneSignalUpdates()
+        } else {
+            requestPhoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        // Системная панель на некоторых телефонах ненадолго возвращается после сворачивания/
+        // разворачивания приложения — прячем её снова при каждом получении фокуса (стандартный
+        // приём для sticky-immersive режима).
+        if (hasFocus) hideSystemUi()
+    }
+
+    // Приложение должно открываться во весь экран (машинист): своя шапка теперь сама
+    // показывает время и уровень сигнала SIM, поэтому системная строка состояния наверху
+    // (и системная навигационная панель снизу) больше не нужны.
+    private fun hideSystemUi() {
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+            )
+    }
+
+    private fun hasPhoneStatePermission(): Boolean =
+        ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.READ_PHONE_STATE
+        ) == PackageManager.PERMISSION_GRANTED
+
+    @Suppress("DEPRECATION")
+    @SuppressLint("MissingPermission") // проверяется явно в hasPhoneStatePermission()
+    private fun startPhoneSignalUpdates() {
+        val manager = getSystemService(TELEPHONY_SERVICE) as? TelephonyManager ?: return
+        telephonyManager = manager
+        @Suppress("DEPRECATION")
+        manager.listen(phoneStateListener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
+        simNetworkText.text = networkTypeLabel(manager.networkType)
+    }
+
+    private fun networkTypeLabel(networkType: Int): String = when (networkType) {
+        TelephonyManager.NETWORK_TYPE_LTE -> "4G"
+        TelephonyManager.NETWORK_TYPE_NR -> "5G"
+        TelephonyManager.NETWORK_TYPE_UMTS,
+        TelephonyManager.NETWORK_TYPE_HSDPA,
+        TelephonyManager.NETWORK_TYPE_HSUPA,
+        TelephonyManager.NETWORK_TYPE_HSPA,
+        TelephonyManager.NETWORK_TYPE_HSPAP -> "3G"
+        TelephonyManager.NETWORK_TYPE_GPRS,
+        TelephonyManager.NETWORK_TYPE_EDGE -> "2G"
+        else -> "—"
     }
 
     override fun onDestroy() {
@@ -308,6 +396,8 @@ class MainActivity : AppCompatActivity() {
         timeHandler.removeCallbacks(timeUpdater)
         voiceAnnouncer.release()
         toneGenerator.release()
+        @Suppress("DEPRECATION")
+        telephonyManager?.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE)
         super.onDestroy()
     }
 
