@@ -30,16 +30,21 @@ import java.util.TimeZone
 import ru.traindriver.app.audio.Announcement
 import ru.traindriver.app.audio.VoiceAnnouncer
 import ru.traindriver.app.location.GpsLocationProvider
+import ru.traindriver.app.route.AirGapAssetLoader
 import ru.traindriver.app.route.ArrivalDepartureState
 import ru.traindriver.app.route.ArrivalDepartureTracker
+import ru.traindriver.app.route.BlockPostAssetLoader
 import ru.traindriver.app.route.BrakeTest
 import ru.traindriver.app.route.BrakeTestAssetLoader
 import ru.traindriver.app.route.ChainageFormatter
+import ru.traindriver.app.route.CrossingAssetLoader
 import ru.traindriver.app.route.Direction
 import ru.traindriver.app.route.DirectionSelection
 import ru.traindriver.app.route.LocomotiveTable
+import ru.traindriver.app.route.NeutralInsertAssetLoader
 import ru.traindriver.app.route.PathStatus
 import ru.traindriver.app.route.PointAnnouncementScheduler
+import ru.traindriver.app.route.ReliefAssetLoader
 import ru.traindriver.app.route.Restriction
 import ru.traindriver.app.route.RestrictionField
 import ru.traindriver.app.route.RestrictionFormFields
@@ -48,6 +53,7 @@ import ru.traindriver.app.route.RestrictionAwareSpeedResolver
 import ru.traindriver.app.route.RestrictionInputResult
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
+import ru.traindriver.app.route.SignalAssetLoader
 import ru.traindriver.app.route.SpeedLimitAssetLoader
 import ru.traindriver.app.route.SpeedLimitResolver
 import ru.traindriver.app.route.StationAnnouncement
@@ -93,7 +99,18 @@ class MainActivity : AppCompatActivity() {
 
     // "Место стоянки" в истории (ТЗ раздел 10) — станция, если остановка в её пределах, иначе
     // км+пк (см. Station.kt, nearestStationName — приближение, без точных границ вход/выход).
+    // Также — значки станций на линии сигналов (TrackProfileView.setStations).
     private val stations by lazy { StationAssetLoader.loadStations(this) }
+
+    // Линия сигналов и профиль рельефа (ТЗ раздел 7/8/9/15) — портировано из HTML-макета, см.
+    // TrackProfileView. Блок-посты — доп. сигналы (не пиктограмма, машинист поправил), переезды
+    // загружаются, но визуально пока не нарисованы (нужен настоящий PNG знака, см. README/чат).
+    private val signals by lazy { SignalAssetLoader.loadMainTrackSignals(this) }
+    private val blockPosts by lazy { BlockPostAssetLoader.loadBlockPosts(this) }
+    private val relief by lazy { ReliefAssetLoader.loadRelief(this) }
+    private val crossings by lazy { CrossingAssetLoader.loadCrossings(this) }
+    private val airGaps by lazy { AirGapAssetLoader.loadAirGaps(this) }
+    private val neutralInserts by lazy { NeutralInsertAssetLoader.loadNeutralInserts(this) }
 
     // "Ограничения" (ТЗ раздел 11) — временные ограничения скорости, введённые машинистом.
     // Живут только в памяти на время сессии (ни ТЗ, ни макет не говорят о сохранении между
@@ -225,6 +242,13 @@ class MainActivity : AppCompatActivity() {
         trainParams = trainParamsStore.load()
         trackProfileView.setSpeedLimits(speedLimits)
         trackProfileView.setTrainLengthM(trainParams.composition.lengthM)
+        trackProfileView.setStations(stations)
+        trackProfileView.setSignals(signals)
+        trackProfileView.setBlockPosts(blockPosts)
+        trackProfileView.setRelief(relief)
+        trackProfileView.setCrossings(crossings)
+        trackProfileView.setAirGaps(airGaps)
+        trackProfileView.setNeutralInserts(neutralInserts)
         timeHandler.post(timeUpdater)
 
         directionButton.setOnClickListener {
@@ -335,6 +359,9 @@ class MainActivity : AppCompatActivity() {
             "Путь $statusText, датасет: $datasetText, пикеты $picketsText"
 
         trackProfileView.setDirection(s.effectiveDataset)
+        // Нейтральная вставка — по направлению движения как есть, без поправки на
+        // неправильный путь (см. doc-комментарий NeutralInsert/TrackProfileView.setRawDirection).
+        trackProfileView.setRawDirection(s.direction)
 
         // Смена направления/пути меняет, какой датасет действует (effectiveDataset) — значит
         // и какие именно точки впереди по пути вообще относятся к делу. Пересобираем оба

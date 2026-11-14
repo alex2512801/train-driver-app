@@ -4,41 +4,54 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Path
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.max
 import kotlin.math.sin
+import ru.traindriver.app.route.AirGap
+import ru.traindriver.app.route.BlockPost
+import ru.traindriver.app.route.Crossing
 import ru.traindriver.app.route.Direction
+import ru.traindriver.app.route.NeutralInsert
 import ru.traindriver.app.route.Restriction
+import ru.traindriver.app.route.ReliefProfile
+import ru.traindriver.app.route.ShortSegmentSpeedResolver
+import ru.traindriver.app.route.Signal
 import ru.traindriver.app.route.SpeedLimit
 import ru.traindriver.app.route.SpeedLimitResolver
+import ru.traindriver.app.route.Station
 
 /**
- * Срез главного экрана (ТЗ раздел 7) — километровая/пикетная линейка и ступенчатый график
- * постоянных ограничений скорости, со шкалой скорости и числами на самих ступенях (сверено
- * с макетом из раздела 14 ТЗ — "Главный экран (ночной режим)"), плюс штриховка и пиктограммы
- * временных ограничений (ТЗ раздел 11, см. [setRestrictions]).
+ * Срез главного экрана (ТЗ раздел 7) — километровая/пикетная линейка, ступенчатый график
+ * постоянных ограничений скорости, линия сигналов и профиль рельефа (ТЗ раздел 7/8/9/15),
+ * портировано из HTML-макета "Ступени Хилока" (см. чат).
  *
- * Пока НЕ реализовано (сознательно, отдельными следующими шагами): линия сигналов и их
- * таблички, значки сигналов/станций, профиль рельефа, штриховка
- * "короткого участка повышенной скорости" (эффективная скорость уже считается —
- * ShortSegmentSpeedResolver, ТЗ раздел 9 — но зеркальная штриховка "\" на этом графике
- * пока не рисуется). Цвета — из ночной палитры ТЗ (раздел 7); день/ночь — см. [setDayMode].
+ * Два яруса, пропорция верх:низ = [STEPS_TO_RELIEF_RATIO] (машинист): верх — от верха блоков
+ * скорости до линии сигналов (ступени + тёмное "поле" + сама линия сигналов/км), низ — под
+ * линией сигналов, где сетка пикетов и рельеф. km-линейка/засечки рисуются ПРЯМО на линии
+ * сигналов, отдельной полосы-линейки больше нет.
  *
- * Ряд пиктограмм ограничений (начало/конец опасного места, жёлтый/зелёный щит) по ТЗ должен
- * сидеть на нижнем крае профиля рельефа — раз самого профиля в реальном экране ещё нет (см.
- * выше), пиктограммы временно рисуются в зоне km-линейки, сразу под ступенями. Как только
- * профиль появится — переставить туда (см. README).
+ * Раздел 9 ("короткий участок повышенной скорости") — эффективная скорость считается
+ * [ShortSegmentSpeedResolver] (уже было), здесь дорисована зеркальная штриховка "\".
  *
- * Полоска физической длины состава ([setTrainLengthM]) рисуется от головы (GPS-координата)
- * назад на реальную длину (TrainComposition.lengthM — условная длина × 14 м + локомотив,
- * ТЗ раздел 5), а не на произвольную иллюстративную константу.
+ * Пиктограммы (переезды/воздушные промежутки/нейтральные вставки/опасное место/щиты) сидят
+ * прямо на графике рельефа — два ФИКСИРОВАННЫХ места: низ полосы рельефа (обычно, когда
+ * рельеф высокий и заливка доходит до низа), или верх полосы (когда рельеф опускается
+ * настолько, что иконка на нижнем месте повисла бы в пустом поле).
  *
- * Внешний вид ПРОВЕРЕН пока только на HTML-макете (см. чат), не на реальном устройстве —
- * в этой среде разработки нет Android SDK, см. README.
+ * Переезды (пиктограмма-чертёж, реальный PNG знак в HTML-макете) и блок-посты (пока без поля
+ * "какой сигнал заменён") здесь сознательно НЕ дорисованы/упрощены — см. README/чат.
+ *
+ * Внешний вид ПРОВЕРЕН пока только на HTML-макете (см. чат), не на реальном устройстве — в
+ * этой среде разработки нет Android SDK (не получилось даже собрать проект, чтобы прогнать
+ * существующие unit-тесты — Gradle не может скачать Android-плагin без доступа к
+ * dl.google.com), см. README.
  */
 class TrackProfileView @JvmOverloads constructor(
     context: Context,
@@ -48,47 +61,96 @@ class TrackProfileView @JvmOverloads constructor(
     companion object {
         private const val MAX_SPEED_KMH = 100f
         private const val SAMPLE_STEP_M = 20.0
-        private const val RULER_HEIGHT_PX = 70f
         private const val AXIS_WIDTH_PX = 60f
         private const val KM_LINE_LENGTH_M = 1000.0
         private const val PICKET_LENGTH_M = 100.0
         private const val MIN_SEGMENT_PX_FOR_LABEL = 36f
         private val AXIS_SPEEDS = intArrayOf(100, 80, 60, 40, 20)
 
-        // Пиктограммы ограничений (ТЗ раздел 8/11).
-        private const val PICTOGRAM_SIZE_PX = 11f
-        private const val PICTOGRAM_ROW_OFFSET_PX = 16f
-        private const val PICTOGRAM_MIN_HATCH_WIDTH_PX = 4f
+        // Верх:низ = 4.5:1 (машинист, см. doc-комментарий класса).
+        private const val STEPS_TO_RELIEF_RATIO = 4.5f
+        // Доля верхнего яруса, занятая самой шкалой скорости (0..100) — ниже неё, до линии
+        // сигналов, тёмное "поле" без делений, где сидят иконки/таблички сигналов (см.
+        // HTML-макет, drawStepsAndSignalLine: scaleBottom = top + bandH*0.62).
+        private const val SCALE_BOTTOM_FRACTION = 0.62f
 
-        // "Жёлтый щит стоит на расстоянии ровно 1 км... перед знаком «начало опасного места»;
-        // зелёный щит — ровно 1 км после знака «конец опасного места»" (ТЗ раздел 8).
+        // Пиктограммы ограничений (ТЗ раздел 8/11).
+        private const val PICTOGRAM_MIN_HATCH_WIDTH_PX = 4f
         private const val SHIELD_OFFSET_M = 1000.0
+
+        // Пиктограммы на рельефе — два фиксированных места (см. doc-комментарий класса).
+        private const val ICON_HALF_PX = 9f
+        private const val ICON_GAP_PX = 5f
+
+        // px на 1pt склеенной шкалы рельефа (REAL_RELIEF_PX_PER_PT в HTML-макете) — подобрано
+        // визуально, это не калибровка в метры (её нет, см. README шаг 15).
+        private const val RELIEF_PX_PER_PT = 1.5f
+        // Панорамирование: самая низкая точка видимого окна — у пола полосы рельефа, а не
+        // выше (машинист). floorY = reliefTop + reliefH * RELIEF_FLOOR_FRACTION.
+        private const val RELIEF_FLOOR_FRACTION = 0.92f
+
+        // Геометрия значка сигнала/станции (капсула/кольцо) — те же пропорции, что в
+        // HTML-макете: rx=5, ry=7, столбик=8; станция крупнее в 7/6 раза, ножка:радиус=50:45.
+        private const val SIGNAL_RY_PX = 7f
+        private const val SIGNAL_RX_PX = 5f
+        private const val SIGNAL_POLE_PX = 8f
+        private const val SIGNAL_TOTAL_H_PX = SIGNAL_RY_PX * 2f + SIGNAL_POLE_PX // 22
+        // Значок станции крупнее в 7/6 раза по полной высоте; ножка:радиус = 50:45 — оба
+        // выводятся из этого отношения, а не масштабируются от значений сигнала по отдельности
+        // (см. HTML-макет: STATION_R_OUTER = STATION_TOTAL_H / (2 + 50/45)).
+        private const val STATION_TOTAL_H_PX = SIGNAL_TOTAL_H_PX * 7f / 6f // ≈25.67
+        private const val STATION_R_OUTER_PX = STATION_TOTAL_H_PX / (2f + 50f / 45f) // ≈8.21
+        private const val STATION_R_INNER_PX = STATION_R_OUTER_PX * 0.65f
+        private const val STATION_POLE_PX = STATION_R_OUTER_PX * (50f / 45f)
     }
 
     private data class Segment(val startM: Double, val endM: Double, val speedKmh: Int)
 
+    /** Нижняя граница "занятой" зоны ступени — низ обычной заливки, либо низ штриховки
+     *  раздела 9, если она здесь есть (см. [drawSpeedSteps]). Перпендикуляры стартуют отсюда. */
+    private data class StepRegionBottom(val startM: Double, val endM: Double, val bottomY: Float)
+
+    /** Один сигнал на линии сигналов — настоящий (из track_signals.json/блок-постов) либо
+     *  станция (крупнее, другой значок). */
+    private data class SignalTag(val chainageM: Double, val label: String, val isStation: Boolean)
+
+    private data class Pictogram(val chainageM: Double, val kind: PictogramKind)
+
+    private enum class PictogramKind { OPASNOE_START, OPASNOE_END, YELLOW_SHIELD, GREEN_SHIELD, AIR_GAP, NEUTRAL }
+
     private var speedLimits: List<SpeedLimit> = emptyList()
     private var resolver = SpeedLimitResolver(emptyList())
+    private var shortSegmentResolver = ShortSegmentSpeedResolver(emptyList())
+
+    // direction — эффективный датасет (DirectionSelection.effectiveDataset): им размечены
+    // speed_limits/track_signals/track_stations/crossings/air_gaps/block_posts, т.к. это
+    // физические объекты на конкретном пути. rawDirection — направление движения как есть
+    // (DirectionSelection.direction, БЕЗ поправки на путь) — нужно только нейтральной вставке,
+    // у которой км+пк зависит от направления счёта пикетажа, а не от физического пути
+    // (см. NeutralInsert).
     private var direction: Direction = Direction.EVEN
+    private var rawDirection: Direction = Direction.EVEN
     private var trainPositionM: Double = 0.0
 
-    // Временные ограничения (ТЗ раздел 11) — уже отфильтрованы вызывающим кодом по текущему
-    // пути (см. MainActivity.refreshTrackProfileRestrictions), здесь просто рисуются все.
     private var restrictions: List<Restriction> = emptyList()
-
-    // Физическая длина состава (TrainComposition.lengthM — условная длина в усл. вагонах ×
-    // 14 м + длина локомотива, ТЗ раздел 5), а не произвольная константа для масштаба —
-    // задаётся вызывающим кодом через setTrainLengthM. Полоска поезда рисуется от головы
-    // (GPS-координата, trainPositionM) назад ровно на эту длину.
     private var trainLengthM: Double = 0.0
 
-    // 3000 м позади / 5000 м впереди — как в официальном описании экрана ИСАВП-РТ
-    // ("основное_окно_сокр.pdf", область 25).
+    private var signals: List<Signal> = emptyList()
+    private var stations: List<Station> = emptyList()
+    private var blockPosts: List<BlockPost> = emptyList()
+    private var relief: ReliefProfile = ReliefProfile(emptyList())
+    private var crossings: List<Crossing> = emptyList()
+    private var airGaps: List<AirGap> = emptyList()
+    private var neutralInserts: List<NeutralInsert> = emptyList()
+
     /** Сколько метров показывать позади/впереди головы поезда. */
     var behindM: Double = 3000.0
     var aheadM: Double = 5000.0
 
     private val stepPaint = Paint().apply { color = Color.rgb(160, 159, 164) }
+    // Тёмное "поле" от низа шкалы скорости до линии сигналов — визуально одна сплошная зона
+    // со ступенями, без чёрного разрыва (ТЗ раздел 7).
+    private val signalFieldPaint = Paint().apply { color = Color.rgb(36, 36, 36) }
     private val kmLinePaint = Paint().apply {
         color = Color.rgb(178, 178, 178)
         strokeWidth = 3f
@@ -97,15 +159,38 @@ class TrackProfileView @JvmOverloads constructor(
         color = Color.rgb(178, 178, 178)
         strokeWidth = 1f
     }
+    private val reliefFillPaint = Paint().apply {
+        color = Color.rgb(178, 178, 178)
+        style = Paint.Style.FILL
+    }
+    // Вертикальная позиционная линия (голова поезда) — на всю высоту графика.
     private val trainMarkerPaint = Paint().apply {
         color = Color.rgb(44, 255, 39)
         strokeWidth = 5f
     }
-    // Полоска физической длины поезда — та же зелень, что и позиционная линия, но толще и
-    // короче (только вдоль границы ступеней/линейки, не на всю высоту, см. ТЗ раздел 7).
-    private val trainStripePaint = Paint().apply {
+    // Серая полоска поезда НА ЛИНИИ СИГНАЛОВ (та же заливка, что у ступеней) + её белая
+    // окантовка — ТЗ раздел 7. Не путать с зелёной полосой НА РЕЛЬЕФЕ ниже.
+    private val trainSignalStripePaint = Paint().apply {
+        color = Color.rgb(160, 159, 164)
+        style = Paint.Style.FILL
+    }
+    private val trainSignalStripeBorderPaint = Paint().apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 0.5f
+    }
+    // Зелёная полоса поезда НА РЕЛЬЕФЕ — повторяет его изгибы, не прямая линия; не заходит
+    // ниже кривой (нижний край полосы = кривая, см. [drawTrainReliefStripe]), плюс тонкая
+    // белая окантовка по контуру со всех сторон.
+    private val trainReliefGreenPaint = Paint().apply {
         color = Color.rgb(44, 255, 39)
-        strokeWidth = 8f
+        style = Paint.Style.STROKE
+        strokeWidth = 3.5f
+    }
+    private val trainReliefOutlinePaint = Paint().apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 4.5f
     }
     private val kmTextPaint = Paint().apply {
         color = Color.WHITE
@@ -133,8 +218,8 @@ class TrackProfileView @JvmOverloads constructor(
         isAntiAlias = true
     }
 
-    // Штриховка временного ограничения (ТЗ раздел 7: "диагональной штриховкой поверх той же
-    // непрерывной ступени... У штриховки — тонкая видимая окантовка").
+    // Штриховка временных ограничений (ТЗ раздел 11, "/") И короткого участка раздела 9 ("\",
+    // reverse) — тот же угол 45°, в разные стороны, см. [drawHatch].
     private val hatchLinePaint = Paint().apply {
         color = Color.WHITE
         strokeWidth = 1.5f
@@ -153,10 +238,88 @@ class TrackProfileView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
         isAntiAlias = true
     }
+    // Чёрная обводка чисел на штриховке (и раздела 9, и временных ограничений) — иначе
+    // сливаются с чёрно-белыми полосами штриховки (машинист).
+    private val hatchNumberOutlinePaint = Paint().apply {
+        color = Color.BLACK
+        style = Paint.Style.STROKE
+        strokeWidth = 3f
+        textAlign = Paint.Align.CENTER
+        isAntiAlias = true
+    }
 
-    // Пиктограмма "опасное место" (ТЗ раздел 8): белый круг + чёрное кольцо-обод вплотную к
-    // краю + чёрная перекладина той же толщины, что и кольцо, через центр; 8 белых точек на
-    // кольце + 3 на перекладине. "Конец опасного места" — тот же знак, повёрнутый на 90°.
+    // Линия сигналов, значки, таблички (ТЗ раздел 7) — белая/негатив как и остальной график,
+    // КРОМЕ самой таблички (белый фон/чёрный текст — фиксированно, см. applyPalette).
+    private val signalLinePaint = Paint().apply {
+        color = Color.WHITE
+        strokeWidth = 2f
+    }
+    private val signalPolePaint = Paint().apply {
+        color = Color.WHITE
+        strokeWidth = 1.2f
+        style = Paint.Style.STROKE
+        isAntiAlias = true
+    }
+    private val signalIconPaint = Paint().apply { color = Color.WHITE; isAntiAlias = true }
+    private val stationRingOuterPaint = Paint().apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 1f
+        isAntiAlias = true
+    }
+    // Значок станции — вторая (тёмная) половина круга + внутренние кольца противоположных
+    // цветов на каждой половине, см. drawStationIcon.
+    private val stationHalfDarkPaint = Paint().apply { color = Color.BLACK; isAntiAlias = true }
+    private val stationInnerRingDarkPaint = Paint().apply {
+        color = Color.BLACK
+        style = Paint.Style.STROKE
+        strokeWidth = 1f
+        isAntiAlias = true
+    }
+    private val stationInnerRingLightPaint = Paint().apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 1f
+        isAntiAlias = true
+    }
+    // Табличка сигнала/станции — БЕЛАЯ с ЧЁРНЫМ текстом фиксированно, несмотря на день/ночь
+    // (сверено с реальным скриншотом ТЗ раздел 14) — не входит в applyPalette.
+    private val signalTagBgPaint = Paint().apply { color = Color.WHITE }
+    private val signalTagBorderPaint = Paint().apply {
+        color = Color.BLACK
+        style = Paint.Style.STROKE
+        strokeWidth = 1f
+    }
+    private val signalTagTextPaint = Paint().apply {
+        color = Color.BLACK
+        textSize = 20f
+        typeface = Typeface.DEFAULT_BOLD
+        textAlign = Paint.Align.LEFT
+        isAntiAlias = true
+    }
+
+    // Нейтральная вставка — синяя полоса НА линии сигналов, от начала на реальную протяжённость
+    // (ТЗ раздел 8), чуть ниже серой полосы поезда по высоте; белая окантовка по контуру.
+    private val neutralBarPaint = Paint().apply { color = Color.rgb(40, 80, 200) }
+    private val neutralBarBorderPaint = Paint().apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 0.5f
+    }
+
+    // Тонкие (от границ ступеней/пиктограмм) и толстые (проекция головы/хвоста поезда)
+    // перпендикуляры — ТЗ раздел 7/9: идут СНИЗУ от линии сигналов и доходят РОВНО до скорости
+    // (обычной заливки или штриховки раздела 9), сквозь неё не проходят.
+    private val thinPerpendicularPaint = Paint().apply {
+        color = Color.argb(128, 200, 200, 200)
+        strokeWidth = 1f
+    }
+    private val thickPerpendicularPaint = Paint().apply {
+        color = Color.rgb(160, 159, 164)
+        strokeWidth = 2f
+    }
+
+    // Пиктограмма "опасное место" (ТЗ раздел 8) — см. drawOpasnoeGlyph.
     private val opasnoeWhitePaint = Paint().apply { color = Color.WHITE; isAntiAlias = true }
     private val opasnoeBlackPaint = Paint().apply { color = Color.rgb(17, 17, 17); isAntiAlias = true }
     private val opasnoeRingPaint = Paint().apply {
@@ -165,25 +328,39 @@ class TrackProfileView @JvmOverloads constructor(
         isAntiAlias = true
     }
 
-    // Жёлтый/зелёный щит (ТЗ раздел 8): белая рамка → более толстая чёрная рамка → цветная
-    // заливка внутри — три концентричных квадрата.
+    // Жёлтый/зелёный щит (ТЗ раздел 8).
     private val shieldWhitePaint = Paint().apply { color = Color.WHITE }
     private val shieldBlackPaint = Paint().apply { color = Color.BLACK }
     private val shieldColorPaint = Paint()
     private val yellowShieldColor = Color.rgb(255, 230, 0)
     private val greenShieldColor = Color.rgb(58, 194, 90)
 
-    // Фон САМОГО графика (не всего экрана — шапка и статусная строка день/ночь не касается,
-    // см. setDayMode) — чёрный ночью, белый днём. Рисуется первым в onDraw, под всем остальным.
+    // Воздушный промежуток (ТЗ раздел 8) — сетка 3×7, чёрные строки 1/3/5/7 + сплошная чёрная
+    // средняя колонка целиком сверху донизу (см. drawAirGapGlyph).
+    private val airGapWhitePaint = Paint().apply { color = Color.WHITE }
+    private val airGapBlackPaint = Paint().apply { color = Color.rgb(17, 17, 17) }
+    private val airGapBorderPaint = Paint().apply {
+        color = Color.rgb(136, 136, 136)
+        style = Paint.Style.STROKE
+        strokeWidth = 1f
+    }
+
+    // Нейтральная вставка — пиктограмма "включить ток" (ГОСТ 8442-65): синий ромб, чёрная
+    // окантовка + серый контур снаружи, внутри — 2 белых квадрата сверху + 1 пошире снизу.
+    private val neutralGlyphOuterPaint = Paint().apply {
+        color = Color.rgb(136, 136, 136)
+        style = Paint.Style.STROKE
+        strokeWidth = 1f
+    }
+    private val neutralGlyphWhitePaint = Paint().apply { color = Color.WHITE }
+    private val neutralGlyphBlackPaint = Paint().apply { color = Color.rgb(0, 0, 0) }
+    private val neutralGlyphBluePaint = Paint().apply { color = Color.rgb(40, 80, 200) }
+
     private val backgroundPaint = Paint().apply { color = Color.BLACK }
 
-    // День/ночь (ТЗ раздел 14): "Дневной режим — полный цветовой негатив каждого элемента
-    // (чёрное↔белое, любой серый — в свой дополнительный цвет)". Исключения — то, что ДОЛЖНО
-    // выглядеть одинаково реально в обоих режимах, а не как инвертированная схема: зелёная
-    // полоска поезда (ТЗ прямо оговаривает это для нижней зелёной полосы на профиле рельефа —
-    // здесь тот же принцип применён к обеим зелёным полоскам поезда, которые есть в этом
-    // срезе экрана) и пиктограммы временных ограничений (опасное место/жёлтый/зелёный щит —
-    // это чертежи настоящих путевых знаков с фиксированными цветами, не часть тёмной палитры).
+    // День/ночь (ТЗ раздел 14) — см. doc-комментарий у isDayMode в предыдущей версии: полный
+    // цветовой негатив, КРОМЕ зелёных полос поезда и пиктограмм с фиксированными чертёжными
+    // цветами (опасное место/щиты/воздушный промежуток/нейтральная вставка/табличка сигнала).
     private var isDayMode = false
 
     init {
@@ -198,8 +375,10 @@ class TrackProfileView @JvmOverloads constructor(
 
         backgroundPaint.color = c(Color.BLACK)
         stepPaint.color = c(Color.rgb(160, 159, 164))
+        signalFieldPaint.color = c(Color.rgb(36, 36, 36))
         kmLinePaint.color = c(Color.rgb(178, 178, 178))
         picketLinePaint.color = c(Color.rgb(178, 178, 178))
+        reliefFillPaint.color = c(Color.rgb(178, 178, 178))
         kmTextPaint.color = c(Color.WHITE)
         axisTextPaint.color = c(Color.rgb(178, 178, 178))
         stepNumberPaint.color = c(Color.WHITE)
@@ -207,12 +386,20 @@ class TrackProfileView @JvmOverloads constructor(
         hatchLinePaint.color = c(Color.WHITE)
         hatchBorderPaint.color = c(Color.WHITE)
         restrictionNumberPaint.color = c(Color.WHITE)
-        // trainMarkerPaint/trainStripePaint (зелёная полоска поезда) и все пиктограммные
-        // Paint'ы (opasnoe*/shield*) сознательно НЕ входят сюда — исключения, см. комментарий
-        // у isDayMode выше.
+        signalLinePaint.color = c(Color.WHITE)
+        signalPolePaint.color = c(Color.WHITE)
+        signalIconPaint.color = c(Color.WHITE)
+        stationRingOuterPaint.color = c(Color.WHITE)
+        stationHalfDarkPaint.color = c(Color.BLACK)
+        stationInnerRingDarkPaint.color = c(Color.BLACK)
+        stationInnerRingLightPaint.color = c(Color.WHITE)
+        thinPerpendicularPaint.color = if (isDayMode) Color.argb(128, 55, 55, 55) else Color.argb(128, 200, 200, 200)
+        thickPerpendicularPaint.color = c(Color.rgb(160, 159, 164))
+        // trainMarkerPaint/trainSignalStripePaint/trainReliefGreenPaint/trainReliefOutlinePaint,
+        // все opasnoe*/shield*/airGap*/neutralGlyph*, и signalTagBg/Border/Text — сознательно
+        // НЕ входят сюда, см. комментарий у isDayMode выше.
     }
 
-    /** ТЗ раздел 14 — негатив только у самого графика (эта View), не у шапки/статусной строки. */
     fun setDayMode(day: Boolean) {
         isDayMode = day
         applyPalette()
@@ -222,11 +409,20 @@ class TrackProfileView @JvmOverloads constructor(
     fun setSpeedLimits(limits: List<SpeedLimit>) {
         speedLimits = limits
         resolver = SpeedLimitResolver(limits)
+        shortSegmentResolver = ShortSegmentSpeedResolver(limits)
         invalidate()
     }
 
+    /** Эффективный датасет (DirectionSelection.effectiveDataset) — см. doc-комментарий у [direction]. */
     fun setDirection(newDirection: Direction) {
         direction = newDirection
+        invalidate()
+    }
+
+    /** Направление движения как есть (DirectionSelection.direction) — только для нейтральной
+     *  вставки, см. doc-комментарий у [rawDirection]. */
+    fun setRawDirection(newDirection: Direction) {
+        rawDirection = newDirection
         invalidate()
     }
 
@@ -235,15 +431,48 @@ class TrackProfileView @JvmOverloads constructor(
         invalidate()
     }
 
-    /** [meters] — TrainComposition.lengthM (условная длина × 14 м + локомотив), не число вагонов. */
     fun setTrainLengthM(meters: Double) {
         trainLengthM = meters
         invalidate()
     }
 
-    /** Список уже отфильтрован вызывающим кодом по текущему пути (ТЗ раздел 11). */
     fun setRestrictions(list: List<Restriction>) {
         restrictions = list
+        invalidate()
+    }
+
+    fun setSignals(list: List<Signal>) {
+        signals = list
+        invalidate()
+    }
+
+    fun setStations(list: List<Station>) {
+        stations = list
+        invalidate()
+    }
+
+    fun setBlockPosts(list: List<BlockPost>) {
+        blockPosts = list
+        invalidate()
+    }
+
+    fun setRelief(profile: ReliefProfile) {
+        relief = profile
+        invalidate()
+    }
+
+    fun setCrossings(list: List<Crossing>) {
+        crossings = list
+        invalidate()
+    }
+
+    fun setAirGaps(list: List<AirGap>) {
+        airGaps = list
+        invalidate()
+    }
+
+    fun setNeutralInserts(list: List<NeutralInsert>) {
+        neutralInserts = list
         invalidate()
     }
 
@@ -251,7 +480,6 @@ class TrackProfileView @JvmOverloads constructor(
         super.onDraw(canvas)
         if (width == 0 || height == 0) return
 
-        // Фон именно этого View (не всего экрана) — чёрный ночью / белый днём (ТЗ раздел 14).
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
 
         val fromM = trainPositionM - behindM
@@ -259,25 +487,41 @@ class TrackProfileView @JvmOverloads constructor(
         val spanM = toM - fromM
         val graphLeft = AXIS_WIDTH_PX
         val graphWidth = width - AXIS_WIDTH_PX
-        val stepAreaHeight = height - RULER_HEIGHT_PX
+
+        val stepsH = height * (STEPS_TO_RELIEF_RATIO / (STEPS_TO_RELIEF_RATIO + 1f))
+        val lineY = stepsH
+        val reliefTop = stepsH
+        val reliefH = height - stepsH
+        val scaleBottomY = stepsH * SCALE_BOTTOM_FRACTION
 
         fun xFor(meters: Double): Float = graphLeft + ((meters - fromM) / spanM * graphWidth).toFloat()
+        // Обратное к xFor (x→m) — ОБЯЗАТЕЛЬНО со сдвигом на graphLeft, иначе рельеф/сетка/
+        // зелёная полоса съезжают относительно ступеней и линии сигналов (та же ошибка уже
+        // была в HTML-макете и там же исправлена, см. drawGridAndRelief/README).
+        fun mFor(x: Float): Double = fromM + ((x - graphLeft) / graphWidth) * spanM
         fun yForSpeed(speedKmh: Int): Float =
-            stepAreaHeight * (1f - (speedKmh.coerceIn(0, 100) / MAX_SPEED_KMH))
+            scaleBottomY * (1f - speedKmh.coerceIn(0, 100) / MAX_SPEED_KMH)
+
+        // Тёмное "поле" под всей зоной ступеней — ступени и штриховки лягут поверх (ТЗ раздел 7).
+        canvas.drawRect(0f, 0f, width.toFloat(), lineY, signalFieldPaint)
 
         val segments = computeSegments(fromM, toM)
-
-        drawSpeedSteps(canvas, segments, ::xFor, ::yForSpeed, stepAreaHeight)
+        val stepRegionBottoms = drawSpeedSteps(canvas, segments, ::xFor, ::yForSpeed)
         drawRestrictionHatching(canvas, fromM, toM, ::xFor, ::yForSpeed)
         drawSpeedAxis(canvas, ::yForSpeed)
-        drawKmRuler(canvas, fromM, toM, ::xFor, stepAreaHeight)
-        drawRestrictionPictograms(canvas, fromM, toM, ::xFor, stepAreaHeight)
-        drawTrainMarker(canvas, ::xFor, stepAreaHeight)
+        drawSignalLineTicksAndNumbers(canvas, fromM, toM, ::xFor, lineY)
+        drawTrainSignalStripe(canvas, ::xFor, lineY)
+        drawNeutralInsertBar(canvas, fromM, toM, ::xFor, lineY)
+        drawSignalTags(canvas, fromM, toM, ::xFor, lineY)
+
+        val pictograms = buildPictograms(fromM, toM)
+        val (headY, tailY) = drawReliefAndTrain(canvas, fromM, toM, ::xFor, ::mFor, reliefTop, reliefH, pictograms)
+
+        drawPerpendiculars(canvas, fromM, toM, ::xFor, stepRegionBottoms, pictograms, headY, tailY)
+        drawTrainMarker(canvas, ::xFor)
         drawCurrentSpeedLabel(canvas)
     }
 
-    /** Склеивает соседние сэмплы с одинаковой скоростью в один непрерывный участок —
-     * иначе не на чем аккуратно центрировать подпись числа на ступени. */
     private fun computeSegments(fromM: Double, toM: Double): List<Segment> {
         val segments = mutableListOf<Segment>()
         var segStart = fromM
@@ -298,34 +542,66 @@ class TrackProfileView @JvmOverloads constructor(
         return segments
     }
 
+    /**
+     * Ступени + штриховка раздела 9 ("\", короткий участок повышенной скорости зажат между
+     * двумя более медленными — состав не успевает разогнаться). "Короткий" и эффективная
+     * (заниженная) скорость — не пересчитываются здесь заново, а берутся у уже готового и
+     * протестированного [ShortSegmentSpeedResolver] (тот же, что уже использовался в V=/S=
+     * статусной строки, см. README шаг 17) — чтобы не завести вторую, слегка другую версию
+     * этой логики. Возвращает нижнюю границу занятой зоны каждого сегмента — для
+     * перпендикуляров (см. doc-комментарий StepRegionBottom).
+     *
+     * Заливка ступени идёт СВЕРХУ ВНИЗ: от уровня скорости 100 (scaleTop) до значения самой
+     * ступени (y) — а не наоборот, от значения до низа шкалы. Визуально это читается как
+     * "серая зона — то, что ВЫШЕ разрешённой скорости", нижний край серого — это и есть сама
+     * ступень (сверено с HTML-макетом, drawStepsAndSignalLine).
+     */
     private fun drawSpeedSteps(
         canvas: Canvas,
         segments: List<Segment>,
         xFor: (Double) -> Float,
-        yForSpeed: (Int) -> Float,
-        stepAreaHeight: Float
-    ) {
+        yForSpeed: (Int) -> Float
+    ): List<StepRegionBottom> {
+        val result = mutableListOf<StepRegionBottom>()
+        val scaleTop = yForSpeed(100)
         for (segment in segments) {
             val x0 = xFor(segment.startM)
             val x1 = xFor(segment.endM)
-            val top = yForSpeed(segment.speedKmh)
-            canvas.drawRect(x0, top, x1, stepAreaHeight, stepPaint)
+            val y = yForSpeed(segment.speedKmh)
+            canvas.drawRect(x0, scaleTop, x1, y, stepPaint)
+
+            val midM = (segment.startM + segment.endM) / 2.0
+            val effective = shortSegmentResolver.effectiveSpeedAt(direction, midM, trainLengthM)
+
+            var bottomY = y
+            if (effective != null && effective.isShortSegment) {
+                val capY = yForSpeed(effective.effectiveSpeedKmh)
+                bottomY = capY
+                drawHatch(canvas, x0, y, x1 - x0, capY - y, reverse = true)
+                canvas.drawRect(x0, y, x1, capY, hatchBorderPaint)
+                drawNumberWithOutline(canvas, effective.effectiveSpeedKmh.toString(), (x0 + x1) / 2f, (y + capY) / 2f)
+            }
+            result.add(StepRegionBottom(segment.startM, segment.endM, bottomY))
 
             if (x1 - x0 >= MIN_SEGMENT_PX_FOR_LABEL) {
                 val metrics = stepNumberPaint.fontMetrics
-                val textY = (top + stepAreaHeight) / 2f - (metrics.ascent + metrics.descent) / 2f
+                val textY = (scaleTop + y) / 2f - (metrics.ascent + metrics.descent) / 2f
                 canvas.drawText(segment.speedKmh.toString(), (x0 + x1) / 2f, textY, stepNumberPaint)
             }
         }
+        return result
     }
 
-    /**
-     * ТЗ раздел 7: "Участки временных ограничений показаны диагональной штриховкой поверх той
-     * же непрерывной ступени — сама ступень при этом не разрывается... Высота штриховки всегда
-     * считается от значения самого ограничения" — то есть от верха шкалы (speed=100) вниз до
-     * y самого ограничения, независимо от высоты ступени под ней, с окантовкой и отдельным
-     * (пониженным) числом внутри.
-     */
+
+    private fun drawNumberWithOutline(canvas: Canvas, text: String, cx: Float, cy: Float) {
+        hatchNumberOutlinePaint.textSize = restrictionNumberPaint.textSize
+        hatchNumberOutlinePaint.typeface = restrictionNumberPaint.typeface
+        val metrics = restrictionNumberPaint.fontMetrics
+        val textY = cy - (metrics.ascent + metrics.descent) / 2f
+        canvas.drawText(text, cx, textY, hatchNumberOutlinePaint)
+        canvas.drawText(text, cx, textY, restrictionNumberPaint)
+    }
+
     private fun drawRestrictionHatching(
         canvas: Canvas,
         fromM: Double,
@@ -339,8 +615,6 @@ class TrackProfileView @JvmOverloads constructor(
             if (r.endM < fromM || r.startM > toM) continue
             var x0 = xFor(r.startM.coerceAtLeast(fromM))
             var x1 = xFor(r.endM.coerceAtMost(toM))
-            // Точечное ограничение получает минимальную видимую ширину — иначе штриховка
-            // нулевой ширины была бы не видна вовсе (та же логика, что и в HTML-макете).
             if (x1 - x0 < PICTOGRAM_MIN_HATCH_WIDTH_PX) {
                 val cx = (x0 + x1) / 2f
                 x0 = cx - PICTOGRAM_MIN_HATCH_WIDTH_PX / 2f
@@ -348,59 +622,315 @@ class TrackProfileView @JvmOverloads constructor(
             }
             val yBottom = yForSpeed(r.speedKmh)
 
-            canvas.save()
-            canvas.clipRect(x0, scaleTop, x1, yBottom)
-            val w = x1 - x0
-            val h = yBottom - scaleTop
-            var d = -h
-            while (d < w) {
-                canvas.drawLine(x0 + d, scaleTop + h, x0 + d + h, scaleTop, hatchLinePaint)
-                d += 9f
-            }
-            canvas.restore()
-
+            drawHatch(canvas, x0, scaleTop, x1 - x0, yBottom - scaleTop, reverse = false)
             canvas.drawRect(x0, scaleTop, x1, yBottom, hatchBorderPaint)
-
-            val metrics = restrictionNumberPaint.fontMetrics
-            val textY = (scaleTop + yBottom) / 2f - (metrics.ascent + metrics.descent) / 2f
-            canvas.drawText(r.speedKmh.toString(), (x0 + x1) / 2f, textY, restrictionNumberPaint)
+            drawNumberWithOutline(canvas, r.speedKmh.toString(), (x0 + x1) / 2f, (scaleTop + yBottom) / 2f)
         }
     }
 
-    /**
-     * Пиктограммы начала/конца опасного места + жёлтый/зелёный щит (ТЗ раздел 8/11) — см.
-     * doc-комментарий класса про временное место в зоне km-линейки (профиля рельефа ещё нет).
-     */
-    private fun drawRestrictionPictograms(
+    /** reverse=false — "/" (временные ограничения), reverse=true — "\" (раздел 9). */
+    private fun drawHatch(canvas: Canvas, x: Float, y: Float, w: Float, h: Float, reverse: Boolean) {
+        if (w <= 0f || h <= 0f) return
+        canvas.save()
+        canvas.clipRect(x, y, x + w, y + h)
+        var d = -h
+        while (d < w) {
+            if (reverse) {
+                canvas.drawLine(x + d, y, x + d + h, y + h, hatchLinePaint)
+            } else {
+                canvas.drawLine(x + d, y + h, x + d + h, y, hatchLinePaint)
+            }
+            d += 9f
+        }
+        canvas.restore()
+    }
+
+    private fun drawSpeedAxis(canvas: Canvas, yForSpeed: (Int) -> Float) {
+        for (speed in AXIS_SPEEDS) {
+            val y = yForSpeed(speed)
+            canvas.drawText(speed.toString(), 4f, y + 8f, axisTextPaint)
+        }
+    }
+
+    /** Засечки пикетов/км и номера км — ПРЯМО на линии сигналов (не отдельной полосой-линейкой). */
+    private fun drawSignalLineTicksAndNumbers(
         canvas: Canvas,
         fromM: Double,
         toM: Double,
         xFor: (Double) -> Float,
-        stepAreaHeight: Float
+        lineY: Float
     ) {
-        if (restrictions.isEmpty()) return
-        val rowY = stepAreaHeight + PICTOGRAM_ROW_OFFSET_PX
-        for (r in restrictions) {
-            if (r.startM in fromM..toM) {
-                drawOpasnoeGlyph(canvas, xFor(r.startM), rowY, PICTOGRAM_SIZE_PX, rotated = false)
-            }
-            if (r.endM in fromM..toM) {
-                drawOpasnoeGlyph(canvas, xFor(r.endM), rowY, PICTOGRAM_SIZE_PX, rotated = true)
-            }
-            val yellowM = r.startM - SHIELD_OFFSET_M
-            if (yellowM in fromM..toM) {
-                drawShieldGlyph(canvas, xFor(yellowM), rowY, PICTOGRAM_SIZE_PX, yellowShieldColor)
-            }
-            val greenM = r.endM + SHIELD_OFFSET_M
-            if (greenM in fromM..toM) {
-                drawShieldGlyph(canvas, xFor(greenM), rowY, PICTOGRAM_SIZE_PX, greenShieldColor)
+        val picketsPerKm = (KM_LINE_LENGTH_M / PICKET_LENGTH_M).toLong()
+        val firstPicketIndex = ceil(fromM / PICKET_LENGTH_M).toLong()
+        val lastPicketIndex = floor(toM / PICKET_LENGTH_M).toLong()
+        for (i in firstPicketIndex..lastPicketIndex) {
+            val picketM = i * PICKET_LENGTH_M
+            val isKmLine = i % picketsPerKm == 0L
+            val x = xFor(picketM)
+            val tickH = if (isKmLine) 10f else 5f
+            canvas.drawLine(x, lineY - tickH, x, lineY, if (isKmLine) kmLinePaint else picketLinePaint)
+        }
+
+        canvas.drawLine(0f, lineY, width.toFloat(), lineY, signalLinePaint)
+
+        val firstKmIndex = floor(fromM / KM_LINE_LENGTH_M).toLong()
+        val lastKmIndex = floor(toM / KM_LINE_LENGTH_M).toLong()
+        for (kmIndex in firstKmIndex..lastKmIndex) {
+            val centerM = kmIndex * KM_LINE_LENGTH_M + KM_LINE_LENGTH_M / 2
+            if (centerM in fromM..toM) {
+                canvas.drawText(kmIndex.toString(), xFor(centerM), lineY - 6f, kmTextPaint)
             }
         }
     }
 
+    /** Серая полоска физической длины поезда НА линии сигналов (ТЗ раздел 7) + белая окантовка. */
+    private fun drawTrainSignalStripe(canvas: Canvas, xFor: (Double) -> Float, lineY: Float) {
+        if (trainLengthM <= 0.0) return
+        val x0 = xFor(trainPositionM - trainLengthM)
+        val x1 = xFor(trainPositionM)
+        val w = max(1f, x1 - x0)
+        canvas.drawRect(x0, lineY - 4f, x0 + w, lineY, trainSignalStripePaint)
+        canvas.drawRect(x0, lineY - 4f, x0 + w, lineY, trainSignalStripeBorderPaint)
+    }
+
+    /** Нейтральная вставка — синяя полоса НА линии сигналов, от km+пк начала на реальную
+     *  протяжённость [NeutralInsert.lengthM]; направление — [rawDirection] (см. класс). */
+    private fun drawNeutralInsertBar(canvas: Canvas, fromM: Double, toM: Double, xFor: (Double) -> Float, lineY: Float) {
+        for (n in neutralInserts) {
+            if (n.direction != rawDirection) continue
+            if (n.chainageM + n.lengthM < fromM || n.chainageM > toM) continue
+            val x0 = xFor(n.chainageM)
+            val x1 = xFor(n.chainageM + n.lengthM)
+            val w = max(1f, x1 - x0)
+            canvas.drawRect(x0, lineY - 3f, x0 + w, lineY, neutralBarPaint)
+            canvas.drawRect(x0, lineY - 3f, x0 + w, lineY, neutralBarBorderPaint)
+        }
+    }
+
+    /** Значки сигналов (капсула) и станций (кольцо) + таблички с расстоянием — настоящие
+     *  данные ([signals] главного пути + [stations] + [blockPosts] как доп. сигналы). */
+    private fun drawSignalTags(canvas: Canvas, fromM: Double, toM: Double, xFor: (Double) -> Float, lineY: Float) {
+        val tags = buildList {
+            for (s in signals) if (s.direction == direction) add(SignalTag(s.chainageM, s.name, false))
+            for (b in blockPosts) if (b.direction == direction) add(SignalTag(b.chainageM, b.label, false))
+            for (st in stations) if (st.direction == direction) add(SignalTag(st.chainageM, st.name, true))
+        }.sortedBy { it.chainageM }
+
+        val aheadSignalsOnly = tags.filter { !it.isStation && it.chainageM > trainPositionM }.sortedBy { it.chainageM }
+
+        for (tag in tags) {
+            if (tag.chainageM < fromM || tag.chainageM > toM) continue
+            val x = xFor(tag.chainageM)
+            val poleLen = if (tag.isStation) STATION_POLE_PX else SIGNAL_POLE_PX
+            val rOuter = if (tag.isStation) STATION_R_OUTER_PX else SIGNAL_RY_PX
+            val poleTop = lineY - poleLen
+            val iconCy = lineY - poleLen - rOuter
+
+            canvas.drawLine(x, lineY, x, poleTop, signalPolePaint)
+
+            if (tag.isStation) {
+                drawStationIcon(canvas, x, iconCy, STATION_R_OUTER_PX, STATION_R_INNER_PX)
+            } else {
+                drawCapsule(canvas, x, iconCy, SIGNAL_RX_PX, SIGNAL_RY_PX)
+            }
+
+            val passed = tag.chainageM <= trainPositionM
+            var distanceLabel = ""
+            if (!passed) {
+                val distance = if (tag.isStation) {
+                    tag.chainageM - trainPositionM
+                } else {
+                    val idx = aheadSignalsOnly.indexOf(tag)
+                    if (idx <= 0) tag.chainageM - trainPositionM else tag.chainageM - aheadSignalsOnly[idx - 1].chainageM
+                }
+                distanceLabel = " " + Math.round(distance)
+            }
+            val text = tag.label + distanceLabel
+
+            val textW = signalTagTextPaint.measureText(text)
+            val boxW = textW + 8f
+            val boxH = 14f
+            val extraGap = if (tag.isStation) 5f else 0f
+            val tagBottom = iconCy - rOuter - 1f - extraGap
+            val tagTop = tagBottom - boxH
+
+            canvas.drawLine(x, tagBottom, x, iconCy - rOuter, signalPolePaint)
+            canvas.drawRect(x + 0.5f, tagTop + 0.5f, x + boxW - 0.5f, tagTop + boxH - 0.5f, signalTagBgPaint)
+            canvas.drawRect(x, tagTop, x + boxW, tagTop + boxH, signalTagBorderPaint)
+            canvas.drawText(text, x + 4f, tagTop + boxH - 4f, signalTagTextPaint)
+        }
+    }
+
+    /** Капсула-стадион (rx < ry — вытянута вертикально, скруглена и сверху, и снизу): round-rect
+     *  с радиусом скругления = rx (половина ширины) даёт ровно такую форму. */
+    private fun drawCapsule(canvas: Canvas, cx: Float, cy: Float, rx: Float, ry: Float) {
+        canvas.drawRoundRect(cx - rx, cy - ry, cx + rx, cy + ry, rx, rx, signalIconPaint)
+    }
+
+    /** Два концентрических кольца, разделённых пополам (ТЗ раздел 7): одна половина светлая
+     *  с тёмным внутренним кольцом, другая — тёмная со светлым внутренним кольцом, плюс
+     *  светлый внешний контур. "Светлый"/"тёмный" — через applyPalette (день/ночь), как и у
+     *  остальной линии сигналов. */
+    private fun drawStationIcon(canvas: Canvas, cx: Float, cy: Float, rOuter: Float, rInner: Float) {
+        val bounds = RectF(cx - rOuter, cy - rOuter, cx + rOuter, cy + rOuter)
+
+        canvas.save()
+        val rightHalf = Path().apply { arcTo(bounds, -90f, 180f); close() }
+        canvas.clipPath(rightHalf)
+        canvas.drawRect(bounds, signalIconPaint)
+        canvas.drawCircle(cx, cy, rInner, stationInnerRingDarkPaint)
+        canvas.restore()
+
+        canvas.save()
+        val leftHalf = Path().apply { arcTo(bounds, 90f, 180f); close() }
+        canvas.clipPath(leftHalf)
+        canvas.drawRect(bounds, stationHalfDarkPaint)
+        canvas.drawCircle(cx, cy, rInner, stationInnerRingLightPaint)
+        canvas.restore()
+
+        canvas.drawCircle(cx, cy, rOuter, stationRingOuterPaint)
+    }
+
+    /** Все пиктограммы в видимом окне, отсортированные по м — настоящие (переезды/возд.
+     *  промежутки/нейтральные вставки) + динамические (ограничения, ТЗ раздел 11). Переезды
+     *  визуально пока не дорисованы (нужен настоящий чертёж-PNG знака 1.1 ГОСТ Р 52290, см.
+     *  README/чат) — данные загружаются, но в этот список намеренно не попадают. */
+    private fun buildPictograms(fromM: Double, toM: Double): List<Pictogram> {
+        val result = mutableListOf<Pictogram>()
+        for (a in airGaps) if (a.direction == direction && a.chainageM in fromM..toM) {
+            result.add(Pictogram(a.chainageM, PictogramKind.AIR_GAP))
+        }
+        for (n in neutralInserts) if (n.direction == rawDirection && n.chainageM in fromM..toM) {
+            result.add(Pictogram(n.chainageM, PictogramKind.NEUTRAL))
+        }
+        for (r in restrictions) {
+            val yellowM = r.startM - SHIELD_OFFSET_M
+            val greenM = r.endM + SHIELD_OFFSET_M
+            if (r.startM in fromM..toM) result.add(Pictogram(r.startM, PictogramKind.OPASNOE_START))
+            if (r.endM in fromM..toM) result.add(Pictogram(r.endM, PictogramKind.OPASNOE_END))
+            if (yellowM in fromM..toM) result.add(Pictogram(yellowM, PictogramKind.YELLOW_SHIELD))
+            if (greenM in fromM..toM) result.add(Pictogram(greenM, PictogramKind.GREEN_SHIELD))
+        }
+        return result.sortedBy { it.chainageM }
+    }
+
+    /**
+     * Рельеф (сетка пикетов + серая заливка) с панорамированием, зелёная полоса поезда вдоль
+     * кривой, и пиктограммы на нём (два фиксированных места — низ/верх полосы, см. класс).
+     * Возвращает (headY, tailY) — высоту рельефа у головы/хвоста поезда, для толстых
+     * перпендикуляров.
+     */
+    private fun drawReliefAndTrain(
+        canvas: Canvas,
+        fromM: Double,
+        toM: Double,
+        xFor: (Double) -> Float,
+        mFor: (Float) -> Double,
+        top: Float,
+        bandH: Float,
+        pictograms: List<Pictogram>
+    ): Pair<Float, Float> {
+        val hasCoverage = relief.hasCoverage(direction)
+        val floorY = top + bandH * RELIEF_FLOOR_FRACTION
+        val minInView = if (hasCoverage) relief.minHeightInRange(direction, fromM, toM) else null
+
+        fun reliefY(m: Double): Float {
+            val h = relief.heightAt(direction, m)
+            return if (h != null && minInView != null) {
+                floorY - ((h - minInView) * RELIEF_PX_PER_PT).toFloat()
+            } else {
+                // Вне покрытия (км5930-6604, README шаг 15) — ровная линия у пола полосы, а
+                // не выдуманная синусоида (в отличие от HTML-макета — там это было нужно для
+                // наглядности пропорций, здесь настоящему приложению это не нужно).
+                floorY
+            }
+        }
+
+        // заливка рельефа
+        val fillPath = Path()
+        fillPath.moveTo(0f, top + bandH)
+        fillPath.lineTo(0f, reliefY(fromM))
+        var x = 0f
+        val stepPx = 16f
+        val w = width.toFloat()
+        while (x <= w) {
+            fillPath.lineTo(x, reliefY(mFor(x)))
+            x += stepPx
+        }
+        fillPath.lineTo(w, top + bandH)
+        fillPath.close()
+        canvas.drawPath(fillPath, reliefFillPaint)
+
+        // сетка пикетов, клип по поверхности рельефа
+        canvas.save()
+        canvas.clipRect(0f, top, w, top + bandH)
+        val firstPicketIndex = ceil(fromM / PICKET_LENGTH_M).toLong()
+        val lastPicketIndex = floor(toM / PICKET_LENGTH_M).toLong()
+        for (i in firstPicketIndex..lastPicketIndex) {
+            val picketM = i * PICKET_LENGTH_M
+            val px = xFor(picketM)
+            canvas.drawLine(px, top, px, top + bandH, picketLinePaint)
+        }
+        val hLines = 4
+        for (j in 1 until hLines) {
+            val y = top + (bandH * 0.9f * j) / hLines
+            canvas.drawLine(0f, y, w, y, picketLinePaint)
+        }
+        canvas.restore()
+
+        // зелёная полоса поезда вдоль рельефа — от хвоста до головы, нижний край полосы = кривая.
+        val headX0M = trainPositionM - trainLengthM
+        fun traceTrainPath(strokeW: Float): Path {
+            val path = Path()
+            var started = false
+            var px = 0f
+            while (px <= w) {
+                val m = mFor(px)
+                if (m in headX0M..trainPositionM) {
+                    val y = reliefY(m) - strokeW / 2f
+                    if (!started) {
+                        path.moveTo(px, y)
+                        started = true
+                    } else {
+                        path.lineTo(px, y)
+                    }
+                }
+                px += 4f
+            }
+            return path
+        }
+        if (trainLengthM > 0.0) {
+            trainReliefOutlinePaint.strokeCap = Paint.Cap.SQUARE
+            trainReliefGreenPaint.strokeCap = Paint.Cap.SQUARE
+            canvas.drawPath(traceTrainPath(trainReliefOutlinePaint.strokeWidth), trainReliefOutlinePaint)
+            canvas.drawPath(traceTrainPath(trainReliefGreenPaint.strokeWidth), trainReliefGreenPaint)
+        }
+
+        // пиктограммы — низ полосы (обычно) либо верх (если рельеф там слишком низкий)
+        val bottomY = top + bandH - ICON_GAP_PX - ICON_HALF_PX
+        val topY = top + ICON_GAP_PX + ICON_HALF_PX
+        for (p in pictograms) {
+            val px = xFor(p.chainageM)
+            val fitsAtBottom = reliefY(p.chainageM) <= bottomY - ICON_HALF_PX
+            val py = if (fitsAtBottom) bottomY else topY
+            drawPictogramGlyph(canvas, px, py, ICON_HALF_PX, p.kind)
+        }
+
+        return reliefY(trainPositionM) to reliefY(headX0M)
+    }
+
+    private fun drawPictogramGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, kind: PictogramKind) {
+        when (kind) {
+            PictogramKind.OPASNOE_START -> drawOpasnoeGlyph(canvas, cx, cy, s, rotated = false)
+            PictogramKind.OPASNOE_END -> drawOpasnoeGlyph(canvas, cx, cy, s, rotated = true)
+            PictogramKind.YELLOW_SHIELD -> drawShieldGlyph(canvas, cx, cy, s, yellowShieldColor)
+            PictogramKind.GREEN_SHIELD -> drawShieldGlyph(canvas, cx, cy, s, greenShieldColor)
+            PictogramKind.AIR_GAP -> drawAirGapGlyph(canvas, cx, cy, s)
+            PictogramKind.NEUTRAL -> drawNeutralGlyph(canvas, cx, cy, s)
+        }
+    }
+
     private fun drawOpasnoeGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, rotated: Boolean) {
-        // Точные размеры с чертежа (ТЗ раздел 8): Ø550мм общий, кольцо/перекладина 100мм
-        // толщиной, световозвращатели (точки) Ø51мм — внешний край кольца вплотную к краю круга.
         val ringW = s * (100f / 275f)
         val r = s - ringW / 2f
         canvas.save()
@@ -412,9 +942,6 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.drawCircle(0f, 0f, r, opasnoeRingPaint)
         canvas.drawRect(-s, -ringW / 2f, s, ringW / 2f, opasnoeBlackPaint)
 
-        // 8 белых отверстий по кольцу (циферблат, от 12 часов по часовой стрелке) + 3 в
-        // перекладине — вместе с 2 крайними на кольце (3 и 9 часов) дают 5 точек на центральной
-        // линии, равномерно от -r до +r.
         val dotR = s * (51f / 2f / 275f)
         for (i in 0 until 8) {
             val angle = Math.toRadians((-90 + i * 45).toDouble())
@@ -427,8 +954,6 @@ class TrackProfileView @JvmOverloads constructor(
     }
 
     private fun drawShieldGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, fillColor: Int) {
-        // Точные размеры с чертежа щита (ТЗ раздел 8): сторона 470мм, белая полоса 25мм,
-        // чёрная полоса 25мм (обе от внешнего края) — цветная заливка занимает всё остальное.
         val halfMm = 235f
         val borderMm = 25f
         val inset1 = s * (borderMm / halfMm)
@@ -439,68 +964,114 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.drawRect(cx - s + inset2, cy - s + inset2, cx + s - inset2, cy + s - inset2, shieldColorPaint)
     }
 
-    private fun drawSpeedAxis(canvas: Canvas, yForSpeed: (Int) -> Float) {
-        for (speed in AXIS_SPEEDS) {
-            val y = yForSpeed(speed)
-            canvas.drawText(speed.toString(), 4f, y + 8f, axisTextPaint)
+    /** 3×7 клеток, строки 1/3/5/7 (индексы 0,2,4,6) чёрные во всю ширину + сплошная чёрная
+     *  средняя колонка сверху донизу (машинист, со слов — не по чертежу с размерами). */
+    private fun drawAirGapGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
+        val rows = 7
+        val h = s * 2f
+        val cellH = h / rows
+        val cellW = cellH
+        val w = cellW * 3
+        val left = cx - w / 2f
+        val top = cy - h / 2f
+
+        canvas.drawRect(left, top, left + w, top + h, airGapWhitePaint)
+        for (row in 0 until rows) {
+            if (row % 2 != 0) continue
+            canvas.drawRect(left, top + row * cellH, left + w, top + (row + 1) * cellH, airGapBlackPaint)
         }
+        canvas.drawRect(left + cellW, top, left + 2 * cellW, top + h, airGapBlackPaint)
+        canvas.drawRect(left, top, left + w, top + h, airGapBorderPaint)
     }
 
-    private fun drawKmRuler(
+    /** Ромб "включить ток" (ГОСТ 8442-65) — синяя заливка, чёрная окантовка, серый контур
+     *  снаружи; внутри 2 белых скруглённых квадрата сверху + 1 пошире снизу, все пустые. */
+    private fun drawNeutralGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
+        val path = Path()
+        path.moveTo(cx, cy - s - 1.5f)
+        path.lineTo(cx + s + 1.5f, cy)
+        path.lineTo(cx, cy + s + 1.5f)
+        path.lineTo(cx - s - 1.5f, cy)
+        path.close()
+        canvas.drawPath(path, neutralGlyphOuterPaint)
+
+        fun diamond(r: Float, paint: Paint) {
+            val p = Path()
+            p.moveTo(cx, cy - r)
+            p.lineTo(cx + r, cy)
+            p.lineTo(cx, cy + r)
+            p.lineTo(cx - r, cy)
+            p.close()
+            canvas.drawPath(p, paint)
+        }
+        val inradius = s / 1.41421356f
+        fun insetR(mm: Float): Float {
+            val sideLen = s * 1.41421356f
+            val dUnits = mm * (sideLen / 450f)
+            return s * (1f - dUnits / inradius)
+        }
+        diamond(s, neutralGlyphWhitePaint)
+        diamond(insetR(20f), neutralGlyphBlackPaint)
+        diamond(insetR(40f), neutralGlyphBluePaint)
+
+        val sideLen = s * 1.41421356f
+        val sq = sideLen * (90f / 450f)
+        val gap = sideLen * (80f / 450f)
+        val contentW = sideLen * (260f / 450f)
+        val cornerR = sideLen * (40f / 450f)
+        val barH = sq * 0.6f
+        val totalH = sq + gap + barH
+        val sqTop = cy - totalH / 2f
+        val barTop = sqTop + sq + gap
+        canvas.drawRoundRect(cx - gap / 2f - sq, sqTop, cx - gap / 2f, sqTop + sq, cornerR, cornerR, neutralGlyphWhitePaint)
+        canvas.drawRoundRect(cx + gap / 2f, sqTop, cx + gap / 2f + sq, sqTop + sq, cornerR, cornerR, neutralGlyphWhitePaint)
+        canvas.drawRoundRect(cx - contentW / 2f, barTop, cx + contentW / 2f, barTop + barH, cornerR, cornerR, neutralGlyphWhitePaint)
+    }
+
+    /**
+     * Тонкие перпендикуляры — от каждой пиктограммы и каждой границы ступеней, СНИЗУ (от
+     * низа графика) РОВНО до занятой зоны ступени ([StepRegionBottom.bottomY]) — сквозь
+     * заливку/штриховку не проходят (машинист). Толстые — проекция головы/хвоста поезда,
+     * от занятой зоны своей ступени до высоты рельефа ([headY]/[tailY]).
+     */
+    private fun drawPerpendiculars(
         canvas: Canvas,
         fromM: Double,
         toM: Double,
         xFor: (Double) -> Float,
-        stepAreaHeight: Float
+        stepRegionBottoms: List<StepRegionBottom>,
+        pictograms: List<Pictogram>,
+        headY: Float,
+        tailY: Float
     ) {
-        val rulerBottom = height.toFloat()
-        val picketsPerKm = (KM_LINE_LENGTH_M / PICKET_LENGTH_M).toLong() // 10
+        fun regionBottomAt(m: Double): Float =
+            stepRegionBottoms.firstOrNull { m >= it.startM && m <= it.endM }?.bottomY ?: 0f
 
-        // Целочисленные индексы пикетов/км, а не повторное сложение float — иначе после
-        // многих итераций накопленная погрешность может сдвинуть отметку километра.
-        val firstPicketIndex = ceil(fromM / PICKET_LENGTH_M).toLong()
-        val lastPicketIndex = floor(toM / PICKET_LENGTH_M).toLong()
-        for (i in firstPicketIndex..lastPicketIndex) {
-            val picketM = i * PICKET_LENGTH_M
-            val isKmLine = i % picketsPerKm == 0L
-            val x = xFor(picketM)
-            if (isKmLine) {
-                canvas.drawLine(x, 0f, x, rulerBottom, kmLinePaint)
-            } else {
-                canvas.drawLine(x, stepAreaHeight, x, rulerBottom, picketLinePaint)
-            }
+        val h = height.toFloat()
+        for (p in pictograms) {
+            val x = xFor(p.chainageM)
+            canvas.drawLine(x, regionBottomAt(p.chainageM), x, h, thinPerpendicularPaint)
+        }
+        for (i in 1 until stepRegionBottoms.size) {
+            val boundaryM = stepRegionBottoms[i].startM
+            if (boundaryM < fromM || boundaryM > toM) continue
+            val topY = max(stepRegionBottoms[i - 1].bottomY, stepRegionBottoms[i].bottomY)
+            canvas.drawLine(xFor(boundaryM), topY, xFor(boundaryM), h, thinPerpendicularPaint)
         }
 
-        // Номер км по центру каждого километрового столбца, как на профилях пути. Обычный
-        // км+пк (ChainageFormatter.format) — без +1, это НЕ формат КЛУБ-У.
-        val firstKmIndex = floor(fromM / KM_LINE_LENGTH_M).toLong()
-        val lastKmIndex = floor(toM / KM_LINE_LENGTH_M).toLong()
-        for (kmIndex in firstKmIndex..lastKmIndex) {
-            val kmBoundary = kmIndex * KM_LINE_LENGTH_M
-            val centerM = kmBoundary + KM_LINE_LENGTH_M / 2
-            if (centerM in fromM..toM) {
-                canvas.drawText(kmIndex.toString(), xFor(centerM), rulerBottom - 18f, kmTextPaint)
-            }
-        }
+        val tailM = trainPositionM - trainLengthM
+        val headX = xFor(trainPositionM)
+        val tailX = xFor(tailM)
+        canvas.drawLine(headX, regionBottomAt(trainPositionM), headX, headY, thickPerpendicularPaint)
+        canvas.drawLine(tailX, regionBottomAt(tailM), tailX, tailY, thickPerpendicularPaint)
     }
 
-    private fun drawTrainMarker(canvas: Canvas, xFor: (Double) -> Float, stepAreaHeight: Float) {
+    private fun drawTrainMarker(canvas: Canvas, xFor: (Double) -> Float) {
         val headX = xFor(trainPositionM)
         canvas.drawLine(headX, 0f, headX, height.toFloat(), trainMarkerPaint)
-
-        // Физическая длина состава — от головы (GPS) назад, вдоль границы ступеней/линейки.
-        // trainLengthM == 0.0 (длина ещё не задана вызывающим кодом) — полоску не рисуем,
-        // остаётся только позиционная линия выше.
-        if (trainLengthM > 0.0) {
-            val tailX = xFor(trainPositionM - trainLengthM)
-            canvas.drawLine(tailX, stepAreaHeight, headX, stepAreaHeight, trainStripePaint)
-        }
     }
 
     private fun drawCurrentSpeedLabel(canvas: Canvas) {
-        // Активное временное ограничение (ТЗ раздел 11) побеждает постоянное в своей точке —
-        // та же логика, что и в MainActivity.buildStatusBarText (RestrictionAwareSpeedResolver),
-        // здесь без отдельного класса: restrictions уже отфильтрованы по пути вызывающим кодом.
         val activeRestriction = restrictions.firstOrNull { trainPositionM in it.startM..it.endM }
         val speedKmh = activeRestriction?.speedKmh ?: resolver.speedAt(direction, trainPositionM)?.speedKmh
         val text = if (speedKmh != null) "V=$speedKmh км/ч" else "V=?"
