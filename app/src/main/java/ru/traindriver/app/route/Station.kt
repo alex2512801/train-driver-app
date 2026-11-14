@@ -45,3 +45,23 @@ fun nearestStationName(
     val nearest = candidates.minByOrNull { abs(it.chainageM - positionM) } ?: return null
     return if (abs(nearest.chainageM - positionM) <= toleranceM) nearest.name else null
 }
+
+/**
+ * Станция, к которой сейчас едем — следующая ПО ХОДУ движения (ТЗ раздел 7, блок "станция
+ * назначения" в шапке), а не конечная станция всего маршрута: при приближении к ней сменится
+ * на следующую за ней. [picketsGrowing] — растут пикеты или убывают (DirectionSelection,
+ * зависит только от направления, не от пути) — определяет, в какую сторону по км+пк искать.
+ */
+fun nextStationAhead(
+    positionM: Double,
+    direction: Direction,
+    picketsGrowing: Boolean,
+    stations: List<Station>
+): String? {
+    val candidates = stations.filter { it.direction == direction }
+    return if (picketsGrowing) {
+        candidates.filter { it.chainageM > positionM }.minByOrNull { it.chainageM }?.name
+    } else {
+        candidates.filter { it.chainageM < positionM }.maxByOrNull { it.chainageM }?.name
+    }
+}

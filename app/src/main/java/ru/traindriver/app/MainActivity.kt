@@ -64,7 +64,9 @@ import ru.traindriver.app.route.TrainComposition
 import ru.traindriver.app.route.TrainParams
 import ru.traindriver.app.route.TrainParamsStore
 import ru.traindriver.app.route.nearestStationName
+import ru.traindriver.app.route.nextStationAhead
 import ru.traindriver.app.route.sortedForDirection
+import ru.traindriver.app.ui.OpasnoeIconView
 import ru.traindriver.app.ui.TrackProfileView
 
 class MainActivity : AppCompatActivity() {
@@ -78,7 +80,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pathButton: Button
     private lateinit var k1Button: Button
     private lateinit var paramsButton: Button
-    private lateinit var restrictionsButton: Button
+    private lateinit var restrictionsButton: OpasnoeIconView
     private lateinit var dayNightButton: Button
     private var isDayMode = false
     private lateinit var trackProfileView: TrackProfileView
@@ -367,10 +369,7 @@ class MainActivity : AppCompatActivity() {
         val s = directionSelection
         directionButton.text = if (s.direction == Direction.EVEN) "Чётное" else "Нечётное"
         pathButton.text = "Путь ${s.physicalPath}"
-        // Станция назначения — куда едем по направлению движения (маршрут Хилок ↔
-        // Чернышевск-Забайкальский, см. routeTrack/README); не зависит от того, какой путь
-        // выбран (это только физический путь на той же линии).
-        destinationText.text = if (s.direction == Direction.EVEN) "Чернышевск-\nЗабайкальский" else "Хилок"
+        updateDestinationText(lastChainageM)
 
         val statusText = if (s.pathStatus == PathStatus.CORRECT) "правильный" else "неправильный"
         val datasetText = if (s.effectiveDataset == Direction.EVEN) "чётный" else "нечётный"
@@ -394,6 +393,16 @@ class MainActivity : AppCompatActivity() {
         stationScheduler = PointAnnouncementScheduler(relevantStations, { it.chainageM }, thresholdOf = { it.thresholdM })
 
         refreshTrackProfileRestrictions()
+    }
+
+    // Станция назначения в шапке — следующая станция ПО ХОДУ движения (не конечная станция
+    // всего маршрута, машинист поправил), пересчитывается и при смене направления/пути
+    // (updateDirectionUi), и на каждой GPS-позиции (startLocationUpdates) — см. doc-комментарий
+    // у nextStationAhead.
+    private fun updateDestinationText(chainageM: Double) {
+        val s = directionSelection
+        val next = nextStationAhead(chainageM, s.effectiveDataset, s.picketsGrowing, stations)
+        destinationText.text = next?.replaceFirst("-", "-\n") ?: "—"
     }
 
     // "Параметры" (ТЗ раздел 5): серия локомотива -> вес/длина автоматически по таблице
@@ -604,6 +613,7 @@ class MainActivity : AppCompatActivity() {
             coordinateText.text = formatCoordinate(chainageM)
             trackProfileView.setTrainPositionM(chainageM)
             statusBarText.text = buildStatusBarText(location, chainageM)
+            updateDestinationText(chainageM)
 
             val brakeTest = brakeTestScheduler.update(chainageM, directionSelection.picketsGrowing)
             if (brakeTest != null) {
