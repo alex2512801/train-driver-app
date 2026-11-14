@@ -1,6 +1,0 @@
-<resources>
-    <!-- Фон иконки приложения — тот же чёрный, что и фон самого графика (TrackProfileView,
-         backgroundPaint = Color.BLACK), чтобы иконка на телефоне узнавалась как "та же
-         программа". -->
-    <color name="ic_launcher_background">#000000</color>
-</resources>
