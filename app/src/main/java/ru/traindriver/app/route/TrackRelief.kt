@@ -54,6 +54,20 @@ class ReliefProfile(points: List<ReliefPoint>) {
             ?.filter { it.chainageM in fromM..toM }
             ?.minOfOrNull { it.heightStitched }
 
+    /**
+     * Самая высокая точка рельефа в видимом окне [fromM, toM] — машинист: рельеф рисуется
+     * "от максимума в видимом окне" (см. HTML-макет), именно эта точка должна сидеть у
+     * верхней границы полосы рельефа, а не какая-то произвольная. Раньше полоса считалась
+     * только от минимума (см. [minHeightInRange]) без верхней привязки — из-за этого высокий
+     * участок рельефа мог нарисоваться ВЫШЕ линии сигналов (машинист прислал скриншот такого
+     * наложения). Null, если в окне вообще нет покрытия.
+     */
+    fun maxHeightInRange(direction: Direction, fromM: Double, toM: Double): Double? =
+        byDirection[direction]
+            ?.asSequence()
+            ?.filter { it.chainageM in fromM..toM }
+            ?.maxOfOrNull { it.heightStitched }
+
     fun hasCoverage(direction: Direction): Boolean = byDirection[direction]?.isNotEmpty() == true
 }
 

@@ -60,6 +60,21 @@ class TrackReliefTest {
     }
 
     @Test
+    fun `maxHeightInRange finds the highest point within the window`() {
+        val profile = ReliefProfile(evenPoints)
+        assertEquals(20.0, profile.maxHeightInRange(Direction.EVEN, 100.0, 300.0)!!, 0.0001)
+        // Самая высокая точка видимого окна (не всего профиля) — графику нужно сидеть у
+        // неё верхней границей, см. doc-комментарий у maxHeightInRange.
+        assertEquals(15.0, profile.maxHeightInRange(Direction.EVEN, 250.0, 300.0)!!, 0.0001)
+    }
+
+    @Test
+    fun `maxHeightInRange is null when the window has no coverage`() {
+        val profile = ReliefProfile(evenPoints)
+        assertNull(profile.maxHeightInRange(Direction.EVEN, 1000.0, 2000.0))
+    }
+
+    @Test
     fun `hasCoverage reflects which directions have data`() {
         val profile = ReliefProfile(evenPoints)
         assertTrue(profile.hasCoverage(Direction.EVEN))

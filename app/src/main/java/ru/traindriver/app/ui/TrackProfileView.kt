@@ -875,12 +875,19 @@ class TrackProfileView @JvmOverloads constructor(
     ): Pair<Float, Float> {
         val hasCoverage = relief.hasCoverage(direction)
         val floorY = top + bandH * RELIEF_FLOOR_FRACTION
-        val minInView = if (hasCoverage) relief.minHeightInRange(direction, fromM, toM) else null
+        // Привязка к МАКСИМУМУ видимого окна, не к минимуму (машинист про реальный экран:
+        // "пересчитывается на каждую отрисовку от максимума в видимом окне" — см. HTML-макет).
+        // Раньше здесь была привязка к минимуму без верхней границы — из-за этого высокий
+        // участок рельефа мог нарисоваться ВЫШЕ линии сигналов, в чужой зоне графика (машинист
+        // прислал скриншот именно такого наложения). Привязка к максимуму гарантирует обратное:
+        // самая высокая точка всегда ровно у верхней границы полосы, ниже неё — никогда.
+        val maxInView = if (hasCoverage) relief.maxHeightInRange(direction, fromM, toM) else null
+        val ceilY = top + dp(6f)
 
         fun reliefY(m: Double): Float {
             val h = relief.heightAt(direction, m)
-            return if (h != null && minInView != null) {
-                floorY - ((h - minInView) * reliefPxPerPt).toFloat()
+            return if (h != null && maxInView != null) {
+                ceilY + ((maxInView - h) * reliefPxPerPt).toFloat()
             } else {
                 // Вне покрытия (км5930-6604, README шаг 15) — ровная линия у пола полосы, а
                 // не выдуманная синусоида (в отличие от HTML-макета — там это было нужно для
