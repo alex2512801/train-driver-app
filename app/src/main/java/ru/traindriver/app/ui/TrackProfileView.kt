@@ -61,10 +61,8 @@ class TrackProfileView @JvmOverloads constructor(
     companion object {
         private const val MAX_SPEED_KMH = 100f
         private const val SAMPLE_STEP_M = 20.0
-        private const val AXIS_WIDTH_PX = 60f
         private const val KM_LINE_LENGTH_M = 1000.0
         private const val PICKET_LENGTH_M = 100.0
-        private const val MIN_SEGMENT_PX_FOR_LABEL = 36f
         private val AXIS_SPEEDS = intArrayOf(100, 80, 60, 40, 20)
 
         // Верх:низ = 4.5:1 (машинист, см. doc-комментарий класса).
@@ -74,34 +72,42 @@ class TrackProfileView @JvmOverloads constructor(
         // HTML-макет, drawStepsAndSignalLine: scaleBottom = top + bandH*0.62).
         private const val SCALE_BOTTOM_FRACTION = 0.62f
 
-        // Пиктограммы ограничений (ТЗ раздел 8/11).
-        private const val PICTOGRAM_MIN_HATCH_WIDTH_PX = 4f
         private const val SHIELD_OFFSET_M = 1000.0
 
-        // Пиктограммы на рельефе — два фиксированных места (см. doc-комментарий класса).
-        private const val ICON_HALF_PX = 9f
-        private const val ICON_GAP_PX = 5f
-
-        // px на 1pt склеенной шкалы рельефа (REAL_RELIEF_PX_PER_PT в HTML-макете) — подобрано
-        // визуально, это не калибровка в метры (её нет, см. README шаг 15).
-        private const val RELIEF_PX_PER_PT = 1.5f
         // Панорамирование: самая низкая точка видимого окна — у пола полосы рельефа, а не
         // выше (машинист). floorY = reliefTop + reliefH * RELIEF_FLOOR_FRACTION.
         private const val RELIEF_FLOOR_FRACTION = 0.92f
 
+        // Все размеры ниже — в dp (условных единицах, не зависящих от плотности экрана
+        // конкретного телефона), переводятся в настоящие пиксели через dp() при создании
+        // View (см. density/dp ниже). Раньше здесь лежали "голые" числа пикселей, подобранные
+        // на глаз по HTML-макету на экране компьютера — на настоящем телефоне с другой
+        // плотностью экрана они оказались почти нечитаемо мелкими (машинист: "там вообще
+        // ничего не видно"). Значения увеличены и переведены в dp, чтобы исправить это разом.
+        private const val AXIS_WIDTH_DP = 70f
+        private const val MIN_SEGMENT_DP_FOR_LABEL = 50f
+        private const val PICTOGRAM_MIN_HATCH_WIDTH_DP = 6f
+
+        // Пиктограммы на рельефе — два фиксированных места (см. doc-комментарий класса).
+        private const val ICON_HALF_DP = 16f
+        private const val ICON_GAP_DP = 6f
+
+        // dp на 1pt склеенной шкалы рельефа (REAL_RELIEF_PX_PER_PT в HTML-макете) — подобрано
+        // визуально, это не калибровка в метры (её нет, см. README шаг 15).
+        private const val RELIEF_DP_PER_PT = 1.5f
+
         // Геометрия значка сигнала/станции (капсула/кольцо) — те же пропорции, что в
-        // HTML-макете: rx=5, ry=7, столбик=8; станция крупнее в 7/6 раза, ножка:радиус=50:45.
-        private const val SIGNAL_RY_PX = 7f
-        private const val SIGNAL_RX_PX = 5f
-        private const val SIGNAL_POLE_PX = 8f
-        private const val SIGNAL_TOTAL_H_PX = SIGNAL_RY_PX * 2f + SIGNAL_POLE_PX // 22
-        // Значок станции крупнее в 7/6 раза по полной высоте; ножка:радиус = 50:45 — оба
-        // выводятся из этого отношения, а не масштабируются от значений сигнала по отдельности
-        // (см. HTML-макет: STATION_R_OUTER = STATION_TOTAL_H / (2 + 50/45)).
-        private const val STATION_TOTAL_H_PX = SIGNAL_TOTAL_H_PX * 7f / 6f // ≈25.67
-        private const val STATION_R_OUTER_PX = STATION_TOTAL_H_PX / (2f + 50f / 45f) // ≈8.21
-        private const val STATION_R_INNER_PX = STATION_R_OUTER_PX * 0.65f
-        private const val STATION_POLE_PX = STATION_R_OUTER_PX * (50f / 45f)
+        // HTML-макете (rx:ry:столбик = 5:7:8), но крупнее в dp; станция крупнее сигнала в
+        // 7/6 раза по полной высоте, ножка:радиус = 50:45 — оба выводятся из этого отношения,
+        // а не масштабируются от сигнала по отдельности (см. HTML-макет).
+        private const val SIGNAL_RY_DP = 10f
+        private const val SIGNAL_RX_DP = 7f
+        private const val SIGNAL_POLE_DP = 12f
+        private const val SIGNAL_TOTAL_H_DP = SIGNAL_RY_DP * 2f + SIGNAL_POLE_DP
+        private const val STATION_TOTAL_H_DP = SIGNAL_TOTAL_H_DP * 7f / 6f
+        private const val STATION_R_OUTER_DP = STATION_TOTAL_H_DP / (2f + 50f / 45f)
+        private const val STATION_R_INNER_DP = STATION_R_OUTER_DP * 0.65f
+        private const val STATION_POLE_DP = STATION_R_OUTER_DP * (50f / 45f)
     }
 
     private data class Segment(val startM: Double, val endM: Double, val speedKmh: Int)
@@ -147,17 +153,37 @@ class TrackProfileView @JvmOverloads constructor(
     var behindM: Double = 3000.0
     var aheadM: Double = 5000.0
 
+    // Плотность экрана конкретного телефона — все размеры в companion object записаны в dp
+    // (условных единицах) и переводятся в настоящие пиксели здесь, один раз, при создании
+    // View. Должно идти РАНЬШЕ всех Paint-полей ниже, иначе dp() в их инициализаторах
+    // отработает по ещё не заполненному density (см. doc-комментарий класса/README).
+    private val density: Float = resources.displayMetrics.density
+    private fun dp(value: Float): Float = value * density
+
+    private val axisWidthPx = dp(AXIS_WIDTH_DP)
+    private val minSegmentPxForLabel = dp(MIN_SEGMENT_DP_FOR_LABEL)
+    private val pictogramMinHatchWidthPx = dp(PICTOGRAM_MIN_HATCH_WIDTH_DP)
+    private val iconHalfPx = dp(ICON_HALF_DP)
+    private val iconGapPx = dp(ICON_GAP_DP)
+    private val reliefPxPerPt = dp(RELIEF_DP_PER_PT)
+    private val signalRyPx = dp(SIGNAL_RY_DP)
+    private val signalRxPx = dp(SIGNAL_RX_DP)
+    private val signalPolePx = dp(SIGNAL_POLE_DP)
+    private val stationROuterPx = dp(STATION_R_OUTER_DP)
+    private val stationRInnerPx = dp(STATION_R_INNER_DP)
+    private val stationPolePx = dp(STATION_POLE_DP)
+
     private val stepPaint = Paint().apply { color = Color.rgb(160, 159, 164) }
     // Тёмное "поле" от низа шкалы скорости до линии сигналов — визуально одна сплошная зона
     // со ступенями, без чёрного разрыва (ТЗ раздел 7).
     private val signalFieldPaint = Paint().apply { color = Color.rgb(36, 36, 36) }
     private val kmLinePaint = Paint().apply {
         color = Color.rgb(178, 178, 178)
-        strokeWidth = 3f
+        strokeWidth = dp(4f)
     }
     private val picketLinePaint = Paint().apply {
         color = Color.rgb(178, 178, 178)
-        strokeWidth = 1f
+        strokeWidth = dp(1.5f)
     }
     private val reliefFillPaint = Paint().apply {
         color = Color.rgb(178, 178, 178)
@@ -166,7 +192,7 @@ class TrackProfileView @JvmOverloads constructor(
     // Вертикальная позиционная линия (голова поезда) — на всю высоту графика.
     private val trainMarkerPaint = Paint().apply {
         color = Color.rgb(44, 255, 39)
-        strokeWidth = 5f
+        strokeWidth = dp(6f)
     }
     // Серая полоска поезда НА ЛИНИИ СИГНАЛОВ (та же заливка, что у ступеней) + её белая
     // окантовка — ТЗ раздел 7. Не путать с зелёной полосой НА РЕЛЬЕФЕ ниже.
@@ -177,7 +203,7 @@ class TrackProfileView @JvmOverloads constructor(
     private val trainSignalStripeBorderPaint = Paint().apply {
         color = Color.WHITE
         style = Paint.Style.STROKE
-        strokeWidth = 0.5f
+        strokeWidth = dp(1f)
     }
     // Зелёная полоса поезда НА РЕЛЬЕФЕ — повторяет его изгибы, не прямая линия; не заходит
     // ниже кривой (нижний край полосы = кривая, см. [drawTrainReliefStripe]), плюс тонкая
@@ -185,35 +211,35 @@ class TrackProfileView @JvmOverloads constructor(
     private val trainReliefGreenPaint = Paint().apply {
         color = Color.rgb(44, 255, 39)
         style = Paint.Style.STROKE
-        strokeWidth = 3.5f
+        strokeWidth = dp(5f)
     }
     private val trainReliefOutlinePaint = Paint().apply {
         color = Color.WHITE
         style = Paint.Style.STROKE
-        strokeWidth = 4.5f
+        strokeWidth = dp(6f)
     }
     private val kmTextPaint = Paint().apply {
         color = Color.WHITE
-        textSize = 26f
+        textSize = dp(34f)
         textAlign = Paint.Align.CENTER
         isAntiAlias = true
     }
     private val axisTextPaint = Paint().apply {
         color = Color.rgb(178, 178, 178)
-        textSize = 22f
+        textSize = dp(28f)
         textAlign = Paint.Align.LEFT
         isAntiAlias = true
     }
     private val stepNumberPaint = Paint().apply {
         color = Color.WHITE
-        textSize = 40f
+        textSize = dp(54f)
         typeface = Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.CENTER
         isAntiAlias = true
     }
     private val speedTextPaint = Paint().apply {
         color = Color.WHITE
-        textSize = 26f
+        textSize = dp(34f)
         textAlign = Paint.Align.LEFT
         isAntiAlias = true
     }
@@ -222,18 +248,18 @@ class TrackProfileView @JvmOverloads constructor(
     // reverse) — тот же угол 45°, в разные стороны, см. [drawHatch].
     private val hatchLinePaint = Paint().apply {
         color = Color.WHITE
-        strokeWidth = 1.5f
+        strokeWidth = dp(2f)
         style = Paint.Style.STROKE
         isAntiAlias = true
     }
     private val hatchBorderPaint = Paint().apply {
         color = Color.WHITE
-        strokeWidth = 1f
+        strokeWidth = dp(1.5f)
         style = Paint.Style.STROKE
     }
     private val restrictionNumberPaint = Paint().apply {
         color = Color.WHITE
-        textSize = 24f
+        textSize = dp(30f)
         typeface = Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.CENTER
         isAntiAlias = true
@@ -243,7 +269,7 @@ class TrackProfileView @JvmOverloads constructor(
     private val hatchNumberOutlinePaint = Paint().apply {
         color = Color.BLACK
         style = Paint.Style.STROKE
-        strokeWidth = 3f
+        strokeWidth = dp(4f)
         textAlign = Paint.Align.CENTER
         isAntiAlias = true
     }
@@ -252,11 +278,11 @@ class TrackProfileView @JvmOverloads constructor(
     // КРОМЕ самой таблички (белый фон/чёрный текст — фиксированно, см. applyPalette).
     private val signalLinePaint = Paint().apply {
         color = Color.WHITE
-        strokeWidth = 2f
+        strokeWidth = dp(3f)
     }
     private val signalPolePaint = Paint().apply {
         color = Color.WHITE
-        strokeWidth = 1.2f
+        strokeWidth = dp(2f)
         style = Paint.Style.STROKE
         isAntiAlias = true
     }
@@ -264,7 +290,7 @@ class TrackProfileView @JvmOverloads constructor(
     private val stationRingOuterPaint = Paint().apply {
         color = Color.WHITE
         style = Paint.Style.STROKE
-        strokeWidth = 1f
+        strokeWidth = dp(1.5f)
         isAntiAlias = true
     }
     // Значок станции — вторая (тёмная) половина круга + внутренние кольца противоположных
@@ -273,13 +299,13 @@ class TrackProfileView @JvmOverloads constructor(
     private val stationInnerRingDarkPaint = Paint().apply {
         color = Color.BLACK
         style = Paint.Style.STROKE
-        strokeWidth = 1f
+        strokeWidth = dp(1.5f)
         isAntiAlias = true
     }
     private val stationInnerRingLightPaint = Paint().apply {
         color = Color.WHITE
         style = Paint.Style.STROKE
-        strokeWidth = 1f
+        strokeWidth = dp(1.5f)
         isAntiAlias = true
     }
     // Табличка сигнала/станции — БЕЛАЯ с ЧЁРНЫМ текстом фиксированно, несмотря на день/ночь
@@ -288,11 +314,11 @@ class TrackProfileView @JvmOverloads constructor(
     private val signalTagBorderPaint = Paint().apply {
         color = Color.BLACK
         style = Paint.Style.STROKE
-        strokeWidth = 1f
+        strokeWidth = dp(1.5f)
     }
     private val signalTagTextPaint = Paint().apply {
         color = Color.BLACK
-        textSize = 20f
+        textSize = dp(26f)
         typeface = Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.LEFT
         isAntiAlias = true
@@ -304,7 +330,7 @@ class TrackProfileView @JvmOverloads constructor(
     private val neutralBarBorderPaint = Paint().apply {
         color = Color.WHITE
         style = Paint.Style.STROKE
-        strokeWidth = 0.5f
+        strokeWidth = dp(1f)
     }
 
     // Тонкие (от границ ступеней/пиктограмм) и толстые (проекция головы/хвоста поезда)
@@ -312,11 +338,11 @@ class TrackProfileView @JvmOverloads constructor(
     // (обычной заливки или штриховки раздела 9), сквозь неё не проходят.
     private val thinPerpendicularPaint = Paint().apply {
         color = Color.argb(128, 200, 200, 200)
-        strokeWidth = 1f
+        strokeWidth = dp(1.5f)
     }
     private val thickPerpendicularPaint = Paint().apply {
         color = Color.rgb(160, 159, 164)
-        strokeWidth = 2f
+        strokeWidth = dp(3f)
     }
 
     // Пиктограмма "опасное место" (ТЗ раздел 8) — см. drawOpasnoeGlyph.
@@ -342,7 +368,7 @@ class TrackProfileView @JvmOverloads constructor(
     private val airGapBorderPaint = Paint().apply {
         color = Color.rgb(136, 136, 136)
         style = Paint.Style.STROKE
-        strokeWidth = 1f
+        strokeWidth = dp(1.5f)
     }
 
     // Нейтральная вставка — пиктограмма "включить ток" (ГОСТ 8442-65): синий ромб, чёрная
@@ -350,7 +376,7 @@ class TrackProfileView @JvmOverloads constructor(
     private val neutralGlyphOuterPaint = Paint().apply {
         color = Color.rgb(136, 136, 136)
         style = Paint.Style.STROKE
-        strokeWidth = 1f
+        strokeWidth = dp(1.5f)
     }
     private val neutralGlyphWhitePaint = Paint().apply { color = Color.WHITE }
     private val neutralGlyphBlackPaint = Paint().apply { color = Color.rgb(0, 0, 0) }
@@ -485,8 +511,8 @@ class TrackProfileView @JvmOverloads constructor(
         val fromM = trainPositionM - behindM
         val toM = trainPositionM + aheadM
         val spanM = toM - fromM
-        val graphLeft = AXIS_WIDTH_PX
-        val graphWidth = width - AXIS_WIDTH_PX
+        val graphLeft = axisWidthPx
+        val graphWidth = width - axisWidthPx
 
         val stepsH = height * (STEPS_TO_RELIEF_RATIO / (STEPS_TO_RELIEF_RATIO + 1f))
         val lineY = stepsH
@@ -583,7 +609,7 @@ class TrackProfileView @JvmOverloads constructor(
             }
             result.add(StepRegionBottom(segment.startM, segment.endM, bottomY))
 
-            if (x1 - x0 >= MIN_SEGMENT_PX_FOR_LABEL) {
+            if (x1 - x0 >= minSegmentPxForLabel) {
                 val metrics = stepNumberPaint.fontMetrics
                 val textY = (scaleTop + y) / 2f - (metrics.ascent + metrics.descent) / 2f
                 canvas.drawText(segment.speedKmh.toString(), (x0 + x1) / 2f, textY, stepNumberPaint)
@@ -615,10 +641,10 @@ class TrackProfileView @JvmOverloads constructor(
             if (r.endM < fromM || r.startM > toM) continue
             var x0 = xFor(r.startM.coerceAtLeast(fromM))
             var x1 = xFor(r.endM.coerceAtMost(toM))
-            if (x1 - x0 < PICTOGRAM_MIN_HATCH_WIDTH_PX) {
+            if (x1 - x0 < pictogramMinHatchWidthPx) {
                 val cx = (x0 + x1) / 2f
-                x0 = cx - PICTOGRAM_MIN_HATCH_WIDTH_PX / 2f
-                x1 = cx + PICTOGRAM_MIN_HATCH_WIDTH_PX / 2f
+                x0 = cx - pictogramMinHatchWidthPx / 2f
+                x1 = cx + pictogramMinHatchWidthPx / 2f
             }
             val yBottom = yForSpeed(r.speedKmh)
 
@@ -640,7 +666,7 @@ class TrackProfileView @JvmOverloads constructor(
             } else {
                 canvas.drawLine(x + d, y + h, x + d + h, y, hatchLinePaint)
             }
-            d += 9f
+            d += dp(12f)
         }
         canvas.restore()
     }
@@ -648,7 +674,7 @@ class TrackProfileView @JvmOverloads constructor(
     private fun drawSpeedAxis(canvas: Canvas, yForSpeed: (Int) -> Float) {
         for (speed in AXIS_SPEEDS) {
             val y = yForSpeed(speed)
-            canvas.drawText(speed.toString(), 4f, y + 8f, axisTextPaint)
+            canvas.drawText(speed.toString(), dp(4f), y + dp(10f), axisTextPaint)
         }
     }
 
@@ -667,7 +693,7 @@ class TrackProfileView @JvmOverloads constructor(
             val picketM = i * PICKET_LENGTH_M
             val isKmLine = i % picketsPerKm == 0L
             val x = xFor(picketM)
-            val tickH = if (isKmLine) 10f else 5f
+            val tickH = if (isKmLine) dp(14f) else dp(7f)
             canvas.drawLine(x, lineY - tickH, x, lineY, if (isKmLine) kmLinePaint else picketLinePaint)
         }
 
@@ -678,7 +704,7 @@ class TrackProfileView @JvmOverloads constructor(
         for (kmIndex in firstKmIndex..lastKmIndex) {
             val centerM = kmIndex * KM_LINE_LENGTH_M + KM_LINE_LENGTH_M / 2
             if (centerM in fromM..toM) {
-                canvas.drawText(kmIndex.toString(), xFor(centerM), lineY - 6f, kmTextPaint)
+                canvas.drawText(kmIndex.toString(), xFor(centerM), lineY - dp(8f), kmTextPaint)
             }
         }
     }
@@ -689,8 +715,8 @@ class TrackProfileView @JvmOverloads constructor(
         val x0 = xFor(trainPositionM - trainLengthM)
         val x1 = xFor(trainPositionM)
         val w = max(1f, x1 - x0)
-        canvas.drawRect(x0, lineY - 4f, x0 + w, lineY, trainSignalStripePaint)
-        canvas.drawRect(x0, lineY - 4f, x0 + w, lineY, trainSignalStripeBorderPaint)
+        canvas.drawRect(x0, lineY - dp(6f), x0 + w, lineY, trainSignalStripePaint)
+        canvas.drawRect(x0, lineY - dp(6f), x0 + w, lineY, trainSignalStripeBorderPaint)
     }
 
     /** Нейтральная вставка — синяя полоса НА линии сигналов, от km+пк начала на реальную
@@ -702,8 +728,8 @@ class TrackProfileView @JvmOverloads constructor(
             val x0 = xFor(n.chainageM)
             val x1 = xFor(n.chainageM + n.lengthM)
             val w = max(1f, x1 - x0)
-            canvas.drawRect(x0, lineY - 3f, x0 + w, lineY, neutralBarPaint)
-            canvas.drawRect(x0, lineY - 3f, x0 + w, lineY, neutralBarBorderPaint)
+            canvas.drawRect(x0, lineY - dp(5f), x0 + w, lineY, neutralBarPaint)
+            canvas.drawRect(x0, lineY - dp(5f), x0 + w, lineY, neutralBarBorderPaint)
         }
     }
 
@@ -721,17 +747,17 @@ class TrackProfileView @JvmOverloads constructor(
         for (tag in tags) {
             if (tag.chainageM < fromM || tag.chainageM > toM) continue
             val x = xFor(tag.chainageM)
-            val poleLen = if (tag.isStation) STATION_POLE_PX else SIGNAL_POLE_PX
-            val rOuter = if (tag.isStation) STATION_R_OUTER_PX else SIGNAL_RY_PX
+            val poleLen = if (tag.isStation) stationPolePx else signalPolePx
+            val rOuter = if (tag.isStation) stationROuterPx else signalRyPx
             val poleTop = lineY - poleLen
             val iconCy = lineY - poleLen - rOuter
 
             canvas.drawLine(x, lineY, x, poleTop, signalPolePaint)
 
             if (tag.isStation) {
-                drawStationIcon(canvas, x, iconCy, STATION_R_OUTER_PX, STATION_R_INNER_PX)
+                drawStationIcon(canvas, x, iconCy, stationROuterPx, stationRInnerPx)
             } else {
-                drawCapsule(canvas, x, iconCy, SIGNAL_RX_PX, SIGNAL_RY_PX)
+                drawCapsule(canvas, x, iconCy, signalRxPx, signalRyPx)
             }
 
             val passed = tag.chainageM <= trainPositionM
@@ -748,16 +774,16 @@ class TrackProfileView @JvmOverloads constructor(
             val text = tag.label + distanceLabel
 
             val textW = signalTagTextPaint.measureText(text)
-            val boxW = textW + 8f
-            val boxH = 14f
-            val extraGap = if (tag.isStation) 5f else 0f
-            val tagBottom = iconCy - rOuter - 1f - extraGap
+            val boxW = textW + dp(12f)
+            val boxH = dp(26f)
+            val extraGap = if (tag.isStation) dp(7f) else 0f
+            val tagBottom = iconCy - rOuter - dp(1.5f) - extraGap
             val tagTop = tagBottom - boxH
 
             canvas.drawLine(x, tagBottom, x, iconCy - rOuter, signalPolePaint)
-            canvas.drawRect(x + 0.5f, tagTop + 0.5f, x + boxW - 0.5f, tagTop + boxH - 0.5f, signalTagBgPaint)
+            canvas.drawRect(x + dp(0.7f), tagTop + dp(0.7f), x + boxW - dp(0.7f), tagTop + boxH - dp(0.7f), signalTagBgPaint)
             canvas.drawRect(x, tagTop, x + boxW, tagTop + boxH, signalTagBorderPaint)
-            canvas.drawText(text, x + 4f, tagTop + boxH - 4f, signalTagTextPaint)
+            canvas.drawText(text, x + dp(6f), tagTop + boxH - dp(7f), signalTagTextPaint)
         }
     }
 
@@ -837,7 +863,7 @@ class TrackProfileView @JvmOverloads constructor(
         fun reliefY(m: Double): Float {
             val h = relief.heightAt(direction, m)
             return if (h != null && minInView != null) {
-                floorY - ((h - minInView) * RELIEF_PX_PER_PT).toFloat()
+                floorY - ((h - minInView) * reliefPxPerPt).toFloat()
             } else {
                 // Вне покрытия (км5930-6604, README шаг 15) — ровная линия у пола полосы, а
                 // не выдуманная синусоида (в отличие от HTML-макета — там это было нужно для
@@ -907,13 +933,13 @@ class TrackProfileView @JvmOverloads constructor(
         }
 
         // пиктограммы — низ полосы (обычно) либо верх (если рельеф там слишком низкий)
-        val bottomY = top + bandH - ICON_GAP_PX - ICON_HALF_PX
-        val topY = top + ICON_GAP_PX + ICON_HALF_PX
+        val bottomY = top + bandH - iconGapPx - iconHalfPx
+        val topY = top + iconGapPx + iconHalfPx
         for (p in pictograms) {
             val px = xFor(p.chainageM)
-            val fitsAtBottom = reliefY(p.chainageM) <= bottomY - ICON_HALF_PX
+            val fitsAtBottom = reliefY(p.chainageM) <= bottomY - iconHalfPx
             val py = if (fitsAtBottom) bottomY else topY
-            drawPictogramGlyph(canvas, px, py, ICON_HALF_PX, p.kind)
+            drawPictogramGlyph(canvas, px, py, iconHalfPx, p.kind)
         }
 
         return reliefY(trainPositionM) to reliefY(headX0M)
@@ -1075,6 +1101,6 @@ class TrackProfileView @JvmOverloads constructor(
         val activeRestriction = restrictions.firstOrNull { trainPositionM in it.startM..it.endM }
         val speedKmh = activeRestriction?.speedKmh ?: resolver.speedAt(direction, trainPositionM)?.speedKmh
         val text = if (speedKmh != null) "V=$speedKmh км/ч" else "V=?"
-        canvas.drawText(text, AXIS_WIDTH_PX, 30f, speedTextPaint)
+        canvas.drawText(text, axisWidthPx, dp(40f), speedTextPaint)
     }
 }
