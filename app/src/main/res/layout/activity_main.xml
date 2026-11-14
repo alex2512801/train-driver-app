@@ -313,6 +313,7 @@
         android:textStyle="bold"
         android:textSize="20sp"
         android:letterSpacing="0.02"
-        android:fontFamily="monospace" />
+        android:fontFamily="monospace"
+        android:text="Vф=? Уклон=? V=? S=? Голова=? Хвост=?" />
 
 </LinearLayout>
