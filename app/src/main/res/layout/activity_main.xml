@@ -17,6 +17,14 @@
     среднего пути Тургутуй — Яблоновая) добавлен только как кнопка — сама логика переключения
     путей для него ещё не реализована (см. README), поэтому пока только показывает короткое
     сообщение по нажатию.
+
+    Пропорции по высоте — машинист продиктовал по измерению на экране (всего 15,5 — условные
+    единицы, не важно какие, важно только отношение): шапка 1,3 | график (скорости+сигналы и
+    рельеф вместе) 10,5, из них скорости+сигналы 7,5 и рельеф 3 (это и есть отношение
+    STEPS_TO_RELIEF_RATIO внутри TrackProfileView, см. его companion object) | нижняя строка
+    3,7. В виде весов LinearLayout (умножено на 10, чтобы без дробей): 13 | 105 | 37.
+    directionInfoText (диагностическая строка под шапкой) в это отношение не входит — машинист
+    её не называл, оставлена как было, wrap_content.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -24,15 +32,17 @@
     android:background="#000000"
     android:orientation="vertical">
 
+    <!-- Вес 13 — см. doc-комментарий класса про пропорции (13 : 105 : 37). -->
     <HorizontalScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="13"
         android:scrollbars="none"
         android:overScrollMode="never">
 
         <LinearLayout
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
+            android:layout_height="match_parent"
             android:orientation="horizontal"
             android:gravity="center_vertical"
             android:paddingStart="6dp"
@@ -191,10 +201,13 @@
         android:textColor="#AAAAAA"
         android:textSize="15sp" />
 
+    <!-- Вес 105 (= 75 скорости+сигналы + 30 рельеф — см. doc-комментарий класса) — сам график
+         внутри делит эту высоту в том же отношении 7,5:3 через STEPS_TO_RELIEF_RATIO
+         (TrackProfileView). -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_weight="105"
         android:layout_marginTop="4dp">
 
         <ru.traindriver.app.ui.TrackProfileView
@@ -278,11 +291,14 @@
     </FrameLayout>
 
     <!-- Нижняя статусная строка (ТЗ раздел 7): Vф/Уклон/V=.../S=.../Голова/Хвост — крупно и
-         контрастно, тот же принцип читаемости, что и у самого графика (см. TrackProfileView). -->
+         контрастно, тот же принцип читаемости, что и у самого графика (см. TrackProfileView).
+         Вес 37 — см. doc-комментарий класса про пропорции. -->
     <TextView
         android:id="@+id/statusBarText"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
+        android:layout_height="0dp"
+        android:layout_weight="37"
+        android:gravity="center_vertical"
         android:background="#1A1A1A"
         android:paddingStart="8dp"
         android:paddingTop="6dp"
