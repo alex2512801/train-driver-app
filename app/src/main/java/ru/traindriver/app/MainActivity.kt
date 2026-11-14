@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.telephony.PhoneStateListener
 import android.telephony.SignalStrength
+import android.telephony.SubscriptionManager
 import android.telephony.TelephonyManager
 import android.text.Editable
 import android.text.TextWatcher
@@ -86,21 +87,25 @@ class MainActivity : AppCompatActivity() {
     private lateinit var paramsButton: Button
     private lateinit var restrictionsButton: OpasnoeIconView
     private lateinit var dayNightButton: Button
-    private lateinit var signalBarsView: SignalBarsView
-    private lateinit var simNetworkText: TextView
-    private var telephonyManager: TelephonyManager? = null
 
     // Уровень сигнала SIM (ТЗ раздел 7, шапка) — своя замена системной строке состояния,
-    // которую мы теперь скрываем целиком (см. hideSystemUi). PhoneStateListener устарел в
-    // пользу TelephonyCallback (API 31+), но у нас minSdk=26, а он по-прежнему работает на
-    // всех версиях вплоть до текущей targetSdk — заводить два разных пути ради одной функции
-    // не стали.
-    @Suppress("DEPRECATION")
-    private val phoneStateListener = object : PhoneStateListener() {
-        override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
-            signalBarsView.level = signalStrength.level
-        }
-    }
+    // которую мы теперь скрываем целиком (см. hideSystemUi). ДВА слота — у машиниста две
+    // SIM-карты, обе должны быть видны (см. startPhoneSignalUpdates); второй слот прячется,
+    // если активна только одна SIM. PhoneStateListener устарел в пользу TelephonyCallback
+    // (API 31+), но у нас minSdk=26, а он по-прежнему работает на всех версиях вплоть до
+    // текущей targetSdk — заводить два разных пути ради одной функции не стали.
+    private lateinit var simSlot0Group: View
+    private lateinit var simSlot0Bars: SignalBarsView
+    private lateinit var simSlot0Text: TextView
+    private lateinit var simSlot1Group: View
+    private lateinit var simSlot1Bars: SignalBarsView
+    private lateinit var simSlot1Text: TextView
+
+    // Каждый активный слот — свой TelephonyManager (привязанный к конкретной SIM через
+    // createForSubscriptionId) и свой PhoneStateListener (чтобы знать, какой именно
+    // SignalBarsView обновлять) — храним пары, чтобы корректно отписаться в onDestroy.
+    private val activeSimListeners = mutableListOf<Pair<TelephonyManager, PhoneStateListener>>()
+
     private var isDayMode = false
     private lateinit var trackProfileView: TrackProfileView
     private lateinit var gpsLocationProvider: GpsLocationProvider
@@ -261,8 +266,12 @@ class MainActivity : AppCompatActivity() {
         paramsButton = findViewById(R.id.paramsButton)
         restrictionsButton = findViewById(R.id.restrictionsButton)
         dayNightButton = findViewById(R.id.dayNightButton)
-        signalBarsView = findViewById(R.id.signalBarsView)
-        simNetworkText = findViewById(R.id.simNetworkText)
+        simSlot0Group = findViewById(R.id.simSlot0Group)
+        simSlot0Bars = findViewById(R.id.simSlot0Bars)
+        simSlot0Text = findViewById(R.id.simSlot0Text)
+        simSlot1Group = findViewById(R.id.simSlot1Group)
+        simSlot1Bars = findViewById(R.id.simSlot1Bars)
+        simSlot1Text = findViewById(R.id.simSlot1Text)
         trackProfileView = findViewById(R.id.trackProfileView)
         gpsLocationProvider = GpsLocationProvider(this)
         arrivalWindow = findViewById(R.id.arrivalWindow)
@@ -368,14 +377,48 @@ class MainActivity : AppCompatActivity() {
             Manifest.permission.READ_PHONE_STATE
         ) == PackageManager.PERMISSION_GRANTED
 
-    @Suppress("DEPRECATION")
+    // До двух SIM-карт (машинист: "у меня стоит на телефоне два, чтобы я их видел") —
+    // SubscriptionManager.getActiveSubscriptionInfoList() отдаёт реально вставленные/активные
+    // SIM, TelephonyManager.createForSubscriptionId() привязывает отдельный TelephonyManager
+    // к каждой из них, чтобы слушать именно её силу сигнала, а не общую "сим по умолчанию".
+    // Если список подписок недоступен (разрешение/прошивка) — используем старое поведение:
+    // один слот с SIM по умолчанию.
     @SuppressLint("MissingPermission") // проверяется явно в hasPhoneStatePermission()
     private fun startPhoneSignalUpdates() {
-        val manager = getSystemService(TELEPHONY_SERVICE) as? TelephonyManager ?: return
-        telephonyManager = manager
-        @Suppress("DEPRECATION")
-        manager.listen(phoneStateListener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
-        simNetworkText.text = networkTypeLabel(manager.networkType)
+        val baseManager = getSystemService(TELEPHONY_SERVICE) as? TelephonyManager ?: return
+        val subscriptionManager = getSystemService(SubscriptionManager::class.java)
+        val activeSubs = try {
+            subscriptionManager?.activeSubscriptionInfoList
+        } catch (e: SecurityException) {
+            null
+        }
+
+        if (activeSubs.isNullOrEmpty()) {
+            simSlot1Group.visibility = View.GONE
+            bindSimSlot(simSlot0Bars, simSlot0Text, baseManager)
+            return
+        }
+
+        bindSimSlot(simSlot0Bars, simSlot0Text, baseManager.createForSubscriptionId(activeSubs[0].subscriptionId))
+        if (activeSubs.size >= 2) {
+            simSlot1Group.visibility = View.VISIBLE
+            bindSimSlot(simSlot1Bars, simSlot1Text, baseManager.createForSubscriptionId(activeSubs[1].subscriptionId))
+        } else {
+            simSlot1Group.visibility = View.GONE
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    @SuppressLint("MissingPermission") // проверяется явно в hasPhoneStatePermission()
+    private fun bindSimSlot(barsView: SignalBarsView, textView: TextView, manager: TelephonyManager) {
+        val listener = object : PhoneStateListener() {
+            override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
+                barsView.level = signalStrength.level
+            }
+        }
+        manager.listen(listener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
+        activeSimListeners.add(manager to listener)
+        textView.text = networkTypeLabel(manager.networkType)
     }
 
     private fun networkTypeLabel(networkType: Int): String = when (networkType) {
@@ -397,7 +440,9 @@ class MainActivity : AppCompatActivity() {
         voiceAnnouncer.release()
         toneGenerator.release()
         @Suppress("DEPRECATION")
-        telephonyManager?.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE)
+        for ((manager, listener) in activeSimListeners) {
+            manager.listen(listener, PhoneStateListener.LISTEN_NONE)
+        }
         super.onDestroy()
     }
 

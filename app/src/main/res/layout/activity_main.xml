@@ -6,17 +6,19 @@
     раньше — см. HeaderToggleButton/HeaderIconButton в themes.xml). Слева направо:
     км+пк | станция назначения (следующая по ходу, не конечная) | Чётное/Нечётное | Путь |
     К1 | ⏱ окошко стоянки | 📋 история | ⚠ ограничения (настоящий чёрно-белый знак "начало
-    опасного места", OpasnoeIconView) | день/ночь | Параметры | МСК/местное время
-    (специально в конце) | уровень сигнала SIM (SignalBarsView + тип сети).
+    опасного места", OpasnoeIconView) | день/ночь | уровень сигнала SIM-карт — ДО ДВУХ слотов
+    (SignalBarsView + тип сети каждый, машинист попросил видеть обе свои SIM) | МСК/местное
+    время (специально в конце).
+    "Параметры" переехали вниз, в правый конец статусной строки под графиком (машинист:
+    "чтобы она там не мешалась") — см. комментарий у statusBarRow ниже.
     Экран открывается развёрнуто на весь экран, системная строка состояния телефона скрыта
     программно (MainActivity.hideSystemUi) — поэтому своя собственная шапка и показывает
     время и сигнал SIM, как раньше показывала системная.
     "Меню" (ТЗ раздел 12, со всеми подразделами) и заряд батареи из макета сюда ЕЩЁ НЕ
-    добавлены — это отдельный, пока не сделанный шаг (см. README/чат); "Параметры" поэтому
-    временно остаётся обычной кнопкой в шапке, а не пунктом меню. К1 (переключатель сигналов
-    среднего пути Тургутуй — Яблоновая) добавлен только как кнопка — сама логика переключения
-    путей для него ещё не реализована (см. README), поэтому пока только показывает короткое
-    сообщение по нажатию.
+    добавлены — это отдельный, пока не сделанный шаг (см. README/чат). К1 (переключатель
+    сигналов среднего пути Тургутуй — Яблоновая) добавлен только как кнопка — сама логика
+    переключения путей для него ещё не реализована (см. README), поэтому пока только
+    показывает короткое сообщение по нажатию.
 
     Пропорции по высоте — изначально машинист продиктовал по измерению на экране (шапка 1,3 |
     график, из него скорости+сигналы 7,5 и рельеф 3 | нижняя строка 3,7 — веса LinearLayout
@@ -138,12 +140,63 @@
 
             <View style="@style/HeaderDivider" />
 
-            <!-- 10. Параметры состава (ТЗ раздел 12.2) — временно прямой кнопкой, см.
-                 doc-комментарий выше про "Меню". -->
-            <Button
-                android:id="@+id/paramsButton"
-                style="@style/HeaderToggleButton"
-                android:text="Параметры" />
+            <!-- 10. Уровень сигнала SIM-карт + тип сети (ТЗ раздел 7, HTML-макет .hdr-sim) —
+                 своя замена системной строке состояния, которую мы теперь скрываем (см.
+                 MainActivity.hideSystemUi). На месте "Параметры" (машинист попросил: она
+                 переехала вниз в статусную строку, см. ниже) — ДВА слота, по одному на
+                 каждую SIM-карту (у машиниста их две и обе должны быть видны); второй слот
+                 скрыт (visibility=gone), пока MainActivity не обнаружит вторую активную SIM. -->
+            <LinearLayout
+                android:id="@+id/simSlot0Group"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <ru.traindriver.app.ui.SignalBarsView
+                    android:id="@+id/simSlot0Bars"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+                <TextView
+                    android:id="@+id/simSlot0Text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="3dp"
+                    android:textColor="#FFFFFF"
+                    android:textStyle="bold"
+                    android:fontFamily="monospace"
+                    android:textSize="12sp"
+                    android:text="—" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/simSlot1Group"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginStart="6dp"
+                android:visibility="gone">
+
+                <ru.traindriver.app.ui.SignalBarsView
+                    android:id="@+id/simSlot1Bars"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+                <TextView
+                    android:id="@+id/simSlot1Text"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="3dp"
+                    android:textColor="#FFFFFF"
+                    android:textStyle="bold"
+                    android:fontFamily="monospace"
+                    android:textSize="12sp"
+                    android:text="—" />
+
+            </LinearLayout>
 
             <View style="@style/HeaderDivider" />
 
@@ -160,36 +213,6 @@
                 android:fontFamily="monospace"
                 android:textSize="12sp"
                 android:lineSpacingExtra="1dp" />
-
-            <View style="@style/HeaderDivider" />
-
-            <!-- 12. Уровень сигнала SIM-карты + тип сети (ТЗ раздел 7, HTML-макет .hdr-sim) —
-                 своя замена системной строке состояния, которую мы теперь скрываем (см.
-                 MainActivity.hideSystemUi). -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical"
-                android:paddingStart="4dp">
-
-                <ru.traindriver.app.ui.SignalBarsView
-                    android:id="@+id/signalBarsView"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content" />
-
-                <TextView
-                    android:id="@+id/simNetworkText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="3dp"
-                    android:textColor="#FFFFFF"
-                    android:textStyle="bold"
-                    android:fontFamily="monospace"
-                    android:textSize="12sp"
-                    android:text="—" />
-
-            </LinearLayout>
 
         </LinearLayout>
 
@@ -294,25 +317,41 @@
 
     </FrameLayout>
 
-    <!-- Нижняя статусная строка (ТЗ раздел 7): Vф/Уклон/V=.../S=.../Голова/Хвост — крупно и
-         контрастно, тот же принцип читаемости, что и у самого графика (см. TrackProfileView).
-         Вес 18 — машинист поправил: было слишком много пустого места под одну строку текста,
-         попросил забрать примерно половину веса (37→18) и отдать шапке (13→32) выше. -->
-    <TextView
-        android:id="@+id/statusBarText"
+    <!-- Нижняя статусная строка (ТЗ раздел 7): Vф/Уклон/V=.../S=.../Голова/Хвост слева,
+         "Параметры" машинист попросил перенести СЮДА, в правый конец этой же строки, "чтобы
+         она там не мешалась" в шапке сверху. Вес 18 — машинист поправил: было слишком много
+         пустого места под одну строку текста, попросил забрать примерно половину веса
+         (37→18) у этой строки и отдать шапке (13→32) выше. -->
+    <LinearLayout
+        android:id="@+id/statusBarRow"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="18"
+        android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:background="#1A1A1A"
-        android:paddingStart="8dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp"
-        android:textColor="#FFFFFF"
-        android:textStyle="bold"
-        android:textSize="20sp"
-        android:letterSpacing="0.02"
-        android:fontFamily="monospace"
-        android:text="Vф=? Уклон=? V=? S=? Голова=? Хвост=?" />
+        android:background="#1A1A1A">
+
+        <TextView
+            android:id="@+id/statusBarText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:paddingStart="8dp"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:textSize="20sp"
+            android:letterSpacing="0.02"
+            android:fontFamily="monospace"
+            android:text="Vф=? Уклон=? V=? S=? Голова=? Хвост=?" />
+
+        <!-- Параметры состава (ТЗ раздел 12.2) — временно прямой кнопкой, см. doc-комментарий
+             класса выше про "Меню". -->
+        <Button
+            android:id="@+id/paramsButton"
+            style="@style/HeaderToggleButton"
+            android:layout_marginEnd="8dp"
+            android:text="Параметры" />
+
+    </LinearLayout>
 
 </LinearLayout>
