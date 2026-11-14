@@ -1,3 +1,46 @@
 <resources>
     <style name="Theme.TrainDriverApp" parent="Theme.MaterialComponents.DayNight.NoActionBar" />
+
+    <!-- Шапка главного экрана (ТЗ раздел 7, HTML-макет "Ступени Хилока", .hdr-toggle-btn) —
+         кнопка-переключатель с тонкой белой рамкой, без заливки. -->
+    <style name="HeaderToggleButton" parent="Widget.AppCompat.Button.Borderless">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:minHeight">0dp</item>
+        <item name="android:background">@drawable/bg_header_toggle</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:paddingTop">8dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
+    <!-- Кнопка-иконка в шапке (⏱/📋/🌙) — без рамки и фона, крупный эмодзи, достаточный
+         размер самой тап-зоны (машинист просил "пошире по ширине"). -->
+    <style name="HeaderIconButton" parent="Widget.AppCompat.Button.Borderless">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minWidth">48dp</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:background">@android:color/transparent</item>
+        <item name="android:paddingStart">8dp</item>
+        <item name="android:paddingEnd">8dp</item>
+        <item name="android:textSize">30sp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
+    <!-- Тонкий вертикальный разделитель между блоками шапки (HTML-макет: border-left у
+         .hdr-b). -->
+    <style name="HeaderDivider">
+        <item name="android:layout_width">1dp</item>
+        <item name="android:layout_height">36dp</item>
+        <item name="android:layout_marginStart">6dp</item>
+        <item name="android:layout_marginEnd">6dp</item>
+        <item name="android:background">#24FFFFFF</item>
+    </style>
 </resources>

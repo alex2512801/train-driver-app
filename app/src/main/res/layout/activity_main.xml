@@ -1,48 +1,161 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Временный технический экран. Настоящий главный экран (значки сигналов/станций,
-    пиктограммы, профиль рельефа и т.д. — см. ТЗ, раздел 7 и раздел 14 с макетами) будет
-    достраиваться отдельными шагами. TrackProfileView ниже — километровая линейка и
-    ступенчатый график ограничений скорости, сверено с макетом, но ещё не проверено на
-    реальном устройстве.
+    Главный экран (ТЗ раздел 7, сверено с HTML-макетом "Ступени Хилока" — шапка там же,
+    .phone-header). Слева направо в шапке: км+пк | станция назначения | МСК/местное время |
+    Чётное/Нечётное | Путь | К1 | ⏱ окошко стоянки | 📋 история | ⚠ ограничения | Параметры |
+    день/ночь. "Меню" (ТЗ раздел 12, со всеми подразделами) и список SIM/заряд батареи из
+    макета сюда ЕЩЁ НЕ добавлены — это отдельный, пока не сделанный шаг (см. README/чат);
+    "Параметры" поэтому временно остаётся обычной кнопкой в шапке, а не пунктом меню.
+    К1 (переключатель сигналов среднего пути Тургутуй — Яблоновая) добавлен только как кнопка —
+    сама логика переключения путей для него ещё не реализована (см. README), поэтому пока
+    только показывает короткое сообщение по нажатию.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="#000000"
-    android:orientation="vertical"
-    android:padding="8dp">
+    android:orientation="vertical">
 
-    <LinearLayout
+    <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:scrollbars="none"
+        android:overScrollMode="never">
 
-        <TextView
-            android:id="@+id/coordinateText"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="@string/waiting_for_gps"
-            android:textColor="#FFFFFF"
-            android:textSize="26sp" />
-
-        <TextView
-            android:id="@+id/timeText"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textColor="#FFFFFF"
-            android:textSize="14sp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp">
 
-    </LinearLayout>
+            <!-- 1. Координата км+пк — по тапу переключается в формат КЛУБ-У. -->
+            <TextView
+                android:id="@+id/coordinateText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/waiting_for_gps"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:textSize="28sp"
+                android:paddingEnd="10dp" />
 
+            <View style="@style/HeaderDivider" />
+
+            <!-- 2. Станция назначения (зависит от направления движения, см. updateDirectionUi). -->
+            <TextView
+                android:id="@+id/destinationText"
+                android:layout_width="150dp"
+                android:layout_height="wrap_content"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:textColor="#DDDDDD"
+                android:textSize="20sp"
+                android:maxLines="2" />
+
+            <View style="@style/HeaderDivider" />
+
+            <!-- 3. Время — МСК (всегда) и местное (часовой пояс телефона), друг под другом. -->
+            <TextView
+                android:id="@+id/timeText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:textSize="18sp"
+                android:lineSpacingExtra="2dp" />
+
+            <View style="@style/HeaderDivider" />
+
+            <!-- 4. Чётное/Нечётное направление. -->
+            <Button
+                android:id="@+id/directionButton"
+                style="@style/HeaderToggleButton"
+                android:text="Чётное" />
+
+            <!-- 5. Путь 1/2. -->
+            <Button
+                android:id="@+id/pathButton"
+                style="@style/HeaderToggleButton"
+                android:layout_marginStart="8dp"
+                android:text="Путь 2" />
+
+            <!-- К1 — сигналы среднего пути Тургутуй—Яблоновая/Карымская (см. doc-комментарий
+                 выше: пока без настоящей логики переключения). -->
+            <Button
+                android:id="@+id/k1Button"
+                style="@style/HeaderToggleButton"
+                android:layout_marginStart="8dp"
+                android:text="К1" />
+
+            <View style="@style/HeaderDivider" />
+
+            <!-- 7/8. Окошко стоянки и история остановок (ТЗ раздел 10) — крупные иконки-кнопки. -->
+            <Button
+                android:id="@+id/arrivalToggleButton"
+                style="@style/HeaderIconButton"
+                android:text="⏱" />
+
+            <Button
+                android:id="@+id/historyToggleButton"
+                style="@style/HeaderIconButton"
+                android:layout_marginStart="4dp"
+                android:text="📋" />
+
+            <View style="@style/HeaderDivider" />
+
+            <!-- 9. Ограничения (ТЗ раздел 11) — предупреждающий цвет, крупная подпись. -->
+            <Button
+                android:id="@+id/restrictionsButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:background="@android:color/transparent"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:textColor="#FFC107"
+                android:textStyle="bold"
+                android:textSize="20sp"
+                android:text="⚠ Огранич." />
+
+            <View style="@style/HeaderDivider" />
+
+            <!-- 10. Параметры состава (ТЗ раздел 12.2) — временно прямой кнопкой, см.
+                 doc-комментарий выше про "Меню". -->
+            <Button
+                android:id="@+id/paramsButton"
+                style="@style/HeaderToggleButton"
+                android:text="Параметры" />
+
+            <View style="@style/HeaderDivider" />
+
+            <!-- 11. День/ночь. -->
+            <Button
+                android:id="@+id/dayNightButton"
+                style="@style/HeaderIconButton"
+                android:text="🌙" />
+
+        </LinearLayout>
+
+    </HorizontalScrollView>
+
+    <!-- Диагностическая строка (путь правильный/неправильный, какой датасет и т.д.) — не из
+         макета, служебная, оставлена маленькой. -->
     <TextView
         android:id="@+id/directionInfoText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:paddingStart="8dp"
         android:textColor="#AAAAAA"
-        android:textSize="14sp" />
+        android:textSize="15sp" />
 
     <FrameLayout
         android:layout_width="match_parent"
@@ -66,7 +179,7 @@
             android:layout_gravity="top|start"
             android:orientation="vertical"
             android:background="#FF000000"
-            android:padding="6dp"
+            android:padding="8dp"
             android:visibility="gone">
 
             <TextView
@@ -74,7 +187,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:textColor="#FFFFFF"
-                android:textSize="12sp"
+                android:textSize="16sp"
                 android:fontFamily="monospace" />
 
             <TextView
@@ -83,7 +196,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
                 android:textColor="#FFFFFF"
-                android:textSize="14sp"
+                android:textSize="20sp"
                 android:textStyle="bold"
                 android:fontFamily="monospace" />
 
@@ -93,7 +206,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="2dp"
                 android:textColor="#FFFFFF"
-                android:textSize="12sp"
+                android:textSize="16sp"
                 android:fontFamily="monospace" />
 
         </LinearLayout>
@@ -108,7 +221,7 @@
             android:layout_gravity="top|end"
             android:orientation="vertical"
             android:background="#CC1A1A1A"
-            android:padding="6dp"
+            android:padding="8dp"
             android:visibility="gone">
 
             <TextView
@@ -118,7 +231,7 @@
                 android:text="История остановок"
                 android:textAllCaps="true"
                 android:textColor="#999999"
-                android:textSize="10sp" />
+                android:textSize="12sp" />
 
             <LinearLayout
                 android:id="@+id/stopHistoryRows"
@@ -130,70 +243,20 @@
 
     </FrameLayout>
 
+    <!-- Нижняя статусная строка (ТЗ раздел 7): Vф/Уклон/V=.../S=.../Голова/Хвост — крупно и
+         контрастно, тот же принцип читаемости, что и у самого графика (см. TrackProfileView). -->
     <TextView
         android:id="@+id/statusBarText"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginTop="4dp"
+        android:background="#1A1A1A"
+        android:paddingStart="8dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp"
         android:textColor="#FFFFFF"
-        android:textSize="14sp"
+        android:textStyle="bold"
+        android:textSize="20sp"
+        android:letterSpacing="0.02"
         android:fontFamily="monospace" />
-
-    <LinearLayout
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_gravity="center_horizontal"
-        android:layout_marginTop="8dp"
-        android:orientation="horizontal">
-
-        <Button
-            android:id="@+id/directionButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="Чётное" />
-
-        <Button
-            android:id="@+id/pathButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:text="Путь 2" />
-
-        <Button
-            android:id="@+id/paramsButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:text="Параметры" />
-
-        <Button
-            android:id="@+id/arrivalToggleButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:text="Стоянка ⏱" />
-
-        <Button
-            android:id="@+id/historyToggleButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:text="История" />
-
-        <Button
-            android:id="@+id/restrictionsButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:text="Ограничения" />
-
-        <Button
-            android:id="@+id/dayNightButton"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
-            android:text="🌙" />
-
-    </LinearLayout>
 
 </LinearLayout>

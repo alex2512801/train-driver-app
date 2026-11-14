@@ -19,6 +19,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.Spinner
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -69,11 +70,13 @@ import ru.traindriver.app.ui.TrackProfileView
 class MainActivity : AppCompatActivity() {
 
     private lateinit var coordinateText: TextView
+    private lateinit var destinationText: TextView
     private lateinit var directionInfoText: TextView
     private lateinit var timeText: TextView
     private lateinit var statusBarText: TextView
     private lateinit var directionButton: Button
     private lateinit var pathButton: Button
+    private lateinit var k1Button: Button
     private lateinit var paramsButton: Button
     private lateinit var restrictionsButton: Button
     private lateinit var dayNightButton: Button
@@ -218,11 +221,13 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         coordinateText = findViewById(R.id.coordinateText)
+        destinationText = findViewById(R.id.destinationText)
         directionInfoText = findViewById(R.id.directionInfoText)
         timeText = findViewById(R.id.timeText)
         statusBarText = findViewById(R.id.statusBarText)
         directionButton = findViewById(R.id.directionButton)
         pathButton = findViewById(R.id.pathButton)
+        k1Button = findViewById(R.id.k1Button)
         paramsButton = findViewById(R.id.paramsButton)
         restrictionsButton = findViewById(R.id.restrictionsButton)
         dayNightButton = findViewById(R.id.dayNightButton)
@@ -265,6 +270,12 @@ class MainActivity : AppCompatActivity() {
             val newPath = if (directionSelection.physicalPath == 1) 2 else 1
             directionSelection = DirectionSelection(directionSelection.direction, newPath)
             updateDirectionUi()
+        }
+        // К1 (сигналы среднего пути Тургутуй—Яблоновая/Карымская) — кнопка пока без реальной
+        // логики переключения путей (см. doc-комментарий в activity_main.xml/README), поэтому
+        // только сообщает об этом, а не молчит без всякой реакции на нажатие.
+        k1Button.setOnClickListener {
+            Toast.makeText(this, "К1: логика переключения путей ещё не готова", Toast.LENGTH_SHORT).show()
         }
         paramsButton.setOnClickListener { showTrainParamsDialog() }
         restrictionsButton.setOnClickListener { showRestrictionsDialog() }
@@ -356,6 +367,10 @@ class MainActivity : AppCompatActivity() {
         val s = directionSelection
         directionButton.text = if (s.direction == Direction.EVEN) "Чётное" else "Нечётное"
         pathButton.text = "Путь ${s.physicalPath}"
+        // Станция назначения — куда едем по направлению движения (маршрут Хилок ↔
+        // Чернышевск-Забайкальский, см. routeTrack/README); не зависит от того, какой путь
+        // выбран (это только физический путь на той же линии).
+        destinationText.text = if (s.direction == Direction.EVEN) "Чернышевск-\nЗабайкальский" else "Хилок"
 
         val statusText = if (s.pathStatus == PathStatus.CORRECT) "правильный" else "неправильный"
         val datasetText = if (s.effectiveDataset == Direction.EVEN) "чётный" else "нечётный"
