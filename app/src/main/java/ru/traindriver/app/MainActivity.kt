@@ -492,7 +492,15 @@ class MainActivity : AppCompatActivity() {
     private fun updateDestinationText(chainageM: Double) {
         val s = directionSelection
         val next = nextStationAhead(chainageM, s.effectiveDataset, s.picketsGrowing, stations)
-        destinationText.text = next?.replaceFirst("-", "-\n") ?: "—"
+        // Принудительный перенос по дефису нужен только длинным составным названиям
+        // (например, "Чернышевск-Забайкальский") — у коротких, вроде "Чита-1"/"Чита-2", он
+        // ломал название пополам без всякой нужды (машинист прислал скриншот с "Чита-"/"1"
+        // на двух строках).
+        destinationText.text = when {
+            next == null -> "—"
+            next.length > 10 -> next.replaceFirst("-", "-\n")
+            else -> next
+        }
     }
 
     // "Параметры" (ТЗ раздел 5): серия локомотива -> вес/длина автоматически по таблице

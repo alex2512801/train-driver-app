@@ -744,21 +744,19 @@ class TrackProfileView @JvmOverloads constructor(
 
         val aheadSignalsOnly = tags.filter { !it.isStation && it.chainageM > trainPositionM }.sortedBy { it.chainageM }
 
+        // Когда несколько сигналов стоят близко друг к другу, их таблички (рисуются вправо от
+        // своего столбика) налезают друг на друга и становятся нечитаемыми — машинист прислал
+        // скриншот как раз с таким наложением у Читы. Решение как у подписей на картах:
+        // табличка, которая не помещается на базовой высоте рядом с предыдущей, "подрастает"
+        // на уровень выше (столбик удлиняется), пока не перестанет с той пересекаться по
+        // горизонтали. tierRightEdge[i] — правый край последней размещённой на уровне i
+        // таблички; тэги уже отсортированы по км, поэтому одного прохода слева направо хватает.
+        val tierRightEdge = mutableListOf<Float>()
+        val tierGapPx = dp(6f)
+
         for (tag in tags) {
             if (tag.chainageM < fromM || tag.chainageM > toM) continue
             val x = xFor(tag.chainageM)
-            val poleLen = if (tag.isStation) stationPolePx else signalPolePx
-            val rOuter = if (tag.isStation) stationROuterPx else signalRyPx
-            val poleTop = lineY - poleLen
-            val iconCy = lineY - poleLen - rOuter
-
-            canvas.drawLine(x, lineY, x, poleTop, signalPolePaint)
-
-            if (tag.isStation) {
-                drawStationIcon(canvas, x, iconCy, stationROuterPx, stationRInnerPx)
-            } else {
-                drawCapsule(canvas, x, iconCy, signalRxPx, signalRyPx)
-            }
 
             val passed = tag.chainageM <= trainPositionM
             var distanceLabel = ""
@@ -776,6 +774,25 @@ class TrackProfileView @JvmOverloads constructor(
             val textW = signalTagTextPaint.measureText(text)
             val boxW = textW + dp(12f)
             val boxH = dp(26f)
+
+            var tier = 0
+            while (tier < tierRightEdge.size && x < tierRightEdge[tier] + tierGapPx) tier++
+            if (tier == tierRightEdge.size) tierRightEdge.add(x + boxW) else tierRightEdge[tier] = x + boxW
+
+            val basePoleLen = if (tag.isStation) stationPolePx else signalPolePx
+            val poleLen = basePoleLen + tier * (boxH + tierGapPx)
+            val rOuter = if (tag.isStation) stationROuterPx else signalRyPx
+            val poleTop = lineY - poleLen
+            val iconCy = lineY - poleLen - rOuter
+
+            canvas.drawLine(x, lineY, x, poleTop, signalPolePaint)
+
+            if (tag.isStation) {
+                drawStationIcon(canvas, x, iconCy, stationROuterPx, stationRInnerPx)
+            } else {
+                drawCapsule(canvas, x, iconCy, signalRxPx, signalRyPx)
+            }
+
             val extraGap = if (tag.isStation) dp(7f) else 0f
             val tagBottom = iconCy - rOuter - dp(1.5f) - extraGap
             val tagTop = tagBottom - boxH
