@@ -1,15 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Главный экран (ТЗ раздел 7, сверено с HTML-макетом "Ступени Хилока" — шапка там же,
-    .phone-header). Шапка — ДВЕ строки (машинист попросил: одной строкой не помещалось на
-    экран, приходилось листать свайпом вбок — так весь список элементов виден сразу, без
-    прокрутки). Порядок (как уточнил машинист), читать по строкам сверху вниз, в каждой
-    строке слева направо:
-      Строка 1: км+пк | станция назначения (следующая по ходу, не конечная) | Чётное/
-                Нечётное | Путь | К1 | ⏱ окошко стоянки | 📋 история
-      Строка 2: ⚠ ограничения (настоящий чёрно-белый знак "начало опасного места",
-                OpasnoeIconView) | день/ночь | Параметры | МСК/местное время (специально
-                в конце) | уровень сигнала SIM (SignalBarsView + тип сети)
+    .phone-header). Шапка — ОДНА строка (машинист поправил: была в две, он хочет одну —
+    все элементы помещаются сразу, без прокрутки вбок, но компактнее по размеру, чем
+    раньше — см. HeaderToggleButton/HeaderIconButton в themes.xml). Слева направо:
+    км+пк | станция назначения (следующая по ходу, не конечная) | Чётное/Нечётное | Путь |
+    К1 | ⏱ окошко стоянки | 📋 история | ⚠ ограничения (настоящий чёрно-белый знак "начало
+    опасного места", OpasnoeIconView) | день/ночь | Параметры | МСК/местное время
+    (специально в конце) | уровень сигнала SIM (SignalBarsView + тип сети).
     Экран открывается развёрнуто на весь экран, системная строка состояния телефона скрыта
     программно (MainActivity.hideSystemUi) — поэтому своя собственная шапка и показывает
     время и сигнал SIM, как раньше показывала системная.
@@ -26,7 +24,6 @@
     android:background="#000000"
     android:orientation="vertical">
 
-    <!-- Строка 1 шапки. -->
     <HorizontalScrollView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -38,10 +35,10 @@
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="2dp">
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="3dp"
+            android:paddingBottom="3dp">
 
             <!-- 1. Координата км+пк — по тапу переключается в формат КЛУБ-У. -->
             <TextView
@@ -52,8 +49,8 @@
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
                 android:fontFamily="monospace"
-                android:textSize="28sp"
-                android:paddingEnd="10dp" />
+                android:textSize="18sp"
+                android:paddingEnd="6dp" />
 
             <View style="@style/HeaderDivider" />
 
@@ -62,12 +59,12 @@
                  см. updateDestinationText). -->
             <TextView
                 android:id="@+id/destinationText"
-                android:layout_width="150dp"
+                android:layout_width="95dp"
                 android:layout_height="wrap_content"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
                 android:textColor="#DDDDDD"
-                android:textSize="20sp"
+                android:textSize="13sp"
                 android:maxLines="2" />
 
             <View style="@style/HeaderDivider" />
@@ -82,7 +79,7 @@
             <Button
                 android:id="@+id/pathButton"
                 style="@style/HeaderToggleButton"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="4dp"
                 android:text="Путь 2" />
 
             <!-- 5. К1 — сигналы среднего пути Тургутуй—Яблоновая/Карымская (см. doc-комментарий
@@ -90,12 +87,12 @@
             <Button
                 android:id="@+id/k1Button"
                 style="@style/HeaderToggleButton"
-                android:layout_marginStart="8dp"
+                android:layout_marginStart="4dp"
                 android:text="К1" />
 
             <View style="@style/HeaderDivider" />
 
-            <!-- 6/7. Окошко стоянки и история остановок (ТЗ раздел 10) — крупные иконки-кнопки. -->
+            <!-- 6/7. Окошко стоянки и история остановок (ТЗ раздел 10) — иконки-кнопки. -->
             <Button
                 android:id="@+id/arrivalToggleButton"
                 style="@style/HeaderIconButton"
@@ -104,29 +101,10 @@
             <Button
                 android:id="@+id/historyToggleButton"
                 style="@style/HeaderIconButton"
-                android:layout_marginStart="4dp"
+                android:layout_marginStart="2dp"
                 android:text="📋" />
 
-        </LinearLayout>
-
-    </HorizontalScrollView>
-
-    <!-- Строка 2 шапки. -->
-    <HorizontalScrollView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:scrollbars="none"
-        android:overScrollMode="never">
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="8dp"
-            android:paddingEnd="8dp"
-            android:paddingTop="2dp"
-            android:paddingBottom="4dp">
+            <View style="@style/HeaderDivider" />
 
             <!-- 8. Ограничения (ТЗ раздел 11) — настоящий чёрно-белый знак "начало опасного
                  места" (ГОСТ, тот же чертёж, что и пиктограмма на графике), не текст/эмодзи,
@@ -161,13 +139,13 @@
                 android:id="@+id/timeText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:paddingStart="10dp"
-                android:paddingEnd="10dp"
+                android:paddingStart="6dp"
+                android:paddingEnd="6dp"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
                 android:fontFamily="monospace"
-                android:textSize="18sp"
-                android:lineSpacingExtra="2dp" />
+                android:textSize="12sp"
+                android:lineSpacingExtra="1dp" />
 
             <View style="@style/HeaderDivider" />
 
@@ -179,7 +157,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:paddingStart="6dp">
+                android:paddingStart="4dp">
 
                 <ru.traindriver.app.ui.SignalBarsView
                     android:id="@+id/signalBarsView"
@@ -190,11 +168,11 @@
                     android:id="@+id/simNetworkText"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp"
+                    android:layout_marginStart="3dp"
                     android:textColor="#FFFFFF"
                     android:textStyle="bold"
                     android:fontFamily="monospace"
-                    android:textSize="16sp"
+                    android:textSize="12sp"
                     android:text="—" />
 
             </LinearLayout>

@@ -37,7 +37,9 @@ class OpasnoeIconView @JvmOverloads constructor(
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val size = dp(48f).toInt()
+        // 40dp — компактнее, чтобы вся шапка помещалась в одну строку без прокрутки
+        // (машинист поправил), но ещё не меньше обычного минимального размера тап-зоны.
+        val size = dp(40f).toInt()
         setMeasuredDimension(size, size)
     }
 
