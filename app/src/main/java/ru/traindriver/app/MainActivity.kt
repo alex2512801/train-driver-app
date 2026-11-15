@@ -908,11 +908,27 @@ class MainActivity : AppCompatActivity() {
         refreshRestrictionsList()
         setActive(0)
 
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle("Ограничения")
             .setView(view)
             .setPositiveButton("Закрыть", null)
-            .show()
+            .create()
+        // Диалог сам подстраивал высоту окна под содержимое (wrap_content) — на невысоком
+        // альбомном экране содержимое (поля+клавиатура) было выше самого окна диалога, а
+        // ScrollView внутри с такой же wrap_content высотой прокрутку так и не включал: ему
+        // самому "хватало места" — он же измерялся как "сколько нужно под весь контент", а
+        // не как "сколько реально доступно". Машинист прислал скриншот ровно такого обрезания
+        // клавиатуры прямо перед кнопкой "Закрыть". Фикс — задать самому ОКНУ диалога явную
+        // высоту в пикселях (почти во весь экран): тогда у ScrollView внутри появляется
+        // настоящий потолок высоты, и он начинает по-настоящему прокручиваться.
+        dialog.setOnShowListener {
+            val metrics = resources.displayMetrics
+            dialog.window?.setLayout(
+                (metrics.widthPixels * 0.95).toInt(),
+                (metrics.heightPixels * 0.92).toInt()
+            )
+        }
+        dialog.show()
     }
 
     private fun hasLocationPermission(): Boolean =
