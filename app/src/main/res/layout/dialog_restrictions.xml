@@ -10,213 +10,235 @@
     MainActivity.showRestrictionsDialog (атрибут android:showSoftInputOnFocus в самой разметке
     не существует как публичный XML-атрибут, хоть метод и называется так же — AAPT ругается
     "attribute not found", если его тут написать). Ввод идёт через свою маленькую цифровую
-    клавиатуру ниже (1-9, ←/0/→, Стереть — тот же набор, что был в HTML-макете,
-    .limits-keypad), а ← → явно и однозначно переключают активное поле (оно подсвечивается
-    синим) — порядок заранее известный и правильный, гадать не на что.
+    клавиатуру (1-9, ←/0/→, Стереть — тот же набор, что был в HTML-макете, .limits-keypad),
+    а ← → явно и однозначно переключают активное поле (оно подсвечивается синим) — порядок
+    заранее известный и правильный, гадать не на что.
+
+    ВАЖНО: раньше поля+клавиатура+список ограничений шли одной длинной колонкой сверху вниз в
+    одном ScrollView — на телефоне, который развёрнут в альбомный режим (экран низкий и
+    широкий), это всё целиком не помещалось по высоте, а клавиатура оказывалась ниже видимой
+    части диалога — машинист тыкал в поле (курсор появлялся), но клавиатуры не видел вообще и
+    не мог понять, что ввести нечем. Решение — так же, как в самом HTML-макете (.limits-modal-
+    body: display:flex) — поля+клавиатура СЛЕВА, список ограничений СПРАВА, бок о бок, а не
+    друг под другом: тогда высота каждой колонки вдвое меньше и помещается на невысоком
+    альбомном экране без прокрутки.
 -->
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:background="#000000">
+    android:orientation="horizontal"
+    android:background="#000000"
+    android:padding="16dp">
 
-    <LinearLayout
-        android:layout_width="match_parent"
+    <!-- Левая колонка: поля + своя клавиатура. -->
+    <ScrollView
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:orientation="vertical"
-        android:padding="20dp">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="НАЧАЛО"
-            android:textColor="#5AAADC"
-            android:textSize="12sp"
-            android:layout_marginBottom="8dp" />
+        android:layout_weight="3">
 
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:orientation="vertical"
+            android:paddingEnd="12dp">
 
-            <EditText
-                android:id="@+id/restrictionStartKmInput"
-                android:layout_width="0dp"
+            <TextView
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="2"
-                android:hint="км"
-                android:inputType="number"
-                android:maxLength="4"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#777777" />
-
-            <EditText
-                android:id="@+id/restrictionStartPkInput"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:hint="пк"
-                android:inputType="number"
-                android:maxLength="2"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#777777" />
-
-        </LinearLayout>
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="КОНЕЦ (необязательно)"
-            android:textColor="#5AAADC"
-            android:textSize="12sp"
-            android:layout_marginBottom="8dp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <EditText
-                android:id="@+id/restrictionEndKmInput"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="2"
-                android:hint="км"
-                android:inputType="number"
-                android:maxLength="4"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#777777" />
-
-            <EditText
-                android:id="@+id/restrictionEndPkInput"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:hint="пк"
-                android:inputType="number"
-                android:maxLength="2"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#777777" />
-
-        </LinearLayout>
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp"
-            android:background="#222222" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
-
-            <EditText
-                android:id="@+id/restrictionSpeedInput"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:hint="Скорость, км/ч"
-                android:inputType="number"
-                android:maxLength="3"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#777777" />
-
-            <EditText
-                android:id="@+id/restrictionPathInput"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="8dp"
-                android:hint="Путь (пусто = текущий)"
-                android:inputType="number"
-                android:maxLength="1"
-                android:textColor="#FFFFFF"
-                android:textColorHint="#777777" />
-
-        </LinearLayout>
-
-        <!-- Своя маленькая цифровая клавиатура (см. doc-комментарий класса выше) — пишет в
-             то поле, которое сейчас активно (подсвечено синим); ← → переключают активное поле
-             строго в правильном порядке: км→пк→км→пк→скорость→путь. -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:orientation="vertical">
+                android:text="НАЧАЛО"
+                android:textColor="#5AAADC"
+                android:textSize="12sp"
+                android:layout_marginBottom="6dp" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
-                <Button android:id="@+id/restrictionKey1" style="@style/RestrictionKeypadButton" android:text="1" />
-                <Button android:id="@+id/restrictionKey2" style="@style/RestrictionKeypadButton" android:text="2" />
-                <Button android:id="@+id/restrictionKey3" style="@style/RestrictionKeypadButton" android:text="3" />
+
+                <EditText
+                    android:id="@+id/restrictionStartKmInput"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="2"
+                    android:hint="км"
+                    android:inputType="number"
+                    android:maxLength="4"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#777777" />
+
+                <EditText
+                    android:id="@+id/restrictionStartPkInput"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:hint="пк"
+                    android:inputType="number"
+                    android:maxLength="2"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#777777" />
+
             </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="КОНЕЦ (необязательно)"
+                android:textColor="#5AAADC"
+                android:textSize="12sp"
+                android:layout_marginBottom="6dp" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
-                <Button android:id="@+id/restrictionKey4" style="@style/RestrictionKeypadButton" android:text="4" />
-                <Button android:id="@+id/restrictionKey5" style="@style/RestrictionKeypadButton" android:text="5" />
-                <Button android:id="@+id/restrictionKey6" style="@style/RestrictionKeypadButton" android:text="6" />
+
+                <EditText
+                    android:id="@+id/restrictionEndKmInput"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="2"
+                    android:hint="км"
+                    android:inputType="number"
+                    android:maxLength="4"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#777777" />
+
+                <EditText
+                    android:id="@+id/restrictionEndPkInput"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:hint="пк"
+                    android:inputType="number"
+                    android:maxLength="2"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#777777" />
+
             </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="10dp"
+                android:layout_marginBottom="10dp"
+                android:background="#222222" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
-                <Button android:id="@+id/restrictionKey7" style="@style/RestrictionKeypadButton" android:text="7" />
-                <Button android:id="@+id/restrictionKey8" style="@style/RestrictionKeypadButton" android:text="8" />
-                <Button android:id="@+id/restrictionKey9" style="@style/RestrictionKeypadButton" android:text="9" />
+
+                <EditText
+                    android:id="@+id/restrictionSpeedInput"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="Скорость, км/ч"
+                    android:inputType="number"
+                    android:maxLength="3"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#777777" />
+
+                <EditText
+                    android:id="@+id/restrictionPathInput"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:hint="Путь (пусто = текущий)"
+                    android:inputType="number"
+                    android:maxLength="1"
+                    android:textColor="#FFFFFF"
+                    android:textColorHint="#777777" />
+
             </LinearLayout>
 
+            <!-- Своя маленькая цифровая клавиатура (см. doc-комментарий класса выше) — пишет
+                 в то поле, которое сейчас активно (подсвечено синим); ← → переключают активное
+                 поле строго в правильном порядке: км→пк→км→пк→скорость→путь. -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
-                <Button android:id="@+id/restrictionKeyPrev" style="@style/RestrictionKeypadButton" android:text="←" />
-                <Button android:id="@+id/restrictionKey0" style="@style/RestrictionKeypadButton" android:text="0" />
-                <Button android:id="@+id/restrictionKeyNext" style="@style/RestrictionKeypadButton" android:text="→" />
+                android:layout_marginTop="8dp"
+                android:orientation="vertical">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <Button android:id="@+id/restrictionKey1" style="@style/RestrictionKeypadButton" android:text="1" />
+                    <Button android:id="@+id/restrictionKey2" style="@style/RestrictionKeypadButton" android:text="2" />
+                    <Button android:id="@+id/restrictionKey3" style="@style/RestrictionKeypadButton" android:text="3" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <Button android:id="@+id/restrictionKey4" style="@style/RestrictionKeypadButton" android:text="4" />
+                    <Button android:id="@+id/restrictionKey5" style="@style/RestrictionKeypadButton" android:text="5" />
+                    <Button android:id="@+id/restrictionKey6" style="@style/RestrictionKeypadButton" android:text="6" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <Button android:id="@+id/restrictionKey7" style="@style/RestrictionKeypadButton" android:text="7" />
+                    <Button android:id="@+id/restrictionKey8" style="@style/RestrictionKeypadButton" android:text="8" />
+                    <Button android:id="@+id/restrictionKey9" style="@style/RestrictionKeypadButton" android:text="9" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal">
+                    <Button android:id="@+id/restrictionKeyPrev" style="@style/RestrictionKeypadButton" android:text="←" />
+                    <Button android:id="@+id/restrictionKey0" style="@style/RestrictionKeypadButton" android:text="0" />
+                    <Button android:id="@+id/restrictionKeyNext" style="@style/RestrictionKeypadButton" android:text="→" />
+                </LinearLayout>
+
+                <Button
+                    android:id="@+id/restrictionBackspaceButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_margin="3dp"
+                    android:minHeight="40dp"
+                    android:background="@drawable/bg_header_toggle"
+                    android:textColor="#FFFFFF"
+                    android:text="⌫ Стереть" />
+
             </LinearLayout>
+
+            <TextView
+                android:id="@+id/restrictionErrorText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:textColor="#E05A5A"
+                android:visibility="gone" />
 
             <Button
-                android:id="@+id/restrictionBackspaceButton"
+                android:id="@+id/restrictionAddButton"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_margin="3dp"
-                android:minHeight="46dp"
-                android:background="@drawable/bg_header_toggle"
-                android:textColor="#FFFFFF"
-                android:text="⌫ Стереть" />
+                android:layout_marginTop="8dp"
+                android:text="Добавить" />
 
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/restrictionErrorText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="8dp"
-            android:textColor="#E05A5A"
-            android:visibility="gone" />
+    </ScrollView>
 
-        <Button
-            android:id="@+id/restrictionAddButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="12dp"
-            android:text="Добавить" />
-
-        <View
-            android:layout_width="match_parent"
-            android:layout_height="1dp"
-            android:layout_marginTop="16dp"
-            android:layout_marginBottom="16dp"
-            android:background="#222222" />
+    <!-- Правая колонка: список уже введённых ограничений. -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="2"
+        android:orientation="vertical"
+        android:paddingStart="12dp">
 
         <TextView
             android:layout_width="wrap_content"
@@ -224,13 +246,20 @@
             android:text="СПИСОК ОГРАНИЧЕНИЙ"
             android:textColor="#5AAADC"
             android:textSize="12sp"
-            android:layout_marginBottom="8dp" />
+            android:layout_marginBottom="6dp" />
 
-        <LinearLayout
-            android:id="@+id/restrictionRowsContainer"
+        <ScrollView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical" />
+            android:layout_height="wrap_content">
+
+            <LinearLayout
+                android:id="@+id/restrictionRowsContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+
+        </ScrollView>
 
     </LinearLayout>
-</ScrollView>
+
+</LinearLayout>
