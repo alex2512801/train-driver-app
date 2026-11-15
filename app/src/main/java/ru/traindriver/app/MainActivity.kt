@@ -17,6 +17,7 @@ import android.telephony.TelephonyManager
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
+import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -921,6 +922,13 @@ class MainActivity : AppCompatActivity() {
         // наконец по-настоящему прокручивается, если что-то не поместилось (см. doc-комментарий
         // в самом файле разметки).
         val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        // setShowSoftInputOnFocus(false) на самих полях (выше) запрещает клавиатуре появляться
+        // именно "по фокусу поля" — но у НОВОГО отдельного окна (а не поля внутри него) есть
+        // ещё и своё собственное поведение показа клавиатуры при появлении на экране, и
+        // полноэкранный Dialog, в отличие от прежнего AlertDialog, показывал её сам, в обход
+        // запрета у полей — машинист снова увидел системную клавиатуру. Запрещаем явно самому
+        // ОКНУ, а не только полям.
+        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
         dialog.setContentView(view)
         view.findViewById<Button>(R.id.restrictionCloseButton).setOnClickListener { dialog.dismiss() }
         dialog.show()
