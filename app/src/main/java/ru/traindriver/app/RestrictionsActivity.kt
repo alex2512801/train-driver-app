@@ -105,6 +105,10 @@ class RestrictionsActivity : AppCompatActivity() {
         // следующее поле по расположению на экране, а не по порядку). orderedInputs/fieldOrder —
         // один и тот же порядок, по индексу.
         val orderedInputs = listOf(startKmInput, startPkInput, endKmInput, endPkInput, speedInput, pathInput)
+        // Максимальная длина каждого поля по порядку (android:maxLength в разметке) — нужна
+        // отдельно от самого фильтра длины, чтобы знать, когда поле заполнено целиком и пора
+        // само перейти на следующее (машинист: "ввёл 4 цифры, и он сам перескакивает на пикет").
+        val maxLengths = listOf(4, 2, 4, 2, 2, 1)
         // android:showSoftInputOnFocus не существует как публичный XML-атрибут (AAPT: "attribute
         // not found"), хоть одноимённый метод и есть — выключаем системную клавиатуру кодом.
         for (input in orderedInputs) input.setShowSoftInputOnFocus(false)
@@ -140,7 +144,17 @@ class RestrictionsActivity : AppCompatActivity() {
             val input = orderedInputs[activeIndex]
             input.requestFocus()
             if (moveCursorToEnd) {
-                input.setSelection(input.text.length)
+                // post{} — ОБЯЗАТЕЛЬНО: поле получает фокус не через касание пальцем, а через
+                // requestFocus() по кнопке ← → — в таком случае Android сам может выделить
+                // ВЕСЬ текст целиком, и это происходит НЕМНОГО ПОЗЖЕ самого requestFocus(),
+                // так что обычный setSelection() сразу после него система потом перезаписывает
+                // обратно в "весь текст выделен". Из-за этого при переходе на поле со старым
+                // значением старое значение оказывалось выделенным целиком — и следующая
+                // введённая цифра заменяла ВЕСЬ текст, а не дописывалась (тот же баг найден и
+                // разобран подробно в TrainParamsActivity.setActive). post{} откладывает нашу
+                // установку курсора на следующий кадр — ПОСЛЕ системной логики выделения, так
+                // что именно наша позиция курсора остаётся последней.
+                input.post { input.setSelection(input.text.length) }
             }
             refreshFieldBackgrounds()
         }
@@ -169,6 +183,12 @@ class RestrictionsActivity : AppCompatActivity() {
             // исключение, которое крашит всю Activity (тот же баг найден и исправлен в
             // TrainParamsActivity.appendToActive — там же подробный разбор симптома).
             input.setSelection((lo + digit.length).coerceAtMost(input.text.length))
+
+            // Поле заполнено целиком (достигло своего maxLength) — само переходим на
+            // следующее, как попросил машинист ("ввёл 4 цифры, и он сам перескакивает на пикет").
+            if (input.text.length >= maxLengths[activeIndex] && activeIndex < orderedInputs.lastIndex) {
+                setActive(activeIndex + 1)
+            }
         }
 
         val digitButtonIds = listOf(

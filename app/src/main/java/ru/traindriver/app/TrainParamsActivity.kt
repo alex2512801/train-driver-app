@@ -78,6 +78,10 @@ class TrainParamsActivity : AppCompatActivity() {
         // в "Ограничениях" (RestrictionsActivity) — пишет/стирает именно там, где курсор, а не
         // всегда в конец/с конца строки.
         val orderedInputs = listOf(bruttoInput, nettoInput, wagonCountInput, condLengthInput)
+        // Максимальная длина каждого поля по порядку (android:maxLength в разметке) — нужна
+        // отдельно от самого фильтра длины, чтобы знать, когда поле заполнено целиком и пора
+        // само перейти на следующее (машинист: "ввёл 4 цифры, и он сам перескакивает на пикет").
+        val maxLengths = listOf(5, 5, 3, 3)
         for (input in orderedInputs) input.setShowSoftInputOnFocus(false)
         var activeIndex = 0
 
@@ -92,7 +96,17 @@ class TrainParamsActivity : AppCompatActivity() {
             val input = orderedInputs[activeIndex]
             input.requestFocus()
             if (moveCursorToEnd) {
-                input.setSelection(input.text.length)
+                // post{} — ОБЯЗАТЕЛЬНО: поле получает фокус не через касание пальцем, а через
+                // requestFocus() по кнопке ↑/↓ — в таком случае Android сам может выделить
+                // ВЕСЬ текст целиком, и это происходит НЕМНОГО ПОЗЖЕ самого requestFocus(),
+                // так что обычный setSelection() сразу после него система потом перезаписывает
+                // обратно в "весь текст выделен". Из-за этого при переходе на поле со старым
+                // значением (машинист: "перескакиваю... образуется пустое поле") старое
+                // значение оказывалось выделенным целиком — и следующая введённая цифра
+                // заменяла ВЕСЬ текст, а не дописывалась ("стирает уже полностью"). post{}
+                // откладывает нашу установку курсора на следующий кадр — ПОСЛЕ системной
+                // логики выделения, так что именно наша позиция курсора остаётся последней.
+                input.post { input.setSelection(input.text.length) }
             }
             refreshFieldBackgrounds()
         }
@@ -119,6 +133,12 @@ class TrainParamsActivity : AppCompatActivity() {
             // исключение, которое крашит всю Activity (машинист: "вылетает на главный экран",
             // а несохранённое вводимое пропадает, т.к. это настоящий краш, а не закрытие).
             input.setSelection((lo + digit.length).coerceAtMost(input.text.length))
+
+            // Поле заполнено целиком (достигло своего maxLength) — само переходим на
+            // следующее, как попросил машинист ("ввёл 4 цифры, и он сам перескакивает").
+            if (input.text.length >= maxLengths[activeIndex] && activeIndex < orderedInputs.lastIndex) {
+                setActive(activeIndex + 1)
+            }
         }
 
         val digitButtonIds = listOf(
