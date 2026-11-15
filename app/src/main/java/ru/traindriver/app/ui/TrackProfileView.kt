@@ -160,8 +160,10 @@ class TrackProfileView @JvmOverloads constructor(
     private var airGaps: List<AirGap> = emptyList()
     private var neutralInserts: List<NeutralInsert> = emptyList()
 
-    /** Сколько метров показывать позади/впереди головы поезда. */
-    var behindM: Double = 3000.0
+    // Позади головы поезда — 2,5 км (было 3), машинист попросил сдвинуть голову левее по
+    // экрану, чтобы было больше видно впереди (расстояние вперёд при этом не трогали —
+    // сократили только то, что позади, и голова сама сместилась влево).
+    var behindM: Double = 2500.0
     var aheadM: Double = 5000.0
 
     // Протягивание графика пальцем вперёд/назад (машинист, не из ТЗ/макета — "как в
