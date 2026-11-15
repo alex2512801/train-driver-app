@@ -825,8 +825,26 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** Ближайший ещё не пройденный сигнал в направлении движения от точки [fromM] — для "Голова"
+     *  это голова поезда (chainageM), для "Хвост" — хвост (chainageM минус длина состава, та же
+     *  формула, что и у TrackProfileView при рисовании хвостового маркера на графике). */
+    private fun distanceToNextSignalM(fromM: Double, forward: Boolean): Double? {
+        val relevant = signals.filter { it.direction == directionSelection.effectiveDataset }
+        val nextSignal = if (forward) {
+            relevant.filter { it.chainageM > fromM }.minByOrNull { it.chainageM }
+        } else {
+            relevant.filter { it.chainageM < fromM }.maxByOrNull { it.chainageM }
+        }
+        return nextSignal?.let { kotlin.math.abs(it.chainageM - fromM) }
+    }
+
     // Нижняя статусная строка (ТЗ раздел 7): Vф | уклон | V=/S= | голова | хвост.
-    // Уклон/голова/хвост пока "—" — нет данных о рельефе и о км+пк сигналов (см. README).
+    // Голова/Хвост раньше были "—" — не было данных о км+пк сигналов (см. README), теперь
+    // signals (SignalAssetLoader) загружены и используются графиком, так что считаем по-настоящему:
+    // "Голова" — сколько осталось голове до сигнала, к которому она идёт; "Хвост" — сколько
+    // осталось хвосту до сигнала, который он ещё не прошёл (если состав длинный и сигналы частые,
+    // это может быть сигнал, который голова уже проехала — то есть хвост ещё не до конца его
+    // освободил). Уклон пока "—" — нужны данные о профиле пути, которых ещё нет.
     private fun buildStatusBarText(speedKmh: Double, chainageM: Double): String {
         val vf = "Vф=${speedKmh.toInt()}"
 
@@ -849,6 +867,11 @@ class MainActivity : AppCompatActivity() {
             "V=? S=?"
         }
 
-        return "$vf   Уклон=—   $nextText   Голова=—   Хвост=—"
+        val forward = directionSelection.picketsGrowing
+        val tailM = chainageM - trainParams.composition.lengthM
+        val headText = distanceToNextSignalM(chainageM, forward)?.let { "Голова=${it.toInt()}м" } ?: "Голова=—"
+        val tailText = distanceToNextSignalM(tailM, forward)?.let { "Хвост=${it.toInt()}м" } ?: "Хвост=—"
+
+        return "$vf   Уклон=—   $nextText   $headText   $tailText"
     }
 }

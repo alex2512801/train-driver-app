@@ -60,13 +60,26 @@ class ReliefProfile(points: List<ReliefPoint>) {
      * верхней границы полосы рельефа, а не какая-то произвольная. Раньше полоса считалась
      * только от минимума (см. [minHeightInRange]) без верхней привязки — из-за этого высокий
      * участок рельефа мог нарисоваться ВЫШЕ линии сигналов (машинист прислал скриншот такого
-     * наложения). Null, если в окне вообще нет покрытия.
+     * наложения).
+     *
+     * ВАЖНО: учитываются не только точки данных СТРОГО ВНУТРИ окна, но и интерполированная
+     * высота ровно на его границах ([fromM], [toM]) — иначе при панорамировании (машинист:
+     * "когда рукой пролистываю, слева, где самый высокий") максимум мог оказаться ЗАНИЖЕННЫМ:
+     * если самая высокая точка рельефа лежит чуть ЗА пределами окна, [heightAt] всё равно
+     * рисует интерполированную (между этой точкой и соседней внутри окна) высоту ровно у
+     * самого края экрана, и эта нарисованная высота могла оказаться больше, чем здесь же
+     * посчитанный максимум — то есть рельеф рисовался выше собственной верхней границы.
+     * Для кусочно-линейной интерполяции максимум на отрезке всегда достигается либо в одной
+     * из известных точек данных внутри него, либо на самой границе отрезка — третьего не дано,
+     * поэтому достаточно добавить эти две граничные точки.
+     * Null, если в окне вообще нет покрытия.
      */
-    fun maxHeightInRange(direction: Direction, fromM: Double, toM: Double): Double? =
-        byDirection[direction]
-            ?.asSequence()
-            ?.filter { it.chainageM in fromM..toM }
-            ?.maxOfOrNull { it.heightStitched }
+    fun maxHeightInRange(direction: Direction, fromM: Double, toM: Double): Double? {
+        val pts = byDirection[direction] ?: return null
+        val interior = pts.asSequence().filter { it.chainageM in fromM..toM }.map { it.heightStitched }
+        val boundary = sequenceOf(heightAt(direction, fromM), heightAt(direction, toM)).filterNotNull()
+        return (interior + boundary).maxOrNull()
+    }
 
     fun hasCoverage(direction: Direction): Boolean = byDirection[direction]?.isNotEmpty() == true
 }
