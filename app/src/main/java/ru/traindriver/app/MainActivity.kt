@@ -13,6 +13,7 @@ import android.os.Looper
 import android.telephony.PhoneStateListener
 import android.telephony.SignalStrength
 import android.telephony.SubscriptionManager
+import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
 import android.text.Editable
 import android.text.TextWatcher
@@ -523,17 +524,34 @@ class MainActivity : AppCompatActivity() {
     @Suppress("DEPRECATION")
     @SuppressLint("MissingPermission") // проверяется явно в hasPhoneStatePermission()
     private fun bindSimSlot(barsView: SignalBarsView, textView: TextView, manager: TelephonyManager) {
-        val listener = object : PhoneStateListener() {
-            override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
-                barsView.level = signalStrength.level
+        // PhoneStateListener.listen() официально устарел с Android 12 (API 31) — на свежих
+        // версиях Android заменён на TelephonyCallback. Машинист подтвердил: телефон свежий
+        // (Android 16/17), так что регистрируем именно новый API — он активно поддерживается
+        // производителем прошивки, в отличие от оставленного только для старых телефонов
+        // устаревшего метода ниже.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val callback = object : TelephonyCallback(), TelephonyCallback.SignalStrengthsListener {
+                override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
+                    barsView.level = signalStrength.level
+                }
             }
+            manager.registerTelephonyCallback(mainExecutor, callback)
+            activeTelephonyCallbacks.add(manager to callback)
+        } else {
+            val listener = object : PhoneStateListener() {
+                override fun onSignalStrengthsChanged(signalStrength: SignalStrength) {
+                    barsView.level = signalStrength.level
+                }
+            }
+            manager.listen(listener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
+            activeSimListeners.add(manager to listener)
         }
-        manager.listen(listener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
-        activeSimListeners.add(manager to listener)
         activeSimPolls.add(manager to barsView)
         textView.text = networkTypeLabel(manager.networkType)
         pollSimSignal(manager, barsView)
     }
+
+    private val activeTelephonyCallbacks = mutableListOf<Pair<TelephonyManager, TelephonyCallback>>()
 
     // onSignalStrengthsChanged выше срабатывает только на ИЗМЕНЕНИЕ сигнала — если он уже
     // стабилен к моменту запуска приложения, событие может вообще не прийти, и столбики так и
@@ -594,6 +612,11 @@ class MainActivity : AppCompatActivity() {
         @Suppress("DEPRECATION")
         for ((manager, listener) in activeSimListeners) {
             manager.listen(listener, PhoneStateListener.LISTEN_NONE)
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            for ((manager, callback) in activeTelephonyCallbacks) {
+                manager.unregisterTelephonyCallback(callback)
+            }
         }
         super.onDestroy()
     }
