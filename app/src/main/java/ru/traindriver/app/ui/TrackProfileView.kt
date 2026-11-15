@@ -528,7 +528,10 @@ class TrackProfileView @JvmOverloads constructor(
             MotionEvent.ACTION_MOVE -> {
                 val dxPx = event.x - lastTouchX
                 lastTouchX = event.x
-                val graphWidth = width - axisWidthPx
+                // graphWidth — вся ширина канваса, должно совпадать с тем же graphWidth в
+                // onDraw (см. его doc-комментарий) — иначе протягивание пальцем сдвигало бы
+                // график не на то расстояние, которое прошёл палец.
+                val graphWidth = width.toFloat()
                 if (graphWidth > 0f) {
                     val spanM = behindM + aheadM
                     panOffsetM -= dxPx * (spanM / graphWidth)
@@ -613,8 +616,14 @@ class TrackProfileView @JvmOverloads constructor(
         val fromM = trainPositionM - behindM + panOffsetM
         val toM = trainPositionM + aheadM + panOffsetM
         val spanM = toM - fromM
-        val graphLeft = axisWidthPx
-        val graphWidth = width - axisWidthPx
+        // graphLeft=0, graphWidth=вся ширина канваса — машинист поправил: 2,5 км позади головы
+        // должны считаться от САМОГО левого края экрана, а не от правого края отдельной полосы,
+        // отведённой под шкалу скорости (раньше тут было graphLeft=axisWidthPx, и график реально
+        // начинался правее этой полосы). Шкала скорости (drawSpeedAxis) просто рисуется ПОВЕРХ
+        // самого начала графика, а не в отдельной зарезервированной области — ровно так же, как
+        // и остальные подписи на этом графике (километровые числа, таблички сигналов).
+        val graphLeft = 0f
+        val graphWidth = width.toFloat()
 
         val stepsH = height * (STEPS_TO_RELIEF_RATIO / (STEPS_TO_RELIEF_RATIO + 1f))
         val lineY = stepsH
@@ -1033,13 +1042,11 @@ class TrackProfileView @JvmOverloads constructor(
         // сетка пикетов, клип по поверхности рельефа
         canvas.save()
         canvas.clipRect(0f, top, w, top + bandH)
-        // fromM соответствует x=graphLeft (правому краю шкалы скорости слева), а не x=0 — сетка
-        // пикетов, если считать от fromM, никогда не рисовалась в полосе под самой шкалой
-        // (x от 0 до graphLeft). Машинист заметил: там сетка как будто "обрывается" — и
-        // переживает, что если состав длинный, хвост на зелёной полосе может оказаться как раз
-        // в этой безсеточной полосе, и не будет видно, где он идёт относительно пикетов. mFor(0f)
-        // даёт км+пк ровно у левого края канваса (x=0), а не у края самого графика — считаем
-        // первый пикет уже от него.
+        // mFor(0f) == fromM теперь, когда graphLeft=0 (см. doc-комментарий в onDraw) — раньше,
+        // пока график начинался не с самого края канваса, а правее отдельной полосы под шкалу
+        // скорости, здесь было отдельное исправление специально под то устройство координат;
+        // сейчас вызов оставлен для ясности (явно "от самого левого края"), хотя технически уже
+        // совпадает с обычным fromM.
         val firstPicketIndex = ceil(mFor(0f) / PICKET_LENGTH_M).toLong()
         val lastPicketIndex = floor(toM / PICKET_LENGTH_M).toLong()
         for (i in firstPicketIndex..lastPicketIndex) {
