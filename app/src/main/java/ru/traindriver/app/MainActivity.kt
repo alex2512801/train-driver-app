@@ -805,6 +805,9 @@ class MainActivity : AppCompatActivity() {
         // dialog_restrictions.xml). orderedInputs/fieldOrder — один и тот же порядок, по
         // индексу.
         val orderedInputs = listOf(startKmInput, startPkInput, endKmInput, endPkInput, speedInput, pathInput)
+        // android:showSoftInputOnFocus не существует как публичный XML-атрибут (AAPT: "attribute
+        // not found"), хоть одноимённый метод и есть — выключаем системную клавиатуру кодом.
+        for (input in orderedInputs) input.setShowSoftInputOnFocus(false)
         val fieldOrder = listOf(
             RestrictionField.START_KM, RestrictionField.START_PK,
             RestrictionField.END_KM, RestrictionField.END_PK,
