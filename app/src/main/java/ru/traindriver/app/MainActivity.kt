@@ -14,6 +14,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -68,6 +69,7 @@ import ru.traindriver.app.route.TrainParams
 import ru.traindriver.app.route.TrainParamsStore
 import ru.traindriver.app.route.nearestStationName
 import ru.traindriver.app.route.nextStationAhead
+import ru.traindriver.app.ui.BatteryIconView
 import ru.traindriver.app.ui.OpasnoeIconView
 import ru.traindriver.app.ui.RecenterIconView
 import ru.traindriver.app.ui.SignalBarsView
@@ -106,6 +108,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var simSlot1Group: View
     private lateinit var simSlot1Bars: SignalBarsView
     private lateinit var simSlot1Text: TextView
+
+    // Заряд батареи телефона в шапке (машинист, не из ТЗ/макета) — см. refreshBatteryLevel,
+    // вызывается раз в секунду из timeUpdater вместе с остальной шапкой.
+    private lateinit var batteryIcon: BatteryIconView
+    private lateinit var batteryText: TextView
 
     // Каждый активный слот — свой TelephonyManager (привязанный к конкретной SIM через
     // createForSubscriptionId) и свой PhoneStateListener (чтобы знать, какой именно
@@ -249,6 +256,7 @@ class MainActivity : AppCompatActivity() {
             if (historyPanelVisible) refreshStopHistory()
             refreshStopwatch()
             refreshSimSignalPolling()
+            refreshBatteryLevel()
 
             // График/объявления/статусная строка — "от головы поезда" (машинист), не прямо от
             // GPS-колбэка, см. doc-комментарий у lastChainageM и estimatedChainageM.
@@ -401,6 +409,8 @@ class MainActivity : AppCompatActivity() {
         simSlot1Group = findViewById(R.id.simSlot1Group)
         simSlot1Bars = findViewById(R.id.simSlot1Bars)
         simSlot1Text = findViewById(R.id.simSlot1Text)
+        batteryIcon = findViewById(R.id.batteryIcon)
+        batteryText = findViewById(R.id.batteryText)
         trackProfileView = findViewById(R.id.trackProfileView)
         gpsLocationProvider = GpsLocationProvider(this)
         arrivalWindow = findViewById(R.id.arrivalWindow)
@@ -647,6 +657,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshSimSignalPolling() {
         for ((manager, barsView) in activeSimPolls) pollSimSignal(manager, barsView)
+    }
+
+    /** Заряд батареи телефона в шапке (машинист, не из ТЗ/макета) — getIntProperty читает
+     *  текущее значение сразу, без регистрации BroadcastReceiver на ACTION_BATTERY_CHANGED,
+     *  тем же простым способом, что и остальная шапка (раз в секунду из timeUpdater). */
+    private fun refreshBatteryLevel() {
+        val batteryManager = getSystemService(BATTERY_SERVICE) as? BatteryManager ?: return
+        val level = batteryManager.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+        if (level in 0..100) {
+            batteryIcon.level = level
+            batteryText.text = "$level%"
+        }
     }
 
     private fun networkTypeLabel(networkType: Int): String = when (networkType) {

@@ -29,14 +29,16 @@ class SignalBarsView @JvmOverloads constructor(
     private val onPaint = Paint().apply { color = Color.WHITE; isAntiAlias = true }
     private val offPaint = Paint().apply { color = Color.rgb(58, 58, 58); isAntiAlias = true }
 
+    // Уже, чем было (26dp→20dp) — машинист попросил сузить весь участок с уровнем сигнала SIM,
+    // чтобы рядом освободилось место под значок заряда батареи (см. BatteryIconView).
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        setMeasuredDimension(dp(26f).toInt(), dp(22f).toInt())
+        setMeasuredDimension(dp(20f).toInt(), dp(22f).toInt())
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val barW = dp(4f)
-        val gap = dp(2f)
+        val barW = dp(3f)
+        val gap = dp(1.5f)
         val totalW = barW * 4 + gap * 3
         var x = (width - totalW) / 2f
         val baseline = height.toFloat()

@@ -183,7 +183,9 @@
                  MainActivity.hideSystemUi). На месте "Параметры" (машинист попросил: она
                  переехала вниз в статусную строку, см. ниже) — ДВА слота, по одному на
                  каждую SIM-карту (у машиниста их две и обе должны быть видны); второй слот
-                 скрыт (visibility=gone), пока MainActivity не обнаружит вторую активную SIM. -->
+                 скрыт (visibility=gone), пока MainActivity не обнаружит вторую активную SIM.
+                 Сужено (столбики 26dp→20dp в SignalBarsView, текст 12sp→10sp, отступы меньше) —
+                 машинист попросил освободить место под значок заряда батареи рядом (см. ниже). -->
             <LinearLayout
                 android:id="@+id/simSlot0Group"
                 android:layout_width="wrap_content"
@@ -200,11 +202,11 @@
                     android:id="@+id/simSlot0Text"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="3dp"
+                    android:layout_marginStart="2dp"
                     android:textColor="#FFFFFF"
                     android:textStyle="bold"
                     android:fontFamily="monospace"
-                    android:textSize="12sp"
+                    android:textSize="10sp"
                     android:text="—" />
 
             </LinearLayout>
@@ -215,7 +217,7 @@
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
                 android:gravity="center_vertical"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="4dp"
                 android:visibility="gone">
 
                 <ru.traindriver.app.ui.SignalBarsView
@@ -227,11 +229,39 @@
                     android:id="@+id/simSlot1Text"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="3dp"
+                    android:layout_marginStart="2dp"
                     android:textColor="#FFFFFF"
                     android:textStyle="bold"
                     android:fontFamily="monospace"
-                    android:textSize="12sp"
+                    android:textSize="10sp"
+                    android:text="—" />
+
+            </LinearLayout>
+
+            <!-- 10б. Заряд батареи телефона (машинист, не из ТЗ/макета) — рядом с уровнем
+                 сигнала SIM, место для которого освободилось выше. BatteryIconView — свой
+                 рисованный значок (контур+заполнение), не системная иконка. -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginStart="8dp">
+
+                <ru.traindriver.app.ui.BatteryIconView
+                    android:id="@+id/batteryIcon"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content" />
+
+                <TextView
+                    android:id="@+id/batteryText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="2dp"
+                    android:textColor="#FFFFFF"
+                    android:textStyle="bold"
+                    android:fontFamily="monospace"
+                    android:textSize="10sp"
                     android:text="—" />
 
             </LinearLayout>
