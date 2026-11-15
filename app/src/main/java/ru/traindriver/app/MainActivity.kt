@@ -47,6 +47,7 @@ import ru.traindriver.app.route.BlockPostAssetLoader
 import ru.traindriver.app.route.BrakeTest
 import ru.traindriver.app.route.BrakeTestAssetLoader
 import ru.traindriver.app.route.ChainageFormatter
+import ru.traindriver.app.route.Crossing
 import ru.traindriver.app.route.CrossingAssetLoader
 import ru.traindriver.app.route.Direction
 import ru.traindriver.app.route.DirectionSelection
@@ -171,9 +172,12 @@ class MainActivity : AppCompatActivity() {
     // по стандартному правилу чётный/нечётный"); path == null — на любом (это "правильный
     // путь текущего направления", каким бы он ни был).
     private fun refreshTrackProfileRestrictions() {
-        trackProfileView.setRestrictions(
-            restrictions.filter { it.path == null || it.path == directionSelection.physicalPath }
-        )
+        val relevant = restrictions.filter { it.path == null || it.path == directionSelection.physicalPath }
+        trackProfileView.setRestrictions(relevant)
+        // Список ограничений может поменяться в любой момент (RestrictionsActivity), не только
+        // при смене направления/пути — пересобираем планировщик здесь же, вместе с остальной
+        // работой со списком (а не только из updateDirectionUi, как переезды/пробы тормозов).
+        tempLimitScheduler = PointAnnouncementScheduler(relevant, { it.startM }, thresholdOf = { 2000.0 })
     }
 
     // Направление/путь задаёт машинист вручную (ТЗ раздел 3) — по GPS это не определить.
@@ -223,6 +227,22 @@ class MainActivity : AppCompatActivity() {
     private val stationAnnouncements by lazy { StationAnnouncementAssetLoader.loadStationAnnouncements(this) }
     private var stationScheduler =
         PointAnnouncementScheduler<StationAnnouncement>(emptyList(), { it.chainageM }, thresholdOf = { it.thresholdM })
+
+    // Переезд — ТЗ раздел 6: "Внимание! Впереди переезд!" за 1500 м (CROSSING_FAR), и та же
+    // короткая фраза "Впереди переезд!" ДВА раза — за 800 м и за 300 м (CROSSING_NEAR). Это не
+    // один порог, а три — отдельный планировщик на каждый порог, иначе PointAnnouncementScheduler
+    // пометил бы переезд объявленным уже на первом (дальнем) срабатывании и дальние два не
+    // выстрелили бы вовсе (см. doc-комментарий класса — он разовый per-point per-scheduler).
+    private var crossingFarScheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 1500.0 })
+    private var crossingNear800Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 800.0 })
+    private var crossingNear300Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 300.0 })
+
+    // Временное ограничение (ТЗ раздел 6/11) — "Внимание! Впереди временное ограничение
+    // скорости!" за 2000 м до НАЧАЛА ограничения ([Restriction.startM]). В отличие от
+    // переездов/проб тормозов список точек не статичный asset, а меняется в любой момент
+    // (машинист может добавить ограничение через RestrictionsActivity прямо во время движения) —
+    // пересобирается там же, где и остальная работа со списком, см. refreshTrackProfileRestrictions.
+    private var tempLimitScheduler = PointAnnouncementScheduler<Restriction>(emptyList(), { it.startM }, thresholdOf = { 2000.0 })
 
     // "Параметры" (ТЗ раздел 5 / раздел 12.2) — отдельный полноэкранный экран
     // (TrainParamsActivity, кнопка paramsButton запускает его через Intent), не отдельный
@@ -304,6 +324,12 @@ class MainActivity : AppCompatActivity() {
         if (brakeTest != null) {
             voiceAnnouncer.play(if (brakeTest.doubleTrain) Announcement.BRAKE_TEST_DOUBLE else Announcement.BRAKE_TEST)
         }
+
+        val forward = directionSelection.picketsGrowing
+        if (crossingFarScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.CROSSING_FAR)
+        if (crossingNear800Scheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.CROSSING_NEAR)
+        if (crossingNear300Scheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.CROSSING_NEAR)
+        if (tempLimitScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.TEMP_LIMIT)
 
         if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
             voiceAnnouncer.play(Announcement.STATION)
@@ -778,6 +804,11 @@ class MainActivity : AppCompatActivity() {
 
         val relevantStations = stationAnnouncements.filter { it.direction == s.effectiveDataset }
         stationScheduler = PointAnnouncementScheduler(relevantStations, { it.chainageM }, thresholdOf = { it.thresholdM })
+
+        val relevantCrossings = crossings.filter { it.direction == s.effectiveDataset }
+        crossingFarScheduler = PointAnnouncementScheduler(relevantCrossings, { it.chainageM }, thresholdOf = { 1500.0 })
+        crossingNear800Scheduler = PointAnnouncementScheduler(relevantCrossings, { it.chainageM }, thresholdOf = { 800.0 })
+        crossingNear300Scheduler = PointAnnouncementScheduler(relevantCrossings, { it.chainageM }, thresholdOf = { 300.0 })
 
         refreshTrackProfileRestrictions()
     }
