@@ -106,11 +106,14 @@
 
             <View style="@style/HeaderDivider" />
 
-            <!-- 6/7. Окошко стоянки и история остановок (ТЗ раздел 10) — иконки-кнопки. -->
-            <Button
+            <!-- 6/7. Окошко стоянки и история остановок (ТЗ раздел 10) — иконки-кнопки.
+                 arrivalToggleButton раньше был эмодзи "⏱" — на телефоне машиниста он не
+                 отображался вообще (кнопка была невидимой, "не нашёл, где эта кнопка") —
+                 заменён на свой значок, см. StopwatchIconView. -->
+            <ru.traindriver.app.ui.StopwatchIconView
                 android:id="@+id/arrivalToggleButton"
-                style="@style/HeaderIconButton"
-                android:text="⏱" />
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content" />
 
             <Button
                 android:id="@+id/historyToggleButton"
@@ -285,6 +288,39 @@
                 android:textColor="#FFFFFF"
                 android:textSize="16sp"
                 android:fontFamily="monospace" />
+
+        </LinearLayout>
+
+        <!-- Секундомер по тапу на время (МСК/местное) в шапке — отдельная просьба машиниста,
+             не из ТЗ/макета. Та же логика, что у arrivalWindow выше (не модалка, непрозрачный
+             фон), но висит у ВЕРХНЕГО ПРАВОГО угла — время, по которому кликают, находится
+             там же, в правом конце шапки (см. MainActivity.toggleStopwatch). -->
+        <LinearLayout
+            android:id="@+id/stopwatchWindow"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="top|end"
+            android:orientation="vertical"
+            android:gravity="center_horizontal"
+            android:background="#FF000000"
+            android:padding="8dp"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/stopwatchText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textColor="#FFFFFF"
+                android:textStyle="bold"
+                android:fontFamily="monospace"
+                android:textSize="22sp"
+                android:text="00:00:00" />
+
+            <Button
+                android:id="@+id/stopwatchResetButton"
+                style="@style/HeaderToggleButton"
+                android:layout_marginTop="6dp"
+                android:text="Сброс" />
 
         </LinearLayout>
 

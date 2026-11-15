@@ -72,6 +72,7 @@ import ru.traindriver.app.route.nextStationAhead
 import ru.traindriver.app.route.sortedForDirection
 import ru.traindriver.app.ui.OpasnoeIconView
 import ru.traindriver.app.ui.SignalBarsView
+import ru.traindriver.app.ui.StopwatchIconView
 import ru.traindriver.app.ui.TrackProfileView
 
 class MainActivity : AppCompatActivity() {
@@ -114,7 +115,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var arrivalTimeText: TextView
     private lateinit var arrivalMidText: TextView
     private lateinit var arrivalDepartureText: TextView
-    private lateinit var arrivalToggleButton: Button
+    private lateinit var arrivalToggleButton: StopwatchIconView
     private lateinit var historyPanel: View
     private lateinit var historyRowsContainer: LinearLayout
     private lateinit var historyToggleButton: Button
@@ -227,8 +228,40 @@ class MainActivity : AppCompatActivity() {
             }
             refreshArrivalWindow()
             if (historyPanelVisible) refreshStopHistory()
+            refreshStopwatch()
 
             timeHandler.postDelayed(this, 1000)
+        }
+    }
+
+    // Секундомер по тапу на время (не из ТЗ/макета — отдельная просьба машиниста): тап на
+    // timeText открывает окошко со счётчиком и кнопкой "Сброс" под ним, повторный тап —
+    // скрывает окошко, но счётчик продолжает идти в фоне (как настоящий секундомер, не
+    // сбрасывается при скрытии — сбрасывает только сама кнопка "Сброс").
+    private var stopwatchVisible = false
+    private var stopwatchStartMs: Long? = null
+    private lateinit var stopwatchWindow: View
+    private lateinit var stopwatchText: TextView
+    private lateinit var stopwatchResetButton: Button
+
+    private fun toggleStopwatch() {
+        stopwatchVisible = !stopwatchVisible
+        if (stopwatchVisible && stopwatchStartMs == null) {
+            stopwatchStartMs = System.currentTimeMillis()
+        }
+        refreshStopwatch()
+    }
+
+    private fun resetStopwatch() {
+        stopwatchStartMs = System.currentTimeMillis()
+        refreshStopwatch()
+    }
+
+    private fun refreshStopwatch() {
+        stopwatchWindow.visibility = if (stopwatchVisible) View.VISIBLE else View.GONE
+        val start = stopwatchStartMs ?: return
+        if (stopwatchVisible) {
+            stopwatchText.text = formatDuration(System.currentTimeMillis() - start)
         }
     }
 
@@ -257,6 +290,9 @@ class MainActivity : AppCompatActivity() {
         coordinateText = findViewById(R.id.coordinateText)
         destinationText = findViewById(R.id.destinationText)
         timeText = findViewById(R.id.timeText)
+        stopwatchWindow = findViewById(R.id.stopwatchWindow)
+        stopwatchText = findViewById(R.id.stopwatchText)
+        stopwatchResetButton = findViewById(R.id.stopwatchResetButton)
         statusBarText = findViewById(R.id.statusBarText)
         directionButton = findViewById(R.id.directionButton)
         pathButton = findViewById(R.id.pathButton)
@@ -287,6 +323,11 @@ class MainActivity : AppCompatActivity() {
             showKlubU = !showKlubU
             coordinateText.text = formatCoordinate(lastChainageM)
         }
+
+        // Секундомер по тапу на время — отдельная просьба машиниста, см. doc-комментарий у
+        // toggleStopwatch/stopwatchWindow.
+        timeText.setOnClickListener { toggleStopwatch() }
+        stopwatchResetButton.setOnClickListener { resetStopwatch() }
 
         trainParams = trainParamsStore.load()
         trackProfileView.setSpeedLimits(speedLimits)
