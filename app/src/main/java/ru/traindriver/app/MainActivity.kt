@@ -58,7 +58,7 @@ import ru.traindriver.app.route.RestrictionsStore
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
 import ru.traindriver.app.route.SignalAssetLoader
-import ru.traindriver.app.route.effectiveDirection
+import ru.traindriver.app.route.isVisibleFor
 import ru.traindriver.app.route.SpeedLimitAssetLoader
 import ru.traindriver.app.route.SpeedLimitResolver
 import ru.traindriver.app.route.StationAnnouncement
@@ -328,6 +328,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // НАЙДЕНА НАСТОЯЩАЯ ПРИЧИНА того, что уровень сигнала SIM не появлялся никогда, сколько бы
+    // раз ни переделывался сам способ его чтения: оба системных диалога разрешений (геолокация
+    // и состояние телефона) запускались ОДИН ЗА ДРУГИМ, без паузы, прямо в onCreate — launch()
+    // для второго диалога вызывался сразу следующей строкой, не дожидаясь результата первого.
+    // Android не умеет показать два диалога разрешений одновременно — пока активен первый
+    // (геолокация, он нужен для GPS и явно показывался, раз GPS у машиниста работает), запрос
+    // второго диалога (состояние телефона) МОГ просто потеряться/быть проигнорирован системой.
+    // Поэтому ни одно из прошлых исправлений самого чтения сигнала не могло сработать: сам
+    // диалог с просьбой разрешения машинист, скорее всего, никогда не видел и не мог на него
+    // ответить. Теперь второй запрос идёт строго ПОСЛЕ того, как первый уже разрешился (см.
+    // requestPhoneStatePermissionIfNeeded, вызывается и из колбэка геолокации, и напрямую из
+    // onCreate, если геолокация уже была разрешена раньше и первый диалог вовсе не показывается).
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
@@ -335,6 +347,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 coordinateText.text = getString(R.string.location_permission_denied)
             }
+            requestPhoneStatePermissionIfNeeded()
         }
 
     // Разрешение на уровень сигнала SIM (ТЗ раздел 7, шапка) — отдельное от геолокации,
@@ -344,6 +357,14 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) startPhoneSignalUpdates()
         }
+
+    private fun requestPhoneStatePermissionIfNeeded() {
+        if (hasPhoneStatePermission()) {
+            startPhoneSignalUpdates()
+        } else {
+            requestPhoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -442,14 +463,14 @@ class MainActivity : AppCompatActivity() {
 
         if (hasLocationPermission()) {
             startLocationUpdates()
+            // Геолокация уже разрешена раньше — её диалог сейчас не покажется, значит можно
+            // сразу просить второе разрешение, гонки нет (см. doc-комментарий у
+            // requestPermissionLauncher выше).
+            requestPhoneStatePermissionIfNeeded()
         } else {
             requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-        }
-
-        if (hasPhoneStatePermission()) {
-            startPhoneSignalUpdates()
-        } else {
-            requestPhoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
+            // Разрешение на состояние телефона запросится ПОСЛЕ того, как машинист ответит на
+            // этот диалог — из колбэка requestPermissionLauncher, а не прямо здесь.
         }
     }
 
@@ -897,10 +918,13 @@ class MainActivity : AppCompatActivity() {
      *  это голова поезда (chainageM), для "Хвост" — хвост (chainageM минус длина состава, та же
      *  формула, что и у TrackProfileView при рисовании хвостового маркера на графике). */
     private fun distanceToNextSignalM(fromM: Double, forward: Boolean): Double? {
-        // effectiveDirection, а не сырой Signal.direction — см. doc-комментарий у
-        // effectiveDirection (Signal.kt): сырой тег означает только "из какого PDF-документа",
-        // не "к какому направлению реально относится этот светофор".
-        val relevant = signals.filter { it.effectiveDirection == directionSelection.effectiveDataset }
+        // isVisibleFor, а не сырой Signal.direction и не просто effectiveDirection — см.
+        // doc-комментарий у Signal.isVisibleFor (Signal.kt): сырой тег означает только "из
+        // какого PDF-документа", а ЧД/НД вообще особый случай (показываются только на
+        // неправильном пути, не по обычному совпадению направления).
+        val relevant = signals.filter {
+            it.isVisibleFor(directionSelection.effectiveDataset, directionSelection.direction)
+        }
         val nextSignal = if (forward) {
             relevant.filter { it.chainageM > fromM }.minByOrNull { it.chainageM }
         } else {

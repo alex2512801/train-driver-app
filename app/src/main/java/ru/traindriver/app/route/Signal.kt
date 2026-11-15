@@ -46,6 +46,33 @@ val Signal.effectiveDirection: Direction
         }
     }
 
+/**
+ * Показывать ли этот сигнал, если машинист сейчас реально едет в направлении [actualDirection]
+ * (DirectionSelection.direction — куда именно едет поезд, не путая с эффективным датасетом), а
+ * действующий (для построения графика/расчётов) датасет — [effectiveDataset]
+ * (DirectionSelection.effectiveDataset).
+ *
+ * ЧД/НД — особый случай, НЕ описываемый обычным [effectiveDirection] (машинист поправил:
+ * "ЧД — это входной станции по неправильному пути... ЧД и НД должны показываться ТОЛЬКО по
+ * неправильному пути"). Это не "сигнал своего направления", а специальный предвходной сигнал,
+ * который существует ИМЕННО для случая, когда машинист едет в направлении Х, но физически
+ * оказался на пути, который обычно обслуживает противоположное направление (тогда effectiveDataset
+ * разворачивается в противоположный [actualDirection] — см. DirectionSelection.effectiveDataset).
+ * Поэтому:
+ *  - ЧД виден, когда едем чётным направлением, но effectiveDataset развернулся в нечётное
+ *    (значит путь неправильный) — т.е. actualDirection == EVEN И effectiveDataset != actualDirection;
+ *  - НД — то же самое для нечётного направления;
+ *  - все остальные сигналы (Ч, Н, ЧМ..., голые номера) — как и раньше, по [effectiveDirection].
+ */
+fun Signal.isVisibleFor(effectiveDataset: Direction, actualDirection: Direction): Boolean {
+    val isWrongPath = effectiveDataset != actualDirection
+    return when (name) {
+        "ЧД" -> isWrongPath && actualDirection == Direction.EVEN
+        "НД" -> isWrongPath && actualDirection == Direction.ODD
+        else -> effectiveDirection == effectiveDataset
+    }
+}
+
 /** Читает track_signals.json в список [Signal]. */
 object SignalAssetLoader {
 
