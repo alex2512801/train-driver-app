@@ -2,6 +2,7 @@ package ru.traindriver.app
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.Dialog
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -908,26 +909,20 @@ class MainActivity : AppCompatActivity() {
         refreshRestrictionsList()
         setActive(0)
 
-        val dialog = AlertDialog.Builder(this)
-            .setTitle("Ограничения")
-            .setView(view)
-            .setPositiveButton("Закрыть", null)
-            .create()
-        // Диалог сам подстраивал высоту окна под содержимое (wrap_content) — на невысоком
-        // альбомном экране содержимое (поля+клавиатура) было выше самого окна диалога, а
-        // ScrollView внутри с такой же wrap_content высотой прокрутку так и не включал: ему
-        // самому "хватало места" — он же измерялся как "сколько нужно под весь контент", а
-        // не как "сколько реально доступно". Машинист прислал скриншот ровно такого обрезания
-        // клавиатуры прямо перед кнопкой "Закрыть". Фикс — задать самому ОКНУ диалога явную
-        // высоту в пикселях (почти во весь экран): тогда у ScrollView внутри появляется
-        // настоящий потолок высоты, и он начинает по-настоящему прокручиваться.
-        dialog.setOnShowListener {
-            val metrics = resources.displayMetrics
-            dialog.window?.setLayout(
-                (metrics.widthPixels * 0.95).toInt(),
-                (metrics.heightPixels * 0.92).toInt()
-            )
-        }
+        // Раньше это был обычный AlertDialog (wrap_content по высоте) — на невысоком
+        // альбомном экране содержимое (поля+клавиатура) было выше самого окна, а ScrollView
+        // внутри с такой же wrap_content высотой прокрутку так и не включал: ему самому
+        // "хватало места" — он измерялся как "сколько нужно под весь контент", а не как
+        // "сколько реально доступно". Даже принудительно заданная высота окна
+        // (Dialog.window.setLayout) не помогла до конца — машинист прислал скриншот, где
+        // клавиатура так и осталась обрезанной. Теперь это полноэкранный Dialog (своя шапка и
+        // кнопка "Закрыть" нарисованы прямо в dialog_restrictions.xml) — area с полями
+        // получает ЧЁТКО заданную высоту (layout_weight, не wrap_content), и ScrollView внутри
+        // наконец по-настоящему прокручивается, если что-то не поместилось (см. doc-комментарий
+        // в самом файле разметки).
+        val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        dialog.setContentView(view)
+        view.findViewById<Button>(R.id.restrictionCloseButton).setOnClickListener { dialog.dismiss() }
         dialog.show()
     }
 

@@ -15,25 +15,53 @@
     заранее известный и правильный, гадать не на что.
 
     ВАЖНО: раньше поля+клавиатура+список ограничений шли одной длинной колонкой сверху вниз в
-    одном ScrollView — на телефоне, который развёрнут в альбомный режим (экран низкий и
-    широкий), это всё целиком не помещалось по высоте, а клавиатура оказывалась ниже видимой
-    части диалога — машинист тыкал в поле (курсор появлялся), но клавиатуры не видел вообще и
-    не мог понять, что ввести нечем. Решение — так же, как в самом HTML-макете (.limits-modal-
-    body: display:flex) — поля+клавиатура СЛЕВА, список ограничений СПРАВА, бок о бок, а не
-    друг под другом: тогда высота каждой колонки вдвое меньше и помещается на невысоком
-    альбомном экране без прокрутки.
+    одном ScrollView внутри обычного AlertDialog — на телефоне, который развёрнут в альбомный
+    режим (экран низкий и широкий), это всё целиком не помещалось по высоте, а клавиатура
+    оказывалась ниже видимой части диалога — машинист тыкал в поле (курсор появлялся), но
+    клавиатуры не видел вообще. Сначала переделали в две колонки бок о бок (как в самом
+    HTML-макете, .limits-modal-body: display:flex) — не хватило: AlertDialog сам решает, какая
+    высота нужна его содержимому (wrap_content), и ScrollView с такой же wrap_content высотой
+    внутри НИКОГДА не включает прокрутку по-настоящему (см. README/чат) — даже принудительно
+    заданная высота окна через code (Dialog.window.setLayout) не помогла до конца.
+
+    Поэтому теперь это НЕ AlertDialog, а полноэкранный Dialog (см. MainActivity.
+    showRestrictionsDialog) — своя шапка "Ограничения" и кнопка "Закрыть" нарисованы прямо
+    здесь, в разметке, а область с полями/клавиатурой/списком получает ЧЁТКО заданную высоту
+    (layout_weight внутри вертикального LinearLayout, а не wrap_content) — именно это и
+    заставляет ScrollView внутри по-настоящему прокручиваться, если что-то не поместилось.
+    Клавиатура заодно сокращена с 4 рядов цифр по 3 до 2 рядов по 5 — высоты она теперь
+    требует вдвое меньше.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:background="#000000"
-    android:padding="16dp">
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#000000">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#333333"
+        android:padding="16dp"
+        android:text="Ограничения"
+        android:textColor="#FFFFFF"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <!-- Вес 1 — вся оставшаяся высота (между шапкой и кнопкой "Закрыть") ЧЁТКО задана, не
+         wrap_content, поэтому ScrollView'ы в колонках ниже по-настоящему прокручиваются, если
+         не помещаются (см. doc-комментарий выше). -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:padding="16dp">
 
     <!-- Левая колонка: поля + своя клавиатура. -->
     <ScrollView
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:layout_weight="3">
 
         <LinearLayout
@@ -172,7 +200,9 @@
 
             <!-- Своя маленькая цифровая клавиатура (см. doc-комментарий класса выше) — пишет
                  в то поле, которое сейчас активно (подсвечено синим); ← → переключают активное
-                 поле строго в правильном порядке: км→пк→км→пк→скорость→путь. -->
+                 поле строго в правильном порядке: км→пк→км→пк→скорость→путь. По 5 цифр в ряд
+                 (а не по 3, как раньше) — на низком альбомном экране важна каждая строка по
+                 высоте, а по ширине места как раз много (экран широкий). -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -186,24 +216,19 @@
                     <Button android:id="@+id/restrictionKey1" style="@style/RestrictionKeypadButton" android:text="1" />
                     <Button android:id="@+id/restrictionKey2" style="@style/RestrictionKeypadButton" android:text="2" />
                     <Button android:id="@+id/restrictionKey3" style="@style/RestrictionKeypadButton" android:text="3" />
-                </LinearLayout>
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
                     <Button android:id="@+id/restrictionKey4" style="@style/RestrictionKeypadButton" android:text="4" />
                     <Button android:id="@+id/restrictionKey5" style="@style/RestrictionKeypadButton" android:text="5" />
-                    <Button android:id="@+id/restrictionKey6" style="@style/RestrictionKeypadButton" android:text="6" />
                 </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="horizontal">
+                    <Button android:id="@+id/restrictionKey6" style="@style/RestrictionKeypadButton" android:text="6" />
                     <Button android:id="@+id/restrictionKey7" style="@style/RestrictionKeypadButton" android:text="7" />
                     <Button android:id="@+id/restrictionKey8" style="@style/RestrictionKeypadButton" android:text="8" />
                     <Button android:id="@+id/restrictionKey9" style="@style/RestrictionKeypadButton" android:text="9" />
+                    <Button android:id="@+id/restrictionKey0" style="@style/RestrictionKeypadButton" android:text="0" />
                 </LinearLayout>
 
                 <LinearLayout
@@ -211,19 +236,13 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal">
                     <Button android:id="@+id/restrictionKeyPrev" style="@style/RestrictionKeypadButton" android:text="←" />
-                    <Button android:id="@+id/restrictionKey0" style="@style/RestrictionKeypadButton" android:text="0" />
+                    <Button
+                        android:id="@+id/restrictionBackspaceButton"
+                        style="@style/RestrictionKeypadButton"
+                        android:layout_weight="3"
+                        android:text="Стереть" />
                     <Button android:id="@+id/restrictionKeyNext" style="@style/RestrictionKeypadButton" android:text="→" />
                 </LinearLayout>
-
-                <Button
-                    android:id="@+id/restrictionBackspaceButton"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_margin="3dp"
-                    android:minHeight="40dp"
-                    android:background="@drawable/bg_header_toggle"
-                    android:textColor="#FFFFFF"
-                    android:text="⌫ Стереть" />
 
             </LinearLayout>
 
@@ -249,7 +268,7 @@
     <!-- Правая колонка: список уже введённых ограничений. -->
     <LinearLayout
         android:layout_width="0dp"
-        android:layout_height="wrap_content"
+        android:layout_height="match_parent"
         android:layout_weight="2"
         android:orientation="vertical"
         android:paddingStart="12dp">
@@ -264,7 +283,8 @@
 
         <ScrollView
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="0dp"
+            android:layout_weight="1">
 
             <LinearLayout
                 android:id="@+id/restrictionRowsContainer"
@@ -273,6 +293,26 @@
                 android:orientation="vertical" />
 
         </ScrollView>
+
+    </LinearLayout>
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#333333"
+        android:gravity="end"
+        android:padding="12dp">
+
+        <Button
+            android:id="@+id/restrictionCloseButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:textColor="#B39DDB"
+            android:textStyle="bold"
+            android:text="ЗАКРЫТЬ" />
 
     </LinearLayout>
 
