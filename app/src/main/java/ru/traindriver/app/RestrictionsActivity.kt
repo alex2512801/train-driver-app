@@ -60,9 +60,15 @@ class RestrictionsActivity : AppCompatActivity() {
             for (r in RestrictionsStore.list.sortedForDirection(effectiveDataset)) {
                 val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
                 val info = TextView(this).apply {
-                    val endTxt = if (r.endM == r.startM) "—" else ChainageFormatter.formatDot(r.endM)
+                    // Точечное ограничение (только "Начало", endM == startM, см. Restriction.kt) —
+                    // показываем конец тем же значением, что и начало, а не прочерком: машинист
+                    // попросил, чтобы было видно "откуда до куда" даже для одной точки, иначе
+                    // можно перепутать с ограничением, которое просто без конца не ввели.
                     text = "%-8s %-8s %3d  %s".format(
-                        ChainageFormatter.formatDot(r.startM), endTxt, r.speedKmh, r.path?.toString() ?: "—"
+                        ChainageFormatter.formatDot(r.startM),
+                        ChainageFormatter.formatDot(r.endM),
+                        r.speedKmh,
+                        r.path?.toString() ?: "—"
                     )
                     setTextColor(0xFFFFFFFF.toInt())
                     typeface = android.graphics.Typeface.MONOSPACE
