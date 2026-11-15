@@ -134,6 +134,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var historyRowsContainer: LinearLayout
     private lateinit var historyToggleButton: Button
     private lateinit var toneGenerator: ToneGenerator
+    // Отложенные гудки 25-минутного сигнала стоянки (см. playStopAlarm) — отменяются в
+    // onDestroy, чтобы не дёргать toneGenerator после его release(), если активность закрылась
+    // ровно посреди серии гудков.
+    private val pendingStopAlarmBeeps = mutableListOf<Runnable>()
     private val arrivalDepartureTracker = ArrivalDepartureTracker()
     private var arrivalWindowVisible = true
     private var historyPanelVisible = false
@@ -270,7 +274,7 @@ class MainActivity : AppCompatActivity() {
             // раз-в-секунду хендлером, а не только из GPS-колбэка — так же ловятся и
             // чисто временные переходы (5 минут после отправления, 25 минут стоянки).
             if (arrivalDepartureTracker.onUpdate(lastSpeedKmh, now.time, lastChainageM)) {
-                toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 400)
+                playStopAlarm()
             }
             refreshArrivalWindow()
             if (historyPanelVisible) refreshStopHistory()
@@ -286,6 +290,21 @@ class MainActivity : AppCompatActivity() {
             }
 
             timeHandler.postDelayed(this, 1000)
+        }
+    }
+
+    // Сигнал 25-минутной стоянки (ТЗ раздел 10, "скоро выйдет время на перетормаживание",
+    // которое наступает через 30 минут) — машинист проверил: один короткий гудок через
+    // STREAM_NOTIFICATION прошёл незамеченным (вообще не прозвучал). Несколько гудков подряд
+    // через STREAM_ALARM — громче, через отдельный, обычно не приглушённый канал, и дольше, его
+    // точно не пропустишь, в отличие от одного короткого "пип".
+    private fun playStopAlarm() {
+        val beepCount = 4
+        val beepGapMs = 450L
+        repeat(beepCount) { i ->
+            val beep = Runnable { toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 400) }
+            pendingStopAlarmBeeps.add(beep)
+            timeHandler.postDelayed(beep, i * beepGapMs)
         }
     }
 
@@ -447,7 +466,12 @@ class MainActivity : AppCompatActivity() {
         historyPanel = findViewById(R.id.stopHistoryPanel)
         historyRowsContainer = findViewById(R.id.stopHistoryRows)
         historyToggleButton = findViewById(R.id.historyToggleButton)
-        toneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, ToneGenerator.MAX_VOLUME)
+        // STREAM_ALARM, не STREAM_NOTIFICATION — машинист проверил на телефоне: 25 минут
+        // стоянки прошло, сигнал через уведомления не прозвучал вообще (у телефонов часто
+        // отдельная, нередко приглушённая/выключенная громкость уведомлений, отдельная от
+        // громкости будильника/звонка). Громкость будильника — отдельный канал, обычно всегда
+        // слышимый и не затронутый тихим режимом/режимом "Не беспокоить".
+        toneGenerator = ToneGenerator(AudioManager.STREAM_ALARM, ToneGenerator.MAX_VOLUME)
 
         // "Координата (км+пк, по тапу переключается в формат КЛУБ-У)" — ТЗ раздел 7.
         coordinateText.setOnClickListener {
@@ -714,6 +738,7 @@ class MainActivity : AppCompatActivity() {
         gpsLocationProvider.stop()
         timeHandler.removeCallbacks(timeUpdater)
         voiceAnnouncer.release()
+        for (beep in pendingStopAlarmBeeps) timeHandler.removeCallbacks(beep)
         toneGenerator.release()
         @Suppress("DEPRECATION")
         for ((manager, listener) in activeSimListeners) {
