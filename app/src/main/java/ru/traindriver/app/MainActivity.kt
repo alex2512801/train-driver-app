@@ -71,6 +71,7 @@ import ru.traindriver.app.route.nearestStationName
 import ru.traindriver.app.route.nextStationAhead
 import ru.traindriver.app.route.sortedForDirection
 import ru.traindriver.app.ui.OpasnoeIconView
+import ru.traindriver.app.ui.RecenterIconView
 import ru.traindriver.app.ui.SignalBarsView
 import ru.traindriver.app.ui.StopwatchIconView
 import ru.traindriver.app.ui.TrackProfileView
@@ -85,6 +86,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pathButton: Button
     private lateinit var k1Button: Button
     private lateinit var paramsButton: Button
+    private lateinit var recenterButton: RecenterIconView
     private lateinit var restrictionsButton: OpasnoeIconView
     private lateinit var dayNightButton: Button
 
@@ -356,6 +358,7 @@ class MainActivity : AppCompatActivity() {
         pathButton = findViewById(R.id.pathButton)
         k1Button = findViewById(R.id.k1Button)
         paramsButton = findViewById(R.id.paramsButton)
+        recenterButton = findViewById(R.id.recenterButton)
         restrictionsButton = findViewById(R.id.restrictionsButton)
         dayNightButton = findViewById(R.id.dayNightButton)
         simSlot0Group = findViewById(R.id.simSlot0Group)
@@ -416,6 +419,7 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "К1: логика переключения путей ещё не готова", Toast.LENGTH_SHORT).show()
         }
         paramsButton.setOnClickListener { showTrainParamsDialog() }
+        recenterButton.setOnClickListener { trackProfileView.recenter() }
         restrictionsButton.setOnClickListener { showRestrictionsDialog() }
         dayNightButton.setOnClickListener {
             isDayMode = !isDayMode

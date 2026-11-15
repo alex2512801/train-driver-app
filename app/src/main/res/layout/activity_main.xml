@@ -383,6 +383,15 @@
             android:fontFamily="monospace"
             android:text="Vф=? Уклон=? V=? S=? Голова=? Хвост=?" />
 
+        <!-- "Моё местоположение" (машинист, не из ТЗ/макета) — возвращает график к голове
+             поезда после протягивания пальцем вперёд/назад (см. TrackProfileView.recenter и
+             doc-комментарий у panOffsetM там же). -->
+        <ru.traindriver.app.ui.RecenterIconView
+            android:id="@+id/recenterButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp" />
+
         <!-- Параметры состава (ТЗ раздел 12.2) — временно прямой кнопкой, см. doc-комментарий
              класса выше про "Меню". -->
         <Button

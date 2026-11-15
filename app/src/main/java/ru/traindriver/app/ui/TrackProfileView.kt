@@ -7,7 +7,10 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
 import kotlin.math.ceil
 import kotlin.math.cos
@@ -159,6 +162,18 @@ class TrackProfileView @JvmOverloads constructor(
     /** Сколько метров показывать позади/впереди головы поезда. */
     var behindM: Double = 3000.0
     var aheadM: Double = 5000.0
+
+    // Протягивание графика пальцем вперёд/назад (машинист, не из ТЗ/макета — "как в
+    // навигаторах", посмотреть, что там впереди). panOffsetM сдвигает окно обзора целиком
+    // (верхнюю часть со ступенями/сигналами и нижний рельеф — ОДНИМ и тем же числом, поэтому
+    // они всегда протягиваются синхронно, см. fromM/toM в onDraw). Если 10 секунд не трогать —
+    // само возвращается на голову поезда (см. panRevertRunnable); кнопка "моё местоположение"
+    // (recenter()) делает то же самое сразу.
+    private var panOffsetM: Double = 0.0
+    private var lastTouchX: Float = 0f
+    private val panRevertHandler = Handler(Looper.getMainLooper())
+    private val panRevertRunnable = Runnable { recenter() }
+    private val panRevertDelayMs = 10_000L
 
     // Плотность экрана конкретного телефона — все размеры в companion object записаны в dp
     // (условных единицах) и переводятся в настоящие пиксели здесь, один раз, при создании
@@ -471,6 +486,58 @@ class TrackProfileView @JvmOverloads constructor(
         invalidate()
     }
 
+    /** Кнопка "моё местоположение" (см. doc-комментарий у panOffsetM) — то же самое, что
+     *  происходит само через 10 секунд без касаний. */
+    fun recenter() {
+        panOffsetM = 0.0
+        panRevertHandler.removeCallbacks(panRevertRunnable)
+        invalidate()
+    }
+
+    /** Протягивание графика пальцем вперёд/назад — см. doc-комментарий у panOffsetM. Палец
+     *  двигается вправо → открываем то, что было СЗАДИ (меньше км), поэтому окно обзора
+     *  сдвигается НАЗАД — тот же принцип, что в любой карте/навигаторе ("тащишь карту"). */
+    override fun onTouchEvent(event: MotionEvent): Boolean {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                lastTouchX = event.x
+                panRevertHandler.removeCallbacks(panRevertRunnable)
+                return true
+            }
+            MotionEvent.ACTION_MOVE -> {
+                val dxPx = event.x - lastTouchX
+                lastTouchX = event.x
+                val graphWidth = width - axisWidthPx
+                if (graphWidth > 0f) {
+                    val spanM = behindM + aheadM
+                    panOffsetM -= dxPx * (spanM / graphWidth)
+                    invalidate()
+                }
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                performClick()
+                panRevertHandler.postDelayed(panRevertRunnable, panRevertDelayMs)
+                return true
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                panRevertHandler.postDelayed(panRevertRunnable, panRevertDelayMs)
+                return true
+            }
+        }
+        return super.onTouchEvent(event)
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
+        return true
+    }
+
+    override fun onDetachedFromWindow() {
+        panRevertHandler.removeCallbacks(panRevertRunnable)
+        super.onDetachedFromWindow()
+    }
+
     fun setTrainLengthM(meters: Double) {
         trainLengthM = meters
         invalidate()
@@ -522,8 +589,8 @@ class TrackProfileView @JvmOverloads constructor(
 
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
 
-        val fromM = trainPositionM - behindM
-        val toM = trainPositionM + aheadM
+        val fromM = trainPositionM - behindM + panOffsetM
+        val toM = trainPositionM + aheadM + panOffsetM
         val spanM = toM - fromM
         val graphLeft = axisWidthPx
         val graphWidth = width - axisWidthPx
