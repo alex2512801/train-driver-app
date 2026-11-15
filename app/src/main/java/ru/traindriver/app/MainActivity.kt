@@ -79,6 +79,7 @@ import ru.traindriver.app.ui.TrackProfileView
 class MainActivity : AppCompatActivity() {
 
     private lateinit var coordinateText: TextView
+    private lateinit var gpsStatusText: TextView
     private lateinit var destinationText: TextView
     private lateinit var timeText: TextView
     private lateinit var statusBarText: TextView
@@ -242,6 +243,7 @@ class MainActivity : AppCompatActivity() {
             refreshArrivalWindow()
             if (historyPanelVisible) refreshStopHistory()
             refreshStopwatch()
+            refreshSimSignalPolling()
 
             // График/объявления/статусная строка — "от головы поезда" (машинист), не прямо от
             // GPS-колбэка, см. doc-комментарий у lastChainageM и estimatedChainageM.
@@ -348,6 +350,7 @@ class MainActivity : AppCompatActivity() {
         hideSystemUi()
 
         coordinateText = findViewById(R.id.coordinateText)
+        gpsStatusText = findViewById(R.id.gpsStatusText)
         destinationText = findViewById(R.id.destinationText)
         timeText = findViewById(R.id.timeText)
         stopwatchWindow = findViewById(R.id.stopwatchWindow)
@@ -519,15 +522,28 @@ class MainActivity : AppCompatActivity() {
         }
         manager.listen(listener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
         activeSimListeners.add(manager to listener)
+        activeSimPolls.add(manager to barsView)
         textView.text = networkTypeLabel(manager.networkType)
+        pollSimSignal(manager, barsView)
+    }
 
-        // onSignalStrengthsChanged выше срабатывает только на ИЗМЕНЕНИЕ сигнала — если он не
-        // меняется, пока приложение открыто, столбики так и остаются на нуле (машинист: "у
-        // обоих есть связь, но не показана ни одна полоска"). Поэтому сразу после подписки
-        // читаем ТЕКУЩЕЕ значение напрямую, не дожидаясь события.
+    // onSignalStrengthsChanged выше срабатывает только на ИЗМЕНЕНИЕ сигнала — если он уже
+    // стабилен к моменту запуска приложения, событие может вообще не прийти, и столбики так и
+    // останутся на нуле (машинист: "опять не показывает уровень сигнала сим-карты", несмотря
+    // на уже сделанное одноразовое чтение сразу после подписки — похоже, на его телефоне и
+    // этого было недостаточно). Поэтому вдобавок перечитываем ТЕКУЩЕЕ значение каждую секунду
+    // из timeUpdater (см. refreshSimSignalPolling), а не полагаемся только на событие.
+    private val activeSimPolls = mutableListOf<Pair<TelephonyManager, SignalBarsView>>()
+
+    @Suppress("DEPRECATION")
+    private fun pollSimSignal(manager: TelephonyManager, barsView: SignalBarsView) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             manager.signalStrength?.let { barsView.level = it.level }
         }
+    }
+
+    private fun refreshSimSignalPolling() {
+        for ((manager, barsView) in activeSimPolls) pollSimSignal(manager, barsView)
     }
 
     private fun networkTypeLabel(networkType: Int): String = when (networkType) {
@@ -611,7 +627,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateDirectionUi() {
         val s = directionSelection
-        directionButton.text = if (s.direction == Direction.EVEN) "Чётное" else "Нечётное"
+        // Короче, чем "Чётное"/"Нечётное" — машинист попросил, чтобы влезало компактнее.
+        directionButton.text = if (s.direction == Direction.EVEN) "Чёт" else "Нечёт"
         pathButton.text = "Путь ${s.physicalPath}"
         updateDestinationText(lastChainageM)
 
@@ -921,9 +938,13 @@ class MainActivity : AppCompatActivity() {
                 // GPS (сотни метров — километр), поэтому используем его ТОЛЬКО для текста
                 // координаты, с явной пометкой неточности — график, объявления, V=/S= и
                 // остальное продолжают показывать последнюю настоящую GPS-позицию, а не эту
-                // грубую оценку (см. doc-комментарий GpsLocationProvider).
+                // грубую оценку (см. doc-комментарий GpsLocationProvider). Статус — ОТДЕЛЬНОЙ
+                // маленькой строкой под координатой (gpsStatusText), а не дописан в саму
+                // координату: раньше это была одна длинная строка, и шапка целиком уезжала
+                // вправо, время с SIM-индикатором пропадали за край экрана (машинист поправил).
+                coordinateText.text = formatCoordinate(chainageM)
                 val accuracyM = if (location.hasAccuracy()) " ±${location.accuracy.toInt()}м" else ""
-                coordinateText.text = "≈ ${formatCoordinate(chainageM)}$accuracyM, нет GPS"
+                gpsStatusText.text = "нет GPS$accuracyM"
             } else {
                 // Только запоминаем настоящую GPS-точку — график/объявления/статусную строку
                 // отсюда больше не трогаем, они теперь считаются "от головы поезда" раз в
@@ -935,6 +956,7 @@ class MainActivity : AppCompatActivity() {
                 lastGpsFixAtMs = System.currentTimeMillis()
                 hasGpsFix = true
                 coordinateText.text = formatCoordinate(chainageM)
+                gpsStatusText.text = ""
             }
         }
     }
