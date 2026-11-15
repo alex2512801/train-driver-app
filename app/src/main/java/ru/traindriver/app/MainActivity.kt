@@ -502,22 +502,37 @@ class MainActivity : AppCompatActivity() {
         val subscriptionManager = getSystemService(SubscriptionManager::class.java)
         val activeSubs = try {
             subscriptionManager?.activeSubscriptionInfoList
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
+            // Не только SecurityException — на некоторых прошивках телефонные API бросают и
+            // другое (замечено на практике у разных производителей). Без этого один такой сбой
+            // уронил бы приложение целиком, т.к. эта функция вызывается из onCreate.
             null
         }
 
         if (activeSubs.isNullOrEmpty()) {
             simSlot1Group.visibility = View.GONE
-            bindSimSlot(simSlot0Bars, simSlot0Text, baseManager)
+            safeBindSimSlot(simSlot0Bars, simSlot0Text, baseManager)
             return
         }
 
-        bindSimSlot(simSlot0Bars, simSlot0Text, baseManager.createForSubscriptionId(activeSubs[0].subscriptionId))
+        // Каждый слот оборачиваем в свой try/catch (safeBindSimSlot) — раньше, если бы
+        // настройка первой SIM чем-то не понравилась телефону и бросила исключение, вторая
+        // SIM вообще не получила бы шанса — вызов bindSimSlot для неё просто не выполнился бы,
+        // т.к. весь startPhoneSignalUpdates прервался бы на первой же ошибке.
+        safeBindSimSlot(simSlot0Bars, simSlot0Text, baseManager.createForSubscriptionId(activeSubs[0].subscriptionId))
         if (activeSubs.size >= 2) {
             simSlot1Group.visibility = View.VISIBLE
-            bindSimSlot(simSlot1Bars, simSlot1Text, baseManager.createForSubscriptionId(activeSubs[1].subscriptionId))
+            safeBindSimSlot(simSlot1Bars, simSlot1Text, baseManager.createForSubscriptionId(activeSubs[1].subscriptionId))
         } else {
             simSlot1Group.visibility = View.GONE
+        }
+    }
+
+    private fun safeBindSimSlot(barsView: SignalBarsView, textView: TextView, manager: TelephonyManager) {
+        try {
+            bindSimSlot(barsView, textView, manager)
+        } catch (e: Exception) {
+            // см. doc-комментарий у вызова выше.
         }
     }
 
@@ -572,10 +587,15 @@ class MainActivity : AppCompatActivity() {
     // первую зарегистрированную вышку, а если такой нет — вообще первую из списка.
     @Suppress("DEPRECATION")
     private fun pollSimSignal(manager: TelephonyManager, barsView: SignalBarsView) {
+        // ВАЖНО: эта функция вызывается каждую секунду из timeUpdater. Телефонные API на
+        // некоторых прошивках бросают не только SecurityException, а что угодно (проверено на
+        // практике) — если здесь вылетит необработанное исключение, оно уронит весь таймер
+        // обновлений (а с ним — скорость, объявления, график) на главном потоке, не только
+        // столбики сигнала. Поэтому ловим Exception целиком, а не одну SecurityException.
         val level = try {
             val cells = manager.allCellInfo
             (cells?.firstOrNull { it.isRegistered } ?: cells?.firstOrNull())?.cellSignalStrength?.level
-        } catch (e: SecurityException) {
+        } catch (e: Exception) {
             null
         }
         if (level != null) {
@@ -583,7 +603,11 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            manager.signalStrength?.let { barsView.level = it.level }
+            try {
+                manager.signalStrength?.let { barsView.level = it.level }
+            } catch (e: Exception) {
+                // см. комментарий выше про allCellInfo — та же подстраховка.
+            }
         }
     }
 
