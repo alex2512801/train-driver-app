@@ -402,22 +402,65 @@
         android:gravity="center_vertical"
         android:background="#1A1A1A">
 
-        <!-- 14sp вместо 20sp + maxLines=1 — машинист: вся строка (Vф/Уклон/V=/S=/Голова/Хвост)
-             при 20sp не помещалась в ширину и переносилась на вторую строку, а вторая строка
-             обрезалась высотой самой панели — часть данных просто не было видно. -->
+        <!-- Каждое значение — свой сектор с рамкой (см. doc-комментарий у StatusCell в
+             themes.xml), а не одна строка текста целиком. Вес каждого сектора — по тому,
+             сколько символов максимум может понадобиться под его значение (машинист сам
+             продиктовал запас для каждого): Vф — 2-значная скорость ("Vф=80", 5 символов);
+             Уклон — знак + 3 цифры + запятая + 1 десятичная ("Уклон=-99,9", 11); V= — та же
+             скорость, 2 знака ("V=120", 5); S= — может доходить до пяти значащих цифр, т.е.
+             до 10000+ м ("S=12345м", 8); Голова/Хвост — не больше 4 цифр ("Голова=9999м", 12 /
+             "Хвост=9999м", 11). Сумма весов — 5+11+5+8+12+11 = 52, каждый сектор получает свою
+             долю от оставшейся (за вычетом кнопок справа) ширины строки. -->
         <TextView
-            android:id="@+id/statusBarText"
+            android:id="@+id/statusVfText"
+            style="@style/StatusCell"
             android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:paddingStart="8dp"
-            android:textColor="#FFFFFF"
-            android:textStyle="bold"
-            android:textSize="14sp"
-            android:maxLines="1"
-            android:letterSpacing="0.02"
-            android:fontFamily="monospace"
-            android:text="Vф=? Уклон=? V=? S=? Голова=? Хвост=?" />
+            android:layout_weight="5"
+            android:layout_marginStart="6dp"
+            android:text="Vф=?" />
+
+        <TextView
+            android:id="@+id/statusUklonText"
+            style="@style/StatusCell"
+            android:layout_width="0dp"
+            android:layout_weight="11"
+            android:text="Уклон=?" />
+
+        <TextView
+            android:id="@+id/statusVText"
+            style="@style/StatusCell"
+            android:layout_width="0dp"
+            android:layout_weight="5"
+            android:text="V=?" />
+
+        <TextView
+            android:id="@+id/statusSText"
+            style="@style/StatusCell"
+            android:layout_width="0dp"
+            android:layout_weight="8"
+            android:text="S=?" />
+
+        <TextView
+            android:id="@+id/statusHeadText"
+            style="@style/StatusCell"
+            android:layout_width="0dp"
+            android:layout_weight="12"
+            android:text="Голова=?" />
+
+        <TextView
+            android:id="@+id/statusTailText"
+            style="@style/StatusCell"
+            android:layout_width="0dp"
+            android:layout_weight="11"
+            android:text="Хвост=?" />
+
+        <!-- Место под будущие кнопки (машинист: "чтобы мы понимали, какие ещё кнопки туда
+             можно затолкать") — пустой растягивающийся промежуток между секторами и кнопками
+             справа (recenterButton/paramsButton), а не секторы впритык к ним. -->
+        <View
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
 
         <!-- "Моё местоположение" (машинист, не из ТЗ/макета) — возвращает график к голове
              поезда после протягивания пальцем вперёд/назад (см. TrackProfileView.recenter и

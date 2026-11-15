@@ -81,7 +81,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gpsStatusText: TextView
     private lateinit var destinationText: TextView
     private lateinit var timeText: TextView
-    private lateinit var statusBarText: TextView
+    private lateinit var statusVfText: TextView
+    private lateinit var statusUklonText: TextView
+    private lateinit var statusVText: TextView
+    private lateinit var statusSText: TextView
+    private lateinit var statusHeadText: TextView
+    private lateinit var statusTailText: TextView
     private lateinit var directionButton: Button
     private lateinit var pathButton: Button
     private lateinit var k1Button: Button
@@ -284,7 +289,7 @@ class MainActivity : AppCompatActivity() {
      *  из timeUpdater с позицией от [estimatedChainageM], а не напрямую от GPS. */
     private fun updateTrainPositionDerivedState(chainageM: Double) {
         trackProfileView.setTrainPositionM(chainageM)
-        statusBarText.text = buildStatusBarText(lastSpeedKmh, chainageM)
+        refreshStatusBar(lastSpeedKmh, chainageM)
         updateDestinationText(chainageM)
 
         val brakeTest = brakeTestScheduler.update(chainageM, directionSelection.picketsGrowing)
@@ -378,7 +383,12 @@ class MainActivity : AppCompatActivity() {
         stopwatchWindow = findViewById(R.id.stopwatchWindow)
         stopwatchText = findViewById(R.id.stopwatchText)
         stopwatchResetButton = findViewById(R.id.stopwatchResetButton)
-        statusBarText = findViewById(R.id.statusBarText)
+        statusVfText = findViewById(R.id.statusVfText)
+        statusUklonText = findViewById(R.id.statusUklonText)
+        statusVText = findViewById(R.id.statusVText)
+        statusSText = findViewById(R.id.statusSText)
+        statusHeadText = findViewById(R.id.statusHeadText)
+        statusTailText = findViewById(R.id.statusTailText)
         directionButton = findViewById(R.id.directionButton)
         pathButton = findViewById(R.id.pathButton)
         k1Button = findViewById(R.id.k1Button)
@@ -935,15 +945,18 @@ class MainActivity : AppCompatActivity() {
         return nextSignal?.let { kotlin.math.abs(it.chainageM - fromM) }
     }
 
-    // Нижняя статусная строка (ТЗ раздел 7): Vф | уклон | V=/S= | голова | хвост.
-    // Голова/Хвост раньше были "—" — не было данных о км+пк сигналов (см. README), теперь
-    // signals (SignalAssetLoader) загружены и используются графиком, так что считаем по-настоящему:
-    // "Голова" — сколько осталось голове до сигнала, к которому она идёт; "Хвост" — сколько
-    // осталось хвосту до сигнала, который он ещё не прошёл (если состав длинный и сигналы частые,
-    // это может быть сигнал, который голова уже проехала — то есть хвост ещё не до конца его
-    // освободил). Уклон пока "—" — нужны данные о профиле пути, которых ещё нет.
-    private fun buildStatusBarText(speedKmh: Double, chainageM: Double): String {
-        val vf = "Vф=${speedKmh.toInt()}"
+    // Нижняя статусная строка (ТЗ раздел 7): Vф | уклон | V= | S= | голова | хвост — каждое
+    // значение теперь в своём отдельном секторе (см. statusBarRow в activity_main.xml), а не
+    // одной строкой текста, которая вся целиком съезжала влево, стоило где-то одному значению
+    // показать "?". Голова/Хвост раньше были "—" — не было данных о км+пк сигналов (см. README),
+    // теперь signals (SignalAssetLoader) загружены и используются графиком, так что считаем
+    // по-настоящему: "Голова" — сколько осталось голове до сигнала, к которому она идёт; "Хвост" —
+    // сколько осталось хвосту до сигнала, который он ещё не прошёл (если состав длинный и сигналы
+    // частые, это может быть сигнал, который голова уже проехала — то есть хвост ещё не до конца
+    // его освободил). Уклон пока "—" — нужны данные о профиле пути, которых ещё нет.
+    private fun refreshStatusBar(speedKmh: Double, chainageM: Double) {
+        statusVfText.text = "Vф=${speedKmh.toInt()}"
+        statusUklonText.text = "Уклон=—"
 
         // V=/S= должны учитывать и постоянные ограничения (speedLimitResolver), и введённые
         // машинистом временные (restrictions, ТЗ раздел 11) — иначе строка врала бы, если
@@ -958,19 +971,12 @@ class MainActivity : AppCompatActivity() {
             fromMeters = chainageM,
             forward = directionSelection.picketsGrowing
         )
-        val nextText = if (next != null) {
-            "V=${next.speedKmh} S=${next.distanceM.toInt()}м"
-        } else {
-            "V=? S=?"
-        }
+        statusVText.text = if (next != null) "V=${next.speedKmh}" else "V=?"
+        statusSText.text = if (next != null) "S=${next.distanceM.toInt()}м" else "S=?"
 
         val forward = directionSelection.picketsGrowing
         val tailM = chainageM - trainParams.composition.lengthM
-        val headText = distanceToNextSignalM(chainageM, forward)?.let { "Голова=${it.toInt()}м" } ?: "Голова=—"
-        val tailText = distanceToNextSignalM(tailM, forward)?.let { "Хвост=${it.toInt()}м" } ?: "Хвост=—"
-
-        // Одинарные пробелы вместо тройных — на 14sp уже не нужен такой большой зазор между
-        // полями, а место лучше сэкономить, чтобы строка точно уместилась в одну строку.
-        return "$vf  Уклон=—  $nextText  $headText  $tailText"
+        statusHeadText.text = distanceToNextSignalM(chainageM, forward)?.let { "Голова=${it.toInt()}м" } ?: "Голова=—"
+        statusTailText.text = distanceToNextSignalM(tailM, forward)?.let { "Хвост=${it.toInt()}м" } ?: "Хвост=—"
     }
 }

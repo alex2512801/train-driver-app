@@ -70,6 +70,30 @@
         <item name="android:textSize">20sp</item>
     </style>
 
+    <!-- Нижняя статусная строка (Vф/Уклон/V=/S=/Голова/Хвост) — каждое значение в своей
+         рамке-"секторе", как кнопки в верхней шапке (HeaderToggleButton), а не одной сплошной
+         строкой текста. Машинист: раньше всё прижималось к левому краю одним куском, а когда
+         где-то стоял "?", всё остальное сразу съезжало влево вместе с ним — непонятно, где что.
+         Ширина каждого сектора — через android:layout_weight на самом месте использования (не
+         в стиле — у каждого поля разный запас под максимальное значение, см. doc-комментарий у
+         statusBarRow в activity_main.xml), поэтому сектор всегда одной и той же ширины
+         независимо от того, что в нём сейчас написано ("?" или настоящее число). -->
+    <style name="StatusCell">
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginEnd">3dp</item>
+        <item name="android:background">@drawable/bg_header_toggle</item>
+        <item name="android:paddingStart">4dp</item>
+        <item name="android:paddingEnd">4dp</item>
+        <item name="android:paddingTop">3dp</item>
+        <item name="android:paddingBottom">3dp</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:gravity">center</item>
+        <item name="android:maxLines">1</item>
+    </style>
+
     <!-- Поля в диалоге "Ограничения" — машинист попросил: км нужно 4 цифры, пк/скорость — 2,
          путь — 1, так что поля не должны тянуться на всю ширину строки "про запас", а быть
          ровно под своё число цифр, аккуратной рамкой-коробочкой (а не обычной подчёркнутой
