@@ -122,20 +122,41 @@ class RestrictionsActivity : AppCompatActivity() {
             }
         }
 
-        fun setActive(index: Int) {
+        // moveCursorToEnd=false — когда поле активируется тапом по нему самому: обычное
+        // поведение EditText уже поставило курсор именно туда, куда машинист ткнул пальцем
+        // (это работает даже с выключенной системной клавиатурой — отключён только показ
+        // самой клавиатуры, а не позиционирование курсора по касанию). Раньше здесь всегда
+        // стоял setSelection(text.length), который сразу же сбрасывал курсор в конец текста,
+        // отменяя то место, куда машинист только что поставил его пальцем — поэтому "Стереть"
+        // всегда стирало с конца, а не ту цифру, рядом с которой стоял курсор.
+        fun setActive(index: Int, moveCursorToEnd: Boolean = true) {
             activeIndex = index.coerceIn(0, orderedInputs.lastIndex)
             val input = orderedInputs[activeIndex]
             input.requestFocus()
-            input.setSelection(input.text.length)
+            if (moveCursorToEnd) {
+                input.setSelection(input.text.length)
+            }
             refreshFieldBackgrounds()
         }
 
         orderedInputs.forEachIndexed { index, input ->
-            input.setOnClickListener { setActive(index) }
+            input.setOnClickListener { setActive(index, moveCursorToEnd = false) }
+        }
+
+        // Пишет/стирает именно там, где сейчас курсор (или вместо выделенного участка, если
+        // он есть) — а не всегда в конец/с конца строки.
+        fun selectionRange(input: EditText): Pair<Int, Int> {
+            val len = input.text.length
+            val start = input.selectionStart.coerceIn(0, len)
+            val end = input.selectionEnd.coerceIn(0, len)
+            return minOf(start, end) to maxOf(start, end)
         }
 
         fun appendToActive(digit: String) {
-            orderedInputs[activeIndex].text.append(digit)
+            val input = orderedInputs[activeIndex]
+            val (lo, hi) = selectionRange(input)
+            input.text.replace(lo, hi, digit)
+            input.setSelection(lo + digit.length)
         }
 
         val digitButtonIds = listOf(
@@ -150,8 +171,14 @@ class RestrictionsActivity : AppCompatActivity() {
         findViewById<Button>(R.id.restrictionKeyNext).setOnClickListener { setActive(activeIndex + 1) }
         findViewById<Button>(R.id.restrictionBackspaceButton).setOnClickListener {
             val input = orderedInputs[activeIndex]
-            val len = input.text.length
-            if (len > 0) input.text.delete(len - 1, len)
+            val (lo, hi) = selectionRange(input)
+            if (hi > lo) {
+                input.text.delete(lo, hi)
+                input.setSelection(lo)
+            } else if (lo > 0) {
+                input.text.delete(lo - 1, lo)
+                input.setSelection(lo - 1)
+            }
         }
 
         addButton.setOnClickListener {
