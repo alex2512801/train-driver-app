@@ -816,12 +816,16 @@ class TrackProfileView @JvmOverloads constructor(
 
         canvas.drawLine(0f, lineY, width.toFloat(), lineY, signalLinePaint)
 
+        // Номер км — ПРЯМО над своим километровым столбиком (засечка выше остальных, см. цикл
+        // пикетов выше), а не между столбиками (машинист: "цифра должна быть прямо над ним...
+        // голова поезда, над ним 0, следующий километр 1, 2, 3"). Km-столбик стоит на отметке
+        // kmIndex * KM_LINE_LENGTH_M — туда же, а не в середину интервала, пишем и номер.
         val firstKmIndex = floor(fromM / KM_LINE_LENGTH_M).toLong()
         val lastKmIndex = floor(toM / KM_LINE_LENGTH_M).toLong()
         for (kmIndex in firstKmIndex..lastKmIndex) {
-            val centerM = kmIndex * KM_LINE_LENGTH_M + KM_LINE_LENGTH_M / 2
-            if (centerM in fromM..toM) {
-                canvas.drawText(kmIndex.toString(), xFor(centerM), lineY - dp(8f), kmTextPaint)
+            val kmM = kmIndex * KM_LINE_LENGTH_M
+            if (kmM in fromM..toM) {
+                canvas.drawText(kmIndex.toString(), xFor(kmM), lineY - dp(8f), kmTextPaint)
             }
         }
     }
