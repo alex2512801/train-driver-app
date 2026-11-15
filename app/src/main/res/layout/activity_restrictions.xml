@@ -4,42 +4,38 @@
     полноэкранный экран (RestrictionsActivity), не диалог/Dialog поверх главного. Раньше это
     был диалог поверх главного экрана — сначала AlertDialog, потом полноэкранный Dialog — но
     ни один вариант так и не удалось сделать надёжно прокручиваемым на невысоком альбомном
-    экране: AlertDialog сам решает, какая высота нужна его содержимому (wrap_content), и
-    ScrollView с такой же wrap_content высотой внутри него никогда не включает прокрутку
-    по-настоящему; у "полноэкранного" Dialog (тема Theme_..._Fullscreen) само слово
-    "Fullscreen" тоже оказалось обманчивым — оно только прячет системную строку состояния,
-    а не растягивает окно диалога на весь экран, и даже принудительный
-    Dialog.window.setLayout(MATCH_PARENT, MATCH_PARENT) не помог до конца. Обычная Activity —
-    никакой из этих тонкостей floating-окна нет в принципе, экран гарантированно на весь
-    физический размер устройства.
+    экране. Обычная Activity — никакой "плавающей" логики размера окна нет в принципе, экран
+    гарантированно на весь физический размер устройства.
 
     Поля теперь не открывают системную клавиатуру — это выключается кодом,
     setShowSoftInputOnFocus(false) в RestrictionsActivity.onCreate (атрибут
     android:showSoftInputOnFocus в самой разметке не существует как публичный XML-атрибут, хоть
     метод и называется так же — AAPT ругается "attribute not found", если его тут написать), и
     дополнительно явным запретом на уровне самого окна (Window.setSoftInputMode). Ввод идёт
-    через свою маленькую цифровую клавиатуру (1-9, ←/0/→, Стереть — тот же набор, что был в
-    HTML-макете, .limits-keypad, но по 5 цифр в ряд, а не по 3 — высоты так требуется вдвое
-    меньше, а по ширине места на альбомном экране достаточно), а ← → явно и однозначно
-    переключают активное поле (оно подсвечивается синим) — порядок заранее известный и
-    правильный, гадать не на что.
+    через свою маленькую цифровую клавиатуру (1-9, ←/0/→, Стереть), а ← → явно и однозначно
+    переключают активное поле строго по порядку км→пк→км→пк→скорость→путь (оно подсвечивается
+    синим) — порядок заранее известный и правильный, гадать не на что.
 
-    Поля+клавиатура и список введённых ограничений — бок о бок, двумя колонками (как в самом
-    HTML-макете, .limits-modal-body: display:flex).
+    ОДНА колонка сверху вниз (машинист попросил именно в таком порядке, не два блока бок о бок,
+    как было раньше):
+      1. Поля — НАЧАЛО (км+пк) своей строкой, КОНЕЦ (км+пк) своей строкой, затем СКОРОСТЬ и ПУТЬ
+         в одной строке (именно в этом порядке: пустой "путь" по умолчанию означает "текущее
+         направление", поэтому скорость логичнее вводить первой).
+      2. Список уже введённых ограничений.
+      3. Клавиатура.
+      4. Ошибка (если есть) и кнопка "Добавить".
+    Поля — компактные фиксированные строки (wrap_content), а список и клавиатура делят между
+    собой весь ОСТАЛЬНОЙ экран через layout_weight (список — 1 часть, клавиатура — 2 части,
+    крупнее, т.к. это основной способ ввода) — это гарантирует, что всё целиком помещается на
+    экране при любой его высоте, БЕЗ прокрутки: именно прокрутка (ScrollView, который либо не
+    прокручивался на устройстве машиниста, либо машинист не понимал, что надо прокрутить) была
+    причиной того, что клавиатура раньше обрезалась — и с Dialog, и с первой версией этой же
+    Activity.
 
-    ВАЖНО про левую колонку (поля+клавиатура): раньше она была ScrollView с полями, стоящими
-    друг под другом (Начало, Конец, Скорость+Путь), и клавиатура оказывалась ниже видимой
-    области — предполагалось, что ScrollView даст прокрутку вниз. На самом устройстве машиниста
-    это НЕ помогло даже после перехода на настоящую полноэкранную Activity — машинист прислал
-    скриншот, где клавиатура обрезана ровно по границе окна, в точности как раньше с Dialog.
-    Вместо попыток в пятый раз починить прокрутку, убрали саму необходимость прокрутки: поля
-    теперь в ОДНУ строку по горизонтали (Начало км/пк, Конец км/пк, Скорость, Путь — места по
-    ширине на альбомном экране достаточно), а клавиатура — блок с layout_height="0dp" +
-    layout_weight="1", который занимает ВСЮ оставшуюся высоту колонки, сколько бы её ни было;
-    кнопки внутри тоже растягиваются по высоте под размер своей строки (layout_height
-    match_parent вместо wrap_content). Итог: всё — поля, клавиатура, кнопка "Добавить" —
-    гарантированно помещается на экране целиком при любой высоте экрана, прокрутка тут вообще
-    не нужна и ни от чего не зависит.
+    Кнопки клавиатуры — RestrictionKeypadButton, с явным parent="Widget.AppCompat.Button.Borderless"
+    (см. themes.xml) — без этого обычный <Button> под темой Theme.MaterialComponents превращается
+    в MaterialButton со своим полупрозрачным слоем поверх текста, из-за которого белые цифры были
+    почти не видны на экране машиниста.
 
     Список ограничений общий с MainActivity через RestrictionsStore (route/Restriction.kt) —
     простой общий объект в памяти, а не Intent-данные: он и так живёт только в памяти на время
@@ -63,130 +59,102 @@
         android:textStyle="bold" />
 
     <!-- Вес 1 — вся оставшаяся высота (между шапкой и кнопкой "Закрыть") ЧЁТКО задана, не
-         wrap_content — от неё отталкиваются обе колонки ниже (см. doc-комментарий выше). -->
+         wrap_content — от неё отталкиваются список и клавиатура ниже (см. doc-комментарий
+         выше). -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="horizontal"
+        android:orientation="vertical"
         android:padding="16dp">
 
-    <!-- Левая колонка: поля в одну строку (см. doc-комментарий выше — почему не вертикально)
-         + клавиатура, занимающая весь остаток высоты. Без ScrollView: ничего прокручивать не
-         надо, если всё и так гарантированно помещается. -->
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="3"
-        android:orientation="vertical"
-        android:paddingEnd="12dp">
-
-        <!-- Все поля в одну горизонтальную строку — на альбомном экране по ширине места много,
-             а вот высота как раз в дефиците (см. doc-комментарий выше). -->
+        <!-- 1. Поля — три компактные строки, каждая под свою группу (машинист попросил именно
+             по строкам, "как раньше"). -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:orientation="vertical">
 
             <LinearLayout
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="110dp"
                     android:layout_height="wrap_content"
                     android:text="НАЧАЛО"
                     android:textColor="#5AAADC"
-                    android:textSize="11sp"
-                    android:layout_marginBottom="4dp" />
+                    android:textSize="13sp" />
 
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
+                <EditText
+                    android:id="@+id/restrictionStartKmInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="64dp"
+                    android:hint="км"
+                    android:inputType="number"
+                    android:maxLength="4" />
 
-                    <EditText
-                        android:id="@+id/restrictionStartKmInput"
-                        style="@style/RestrictionDigitBox"
-                        android:layout_width="56dp"
-                        android:hint="км"
-                        android:inputType="number"
-                        android:maxLength="4" />
-
-                    <EditText
-                        android:id="@+id/restrictionStartPkInput"
-                        style="@style/RestrictionDigitBox"
-                        android:layout_width="40dp"
-                        android:layout_marginStart="6dp"
-                        android:hint="пк"
-                        android:inputType="number"
-                        android:maxLength="2" />
-
-                </LinearLayout>
+                <EditText
+                    android:id="@+id/restrictionStartPkInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="44dp"
+                    android:layout_marginStart="8dp"
+                    android:hint="пк"
+                    android:inputType="number"
+                    android:maxLength="2" />
 
             </LinearLayout>
 
             <LinearLayout
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="14dp"
-                android:orientation="vertical">
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="110dp"
                     android:layout_height="wrap_content"
-                    android:text="КОНЕЦ (необязательно)"
+                    android:text="КОНЕЦ (необяз.)"
                     android:textColor="#5AAADC"
-                    android:textSize="11sp"
-                    android:layout_marginBottom="4dp" />
+                    android:textSize="13sp" />
 
-                <LinearLayout
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:orientation="horizontal">
+                <EditText
+                    android:id="@+id/restrictionEndKmInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="64dp"
+                    android:hint="км"
+                    android:inputType="number"
+                    android:maxLength="4" />
 
-                    <EditText
-                        android:id="@+id/restrictionEndKmInput"
-                        style="@style/RestrictionDigitBox"
-                        android:layout_width="56dp"
-                        android:hint="км"
-                        android:inputType="number"
-                        android:maxLength="4" />
-
-                    <EditText
-                        android:id="@+id/restrictionEndPkInput"
-                        style="@style/RestrictionDigitBox"
-                        android:layout_width="40dp"
-                        android:layout_marginStart="6dp"
-                        android:hint="пк"
-                        android:inputType="number"
-                        android:maxLength="2" />
-
-                </LinearLayout>
+                <EditText
+                    android:id="@+id/restrictionEndPkInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="44dp"
+                    android:layout_marginStart="8dp"
+                    android:hint="пк"
+                    android:inputType="number"
+                    android:maxLength="2" />
 
             </LinearLayout>
 
-            <View
-                android:layout_width="1dp"
-                android:layout_height="match_parent"
-                android:layout_marginStart="14dp"
-                android:layout_marginEnd="14dp"
-                android:background="#222222" />
-
-            <!-- Скорость — 2 цифры (машинист: "для скорости тоже 2"). -->
+            <!-- Сначала скорость, потом путь (машинист: пустой путь = текущее направление, это
+                 основной случай, поэтому скорость логичнее вводить первой). -->
             <LinearLayout
-                android:layout_width="wrap_content"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="vertical">
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:layout_width="110dp"
                     android:layout_height="wrap_content"
                     android:text="СКОРОСТЬ"
                     android:textColor="#5AAADC"
-                    android:textSize="11sp"
-                    android:layout_marginBottom="4dp" />
+                    android:textSize="13sp" />
 
                 <EditText
                     android:id="@+id/restrictionSpeedInput"
@@ -196,27 +164,19 @@
                     android:inputType="number"
                     android:maxLength="2" />
 
-            </LinearLayout>
-
-            <!-- Путь — 1 цифра (пусто = текущий путь). -->
-            <LinearLayout
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="12dp"
-                android:orientation="vertical">
-
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_marginStart="24dp"
                     android:text="ПУТЬ"
                     android:textColor="#5AAADC"
-                    android:textSize="11sp"
-                    android:layout_marginBottom="4dp" />
+                    android:textSize="13sp" />
 
                 <EditText
                     android:id="@+id/restrictionPathInput"
                     style="@style/RestrictionDigitBox"
                     android:layout_width="36dp"
+                    android:layout_marginStart="12dp"
                     android:hint="—"
                     android:inputType="number"
                     android:maxLength="1" />
@@ -225,16 +185,45 @@
 
         </LinearLayout>
 
-        <!-- Своя маленькая цифровая клавиатура (см. doc-комментарий класса выше) — пишет
-             в то поле, которое сейчас активно (подсвечено синим); ← → переключают активное
-             поле строго в правильном порядке: км→пк→км→пк→скорость→путь. Блок занимает ВЕСЬ
-             остаток высоты колонки (layout_height=0dp+weight=1), а каждая строка и каждая
-             кнопка внутри тоже растягиваются по высоте под размер этого блока — так клавиатура
-             гарантированно целиком помещается на экране при любой его высоте, без прокрутки. -->
+        <!-- 2. Список уже введённых ограничений — тянется, но не обязан занимать много места
+             (weight=1), своя прокрутка нормальна для списка (в отличие от клавиатуры). -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
+            android:layout_marginTop="10dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="СПИСОК ОГРАНИЧЕНИЙ"
+                android:textColor="#5AAADC"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <ScrollView
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1">
+
+                <LinearLayout
+                    android:id="@+id/restrictionRowsContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+            </ScrollView>
+
+        </LinearLayout>
+
+        <!-- 3. Клавиатура — крупнее списка (weight=2), это основной способ ввода, и ей нельзя
+             оказаться обрезанной (см. doc-комментарий выше). Каждая кнопка растянута по высоте
+             под размер своей строки (layout_height=match_parent вместо wrap_content в стиле). -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="2"
             android:layout_marginTop="10dp"
             android:orientation="vertical">
 
@@ -279,6 +268,7 @@
 
         </LinearLayout>
 
+        <!-- 4. Ошибка и кнопка "Добавить". -->
         <TextView
             android:id="@+id/restrictionErrorText"
             android:layout_width="match_parent"
@@ -293,39 +283,6 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="6dp"
             android:text="Добавить" />
-
-    </LinearLayout>
-
-    <!-- Правая колонка: список уже введённых ограничений. -->
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="match_parent"
-        android:layout_weight="2"
-        android:orientation="vertical"
-        android:paddingStart="12dp">
-
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="СПИСОК ОГРАНИЧЕНИЙ"
-            android:textColor="#5AAADC"
-            android:textSize="12sp"
-            android:layout_marginBottom="6dp" />
-
-        <ScrollView
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1">
-
-            <LinearLayout
-                android:id="@+id/restrictionRowsContainer"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical" />
-
-        </ScrollView>
-
-    </LinearLayout>
 
     </LinearLayout>
 

@@ -47,11 +47,18 @@
         <item name="android:background">#24FFFFFF</item>
     </style>
 
-    <!-- Своя маленькая цифровая клавиатура в диалоге "Ограничения" (ТЗ раздел 11, HTML-макет
+    <!-- Своя маленькая цифровая клавиатура в экране "Ограничения" (ТЗ раздел 11, HTML-макет
          .limits-keypad) — машинист попросил: системная занимала весь экран, не видно было, что
-         вводишь. Одна кнопка на 1/3 ширины строки (3 в ряд), крупная — это теперь ОСНОВНОЙ
-         способ ввода в этом диалоге, не вспомогательный. -->
-    <style name="RestrictionKeypadButton">
+         вводишь. Одна кнопка на 1/5 ширины строки (5 в ряд), крупная — это теперь ОСНОВНОЙ
+         способ ввода, не вспомогательный.
+         parent="Widget.AppCompat.Button.Borderless" ОБЯЗАТЕЛЕН: под темой
+         Theme.MaterialComponents обычный <Button> без явного родителя автоматически превращается
+         в MaterialButton, у которой сверху свой полупрозрачный слой (surface tint/ripple) поверх
+         фона и текста — именно из-за него машинист не мог разглядеть белые цифры на кнопках
+         (видны были только тонкие, как будто полупрозрачные контуры). У кнопок HeaderToggleButton
+         в шапке главного экрана эта же проблема уже была решена точно так же — см. этот стиль
+         выше по файлу. -->
+    <style name="RestrictionKeypadButton" parent="Widget.AppCompat.Button.Borderless">
         <item name="android:layout_width">0dp</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:layout_weight">1</item>
