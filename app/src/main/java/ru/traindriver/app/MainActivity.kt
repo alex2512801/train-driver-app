@@ -675,16 +675,18 @@ class MainActivity : AppCompatActivity() {
         arrivalWindow.visibility = if (visible) View.VISIBLE else View.GONE
         if (!visible) return
 
+        // "Приб.:"/"Отпр.:" вместо полных слов (машинист попросил: окошко было слишком
+        // широкое, нужно уже, а не ниже).
         when (s) {
             is ArrivalDepartureState.Stopped -> {
-                arrivalTimeText.text = "Прибытие: ${arrivalWallFormat.format(Date(s.arrivalTime))}"
+                arrivalTimeText.text = "Приб.: ${arrivalWallFormat.format(Date(s.arrivalTime))}"
                 arrivalMidText.text = formatDuration(System.currentTimeMillis() - s.arrivalTime)
-                arrivalDepartureText.text = "Отправление: —:—:—"
+                arrivalDepartureText.text = "Отпр.: —:—:—"
             }
             is ArrivalDepartureState.JustDeparted -> {
-                arrivalTimeText.text = "Прибытие: ${arrivalWallFormat.format(Date(s.arrivalTime))}"
+                arrivalTimeText.text = "Приб.: ${arrivalWallFormat.format(Date(s.arrivalTime))}"
                 arrivalMidText.text = "${formatDuration(s.stopDurationMs)} → итог"
-                arrivalDepartureText.text = "Отправление: ${arrivalWallFormat.format(Date(s.departureTime))}"
+                arrivalDepartureText.text = "Отпр.: ${arrivalWallFormat.format(Date(s.departureTime))}"
             }
             is ArrivalDepartureState.Hidden -> Unit
         }
