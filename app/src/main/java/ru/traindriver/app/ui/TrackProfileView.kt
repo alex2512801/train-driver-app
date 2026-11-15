@@ -908,7 +908,11 @@ class TrackProfileView @JvmOverloads constructor(
         for (kmIndex in firstKmIndex..lastKmIndex) {
             val kmM = kmIndex * KM_LINE_LENGTH_M
             if (kmM in fromM..toM) {
-                canvas.drawText(kmIndex.toString(), xFor(kmM), lineY - dp(8f), kmTextPaint)
+                // lineY - dp(8f) (раньше) был НИЖЕ верхнего конца самой засечки км-столбика
+                // (та поднимается на 14dp, см. tickH выше) — низ цифр попадал прямо на
+                // засечку, "столбик как бы пронзает эти числа" (машинист). Подняли выше
+                // засечки с запасом, чтобы между цифрами и столбиком был зазор.
+                canvas.drawText(kmIndex.toString(), xFor(kmM), lineY - dp(20f), kmTextPaint)
             }
         }
     }
