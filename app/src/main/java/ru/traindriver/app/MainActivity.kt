@@ -3,7 +3,6 @@ package ru.traindriver.app
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
-import android.location.Location
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
@@ -124,7 +123,6 @@ class MainActivity : AppCompatActivity() {
     private val arrivalDepartureTracker = ArrivalDepartureTracker()
     private var arrivalWindowVisible = true
     private var historyPanelVisible = false
-    private var lastSpeedKmh = 0.0
     // Прибытие/отправление (окошко стоянки + история) — всегда по МСК, независимо от часового
     // пояса самого телефона: РЖД работает по московскому времени (см. комментарий у mskFormat
     // ниже), местное — только для справки в основных часах, а не для этих событий.
@@ -169,7 +167,19 @@ class MainActivity : AppCompatActivity() {
 
     // По тапу на координату (см. onCreate) переключается обычный км+пк / формат КЛУБ-У.
     private var showKlubU = false
+
+    // lastChainageM/lastSpeedKmh/lastGpsFixAtMs — последняя ПОДТВЕРЖДЁННАЯ GPS-точка (не
+    // резервная по сети, см. LocationSource.NETWORK в startLocationUpdates). График скорости,
+    // голосовые объявления и статусная строка машинист попросил отчитывать "от головы поезда",
+    // а не напрямую от GPS: между фиксами (или вообще без GPS какое-то время — см. README про
+    // возможное глушение сигнала) позиция продолжает считаться от этой точки по известной
+    // скорости и прошедшему времени, как считает путь настоящий локомотивный прибор при потере
+    // спутников — см. estimatedChainageM/updateTrainPositionDerivedState, вызывается из
+    // timeUpdater раз в секунду, а не прямо из GPS-колбэка.
     private var lastChainageM = 0.0
+    private var lastSpeedKmh = 0.0
+    private var lastGpsFixAtMs = 0L
+    private var hasGpsFix = false
 
     private fun formatCoordinate(chainageM: Double): String =
         if (showKlubU) ChainageFormatter.formatKlubU(chainageM) else ChainageFormatter.format(chainageM)
@@ -231,7 +241,54 @@ class MainActivity : AppCompatActivity() {
             if (historyPanelVisible) refreshStopHistory()
             refreshStopwatch()
 
+            // График/объявления/статусная строка — "от головы поезда" (машинист), не прямо от
+            // GPS-колбэка, см. doc-комментарий у lastChainageM и estimatedChainageM.
+            val estimated = estimatedChainageM(now.time)
+            if (estimated != null) {
+                updateTrainPositionDerivedState(estimated)
+            }
+
             timeHandler.postDelayed(this, 1000)
+        }
+    }
+
+    // Сколько секунд после последнего настоящего GPS-фикса ещё доверяем счёту "от головы
+    // поезда" по известной скорости — дальше погрешность накопится слишком сильно, и график/
+    // объявления просто замирают на последнем известном месте, а не продолжают считать вслепую
+    // сколь угодно долго.
+    private val deadReckoningWindowS = 180.0
+
+    /**
+     * Позиция головы поезда СЕЙЧАС — не сама GPS-точка, а она же, доведённая по известной
+     * скорости и прошедшему времени с последнего настоящего GPS-фикса (машинист: считать "от
+     * головы поезда", а не замирать/скакать по сырым GPS-точкам) — ровно так же настоящий
+     * локомотивный прибор продолжает считать путь по датчику скорости, когда спутники
+     * ненадолго пропадают. Null — GPS не было ни разу, или прошло слишком много времени без
+     * него (см. [deadReckoningWindowS]).
+     */
+    private fun estimatedChainageM(nowMs: Long): Double? {
+        if (!hasGpsFix) return null
+        val elapsedS = (nowMs - lastGpsFixAtMs) / 1000.0
+        if (elapsedS < 0.0 || elapsedS > deadReckoningWindowS) return null
+        val sign = if (directionSelection.picketsGrowing) 1.0 else -1.0
+        return lastChainageM + (lastSpeedKmh / 3.6) * elapsedS * sign
+    }
+
+    /** График скорости, статусная строка и голосовые объявления (проба тормозов/станция) —
+     *  всё, что раньше обновлялось прямо из GPS-колбэка, теперь приходит сюда раз в секунду
+     *  из timeUpdater с позицией от [estimatedChainageM], а не напрямую от GPS. */
+    private fun updateTrainPositionDerivedState(chainageM: Double) {
+        trackProfileView.setTrainPositionM(chainageM)
+        statusBarText.text = buildStatusBarText(lastSpeedKmh, chainageM)
+        updateDestinationText(chainageM)
+
+        val brakeTest = brakeTestScheduler.update(chainageM, directionSelection.picketsGrowing)
+        if (brakeTest != null) {
+            voiceAnnouncer.play(if (brakeTest.doubleTrain) Announcement.BRAKE_TEST_DOUBLE else Announcement.BRAKE_TEST)
+        }
+
+        if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
+            voiceAnnouncer.play(Announcement.STATION)
         }
     }
 
@@ -804,29 +861,24 @@ class MainActivity : AppCompatActivity() {
                 val accuracyM = if (location.hasAccuracy()) " ±${location.accuracy.toInt()}м" else ""
                 coordinateText.text = "≈ ${formatCoordinate(chainageM)}$accuracyM, нет GPS"
             } else {
+                // Только запоминаем настоящую GPS-точку — график/объявления/статусную строку
+                // отсюда больше не трогаем, они теперь считаются "от головы поезда" раз в
+                // секунду из timeUpdater (см. estimatedChainageM/updateTrainPositionDerivedState
+                // и doc-комментарий у lastChainageM) — это даёт им продолжать двигаться
+                // по инерции, даже если GPS на несколько секунд пропадёт.
                 lastChainageM = chainageM
                 if (location.hasSpeed()) lastSpeedKmh = location.speed * 3.6
+                lastGpsFixAtMs = System.currentTimeMillis()
+                hasGpsFix = true
                 coordinateText.text = formatCoordinate(chainageM)
-                trackProfileView.setTrainPositionM(chainageM)
-                statusBarText.text = buildStatusBarText(location, chainageM)
-                updateDestinationText(chainageM)
-
-                val brakeTest = brakeTestScheduler.update(chainageM, directionSelection.picketsGrowing)
-                if (brakeTest != null) {
-                    voiceAnnouncer.play(if (brakeTest.doubleTrain) Announcement.BRAKE_TEST_DOUBLE else Announcement.BRAKE_TEST)
-                }
-
-                if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
-                    voiceAnnouncer.play(Announcement.STATION)
-                }
             }
         }
     }
 
     // Нижняя статусная строка (ТЗ раздел 7): Vф | уклон | V=/S= | голова | хвост.
     // Уклон/голова/хвост пока "—" — нет данных о рельефе и о км+пк сигналов (см. README).
-    private fun buildStatusBarText(location: Location, chainageM: Double): String {
-        val vf = if (location.hasSpeed()) "Vф=${(location.speed * 3.6).toInt()}" else "Vф=?"
+    private fun buildStatusBarText(speedKmh: Double, chainageM: Double): String {
+        val vf = "Vф=${speedKmh.toInt()}"
 
         // V=/S= должны учитывать и постоянные ограничения (speedLimitResolver), и введённые
         // машинистом временные (restrictions, ТЗ раздел 11) — иначе строка врала бы, если
