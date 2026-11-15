@@ -162,7 +162,13 @@ class RestrictionsActivity : AppCompatActivity() {
             val input = orderedInputs[activeIndex]
             val (lo, hi) = selectionRange(input)
             input.text.replace(lo, hi, digit)
-            input.setSelection(lo + digit.length)
+            // coerceAtMost — ОБЯЗАТЕЛЬНО: если поле уже на пределе maxLength и курсор у самого
+            // конца, системный фильтр длины молча НЕ вставляет цифру (текст не меняется), а
+            // setSelection(lo + digit.length) без этой защиты попытался бы поставить курсор
+            // ЗА пределами настоящей (не увеличившейся) длины текста — Android бросает
+            // исключение, которое крашит всю Activity (тот же баг найден и исправлен в
+            // TrainParamsActivity.appendToActive — там же подробный разбор симптома).
+            input.setSelection((lo + digit.length).coerceAtMost(input.text.length))
         }
 
         val digitButtonIds = listOf(
