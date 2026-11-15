@@ -1388,8 +1388,9 @@ class TrackProfileView @JvmOverloads constructor(
         val boxTop = dp(8f)
         val boxRight = boxLeft + actualSpeedTextPaint.measureText(actualText) + paddingH * 2
         val boxBottom = boxTop + (metrics.descent - metrics.ascent) + paddingV * 2
-        canvas.drawRect(boxLeft, boxTop, boxRight, boxBottom, speedWindowBgPaint)
-        canvas.drawRect(boxLeft, boxTop, boxRight, boxBottom, speedWindowBorderPaint)
+        val cornerRadius = dp(10f)
+        canvas.drawRoundRect(boxLeft, boxTop, boxRight, boxBottom, cornerRadius, cornerRadius, speedWindowBgPaint)
+        canvas.drawRoundRect(boxLeft, boxTop, boxRight, boxBottom, cornerRadius, cornerRadius, speedWindowBorderPaint)
         canvas.drawText(actualText, boxLeft + paddingH, boxTop + paddingV - metrics.ascent, actualSpeedTextPaint)
 
         canvas.drawText(limitText, dp(8f), boxBottom + dp(34f), speedTextPaint)
