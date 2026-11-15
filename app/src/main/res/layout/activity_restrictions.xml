@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     "Ограничения" (ТЗ раздел 11, машинист называет их "предупреждения") — ОТДЕЛЬНЫЙ
-    полноэкранный экран (RestrictionsActivity), не диалог/Dialog поверх главного. Раньше это
-    был диалог поверх главного экрана — сначала AlertDialog, потом полноэкранный Dialog — но
-    ни один вариант так и не удалось сделать надёжно прокручиваемым на невысоком альбомном
-    экране. Обычная Activity — никакой "плавающей" логики размера окна нет в принципе, экран
-    гарантированно на весь физический размер устройства.
+    полноэкранный экран (RestrictionsActivity), не диалог/Dialog поверх главного — у обычной
+    Activity никакой "плавающей" логики размера окна нет в принципе, экран гарантированно на
+    весь физический размер устройства.
 
     Поля теперь не открывают системную клавиатуру — это выключается кодом,
     setShowSoftInputOnFocus(false) в RestrictionsActivity.onCreate (атрибут
@@ -16,26 +14,29 @@
     переключают активное поле строго по порядку км→пк→км→пк→скорость→путь (оно подсвечивается
     синим) — порядок заранее известный и правильный, гадать не на что.
 
-    ОДНА колонка сверху вниз (машинист попросил именно в таком порядке, не два блока бок о бок,
-    как было раньше):
-      1. Поля — НАЧАЛО (км+пк) своей строкой, КОНЕЦ (км+пк) своей строкой, затем СКОРОСТЬ и ПУТЬ
-         в одной строке (именно в этом порядке: пустой "путь" по умолчанию означает "текущее
-         направление", поэтому скорость логичнее вводить первой).
-      2. Список уже введённых ограничений.
-      3. Клавиатура.
-      4. Ошибка (если есть) и кнопка "Добавить".
-    Поля — компактные фиксированные строки (wrap_content), а список и клавиатура делят между
-    собой весь ОСТАЛЬНОЙ экран через layout_weight (список — 1 часть, клавиатура — 2 части,
-    крупнее, т.к. это основной способ ввода) — это гарантирует, что всё целиком помещается на
-    экране при любой его высоте, БЕЗ прокрутки: именно прокрутка (ScrollView, который либо не
-    прокручивался на устройстве машиниста, либо машинист не понимал, что надо прокрутить) была
-    причиной того, что клавиатура раньше обрезалась — и с Dialog, и с первой версией этой же
-    Activity.
+    ДВЕ КОЛОНКИ, как телефонный набор номера (машинист сам так и описал) — слева поля ввода и
+    список уже введённых ограничений друг под другом, справа ОТДЕЛЬНОЙ колонкой клавиатура на
+    ВСЮ высоту экрана:
+      - до этого было: единый вертикальный список (поля → список → клавиатура), где поля+список
+        и клавиатура делили одну и ту же высоту через layout_weight — но стоило списку
+        ограничений подрасти (несколько записей), он отнимал высоту у клавиатуры, и клавиатура
+        сжималась почти до нуля/пропадала. Та же беда была раньше и с двумя колонками первой
+        версии, где клавиатура была СНИЗУ под полями в левой колонке — поля тоже могли отнять
+        у неё место.
+      - теперь клавиатура — это вся правая колонка целиком, её высота НИКАК не зависит от того,
+        сколько места заняли поля или список в левой колонке (это независимые соседние колонки
+        одного ряда, а не блоки один под другим) — клавиатура гарантированно получает свою долю
+        высоты экрана целиком, что бы ни происходило слева.
+      - левая колонка: поля (wrap_content, три строки — Начало, Конец, Скорость+Путь), кнопка
+        "Добавить" сразу под ними, затем список ограничений — он один занимает ВЕСЬ остаток
+        высоты левой колонки (layout_weight) и прокручивается сам при необходимости (прокрутка
+        для списка — это нормально и ожидаемо, в отличие от клавиатуры, которой прокрутка
+        категорически не подходит, см. всю историю этого экрана).
 
     Кнопки клавиатуры — RestrictionKeypadButton, с явным parent="Widget.AppCompat.Button.Borderless"
     (см. themes.xml) — без этого обычный <Button> под темой Theme.MaterialComponents превращается
     в MaterialButton со своим полупрозрачным слоем поверх текста, из-за которого белые цифры были
-    почти не видны на экране машиниста.
+    почти не видны.
 
     Список ограничений общий с MainActivity через RestrictionsStore (route/Restriction.kt) —
     простой общий объект в памяти, а не Intent-данные: он и так живёт только в памяти на время
@@ -59,21 +60,21 @@
         android:textStyle="bold" />
 
     <!-- Вес 1 — вся оставшаяся высота (между шапкой и кнопкой "Закрыть") ЧЁТКО задана, не
-         wrap_content — от неё отталкиваются список и клавиатура ниже (см. doc-комментарий
-         выше). -->
+         wrap_content — от неё отталкиваются обе колонки ниже (см. doc-комментарий выше). -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:orientation="vertical"
+        android:orientation="horizontal"
         android:padding="16dp">
 
-        <!-- 1. Поля — три компактные строки, каждая под свою группу (машинист попросил именно
-             по строкам, "как раньше"). -->
+        <!-- Левая колонка: поля, кнопка "Добавить", список — друг под другом. -->
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical">
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="2"
+            android:orientation="vertical"
+            android:paddingEnd="14dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -82,7 +83,7 @@
                 android:gravity="center_vertical">
 
                 <TextView
-                    android:layout_width="110dp"
+                    android:layout_width="100dp"
                     android:layout_height="wrap_content"
                     android:text="НАЧАЛО"
                     android:textColor="#5AAADC"
@@ -91,7 +92,7 @@
                 <EditText
                     android:id="@+id/restrictionStartKmInput"
                     style="@style/RestrictionDigitBox"
-                    android:layout_width="64dp"
+                    android:layout_width="56dp"
                     android:hint="км"
                     android:inputType="number"
                     android:maxLength="4" />
@@ -99,8 +100,8 @@
                 <EditText
                     android:id="@+id/restrictionStartPkInput"
                     style="@style/RestrictionDigitBox"
-                    android:layout_width="44dp"
-                    android:layout_marginStart="8dp"
+                    android:layout_width="40dp"
+                    android:layout_marginStart="6dp"
                     android:hint="пк"
                     android:inputType="number"
                     android:maxLength="2" />
@@ -115,16 +116,16 @@
                 android:gravity="center_vertical">
 
                 <TextView
-                    android:layout_width="110dp"
+                    android:layout_width="100dp"
                     android:layout_height="wrap_content"
-                    android:text="КОНЕЦ (необяз.)"
+                    android:text="КОНЕЦ"
                     android:textColor="#5AAADC"
                     android:textSize="13sp" />
 
                 <EditText
                     android:id="@+id/restrictionEndKmInput"
                     style="@style/RestrictionDigitBox"
-                    android:layout_width="64dp"
+                    android:layout_width="56dp"
                     android:hint="км"
                     android:inputType="number"
                     android:maxLength="4" />
@@ -132,8 +133,8 @@
                 <EditText
                     android:id="@+id/restrictionEndPkInput"
                     style="@style/RestrictionDigitBox"
-                    android:layout_width="44dp"
-                    android:layout_marginStart="8dp"
+                    android:layout_width="40dp"
+                    android:layout_marginStart="6dp"
                     android:hint="пк"
                     android:inputType="number"
                     android:maxLength="2" />
@@ -150,7 +151,7 @@
                 android:gravity="center_vertical">
 
                 <TextView
-                    android:layout_width="110dp"
+                    android:layout_width="100dp"
                     android:layout_height="wrap_content"
                     android:text="СКОРОСТЬ"
                     android:textColor="#5AAADC"
@@ -167,7 +168,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_marginStart="24dp"
+                    android:layout_marginStart="18dp"
                     android:text="ПУТЬ"
                     android:textColor="#5AAADC"
                     android:textSize="13sp" />
@@ -176,56 +177,72 @@
                     android:id="@+id/restrictionPathInput"
                     style="@style/RestrictionDigitBox"
                     android:layout_width="36dp"
-                    android:layout_marginStart="12dp"
+                    android:layout_marginStart="10dp"
                     android:hint="—"
                     android:inputType="number"
                     android:maxLength="1" />
 
             </LinearLayout>
 
-        </LinearLayout>
-
-        <!-- 2. Список уже введённых ограничений — тянется, но не обязан занимать много места
-             (weight=1), своя прокрутка нормальна для списка (в отличие от клавиатуры). -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="1"
-            android:layout_marginTop="10dp"
-            android:orientation="vertical">
-
             <TextView
-                android:layout_width="wrap_content"
+                android:id="@+id/restrictionErrorText"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="СПИСОК ОГРАНИЧЕНИЙ"
-                android:textColor="#5AAADC"
-                android:textSize="12sp"
-                android:layout_marginBottom="4dp" />
+                android:layout_marginTop="6dp"
+                android:textColor="#E05A5A"
+                android:visibility="gone" />
 
-            <ScrollView
+            <Button
+                android:id="@+id/restrictionAddButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:text="Добавить" />
+
+            <!-- Список — один занимает весь остаток высоты ЛЕВОЙ колонки (не экрана целиком),
+                 правой колонки с клавиатурой это не касается вообще. -->
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="1">
+                android:layout_weight="1"
+                android:layout_marginTop="10dp"
+                android:orientation="vertical">
 
-                <LinearLayout
-                    android:id="@+id/restrictionRowsContainer"
-                    android:layout_width="match_parent"
+                <TextView
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:orientation="vertical" />
+                    android:text="СПИСОК ОГРАНИЧЕНИЙ"
+                    android:textColor="#5AAADC"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="4dp" />
 
-            </ScrollView>
+                <ScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1">
+
+                    <LinearLayout
+                        android:id="@+id/restrictionRowsContainer"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                </ScrollView>
+
+            </LinearLayout>
 
         </LinearLayout>
 
-        <!-- 3. Клавиатура — крупнее списка (weight=2), это основной способ ввода, и ей нельзя
-             оказаться обрезанной (см. doc-комментарий выше). Каждая кнопка растянута по высоте
-             под размер своей строки (layout_height=match_parent вместо wrap_content в стиле). -->
+        <!-- Правая колонка: ТОЛЬКО клавиатура, на всю высоту (match_parent) — её размер не
+             зависит от того, сколько места заняло слева (см. doc-комментарий выше). Шире левой
+             (weight 3 против 2) — машинист попросил, чтобы кнопки были крупными и хорошо видны,
+             как при наборе номера на телефоне. -->
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="0dp"
-            android:layout_weight="2"
-            android:layout_marginTop="10dp"
-            android:orientation="vertical">
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3"
+            android:orientation="vertical"
+            android:paddingStart="14dp">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -267,22 +284,6 @@
             </LinearLayout>
 
         </LinearLayout>
-
-        <!-- 4. Ошибка и кнопка "Добавить". -->
-        <TextView
-            android:id="@+id/restrictionErrorText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:textColor="#E05A5A"
-            android:visibility="gone" />
-
-        <Button
-            android:id="@+id/restrictionAddButton"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
-            android:text="Добавить" />
 
     </LinearLayout>
 
