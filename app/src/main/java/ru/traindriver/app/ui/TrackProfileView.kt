@@ -252,15 +252,26 @@ class TrackProfileView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
         isAntiAlias = true
     }
+    // 16dp — машинист попросил: такого же размера, как цифры времени в шапке (раньше 28dp,
+    // "лежали друг на друге").
     private val axisTextPaint = Paint().apply {
         color = Color.rgb(178, 178, 178)
-        textSize = dp(28f)
+        textSize = dp(16f)
         textAlign = Paint.Align.LEFT
         isAntiAlias = true
     }
+    // Линия+засечки самой шкалы слева (как на линейке) — см. drawSpeedAxis.
+    private val axisLinePaint = Paint().apply {
+        color = Color.rgb(178, 178, 178)
+        strokeWidth = dp(1.5f)
+        isAntiAlias = true
+    }
+    // Намного меньше, чем было (54dp→26dp) — машинист попросил, число скорости на ступени
+    // занимало слишком много места, но должно оставаться читабельным (в отличие от
+    // km/сигнальных подписей, это не упало до размера часов).
     private val stepNumberPaint = Paint().apply {
         color = Color.WHITE
-        textSize = dp(54f)
+        textSize = dp(26f)
         typeface = Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.CENTER
         isAntiAlias = true
@@ -758,10 +769,16 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.restore()
     }
 
+    // Шкала скорости слева — как на линейке (машинист попросил): сплошная вертикальная линия
+    // от 100 до 0 км/ч, с короткими засечками напротив каждого подписанного деления
+    // (100/80/60/40/20), а не просто плавающие цифры без самой линейки.
     private fun drawSpeedAxis(canvas: Canvas, yForSpeed: (Int) -> Float) {
+        val lineX = axisWidthPx - dp(8f)
+        canvas.drawLine(lineX, yForSpeed(AXIS_SPEEDS.first()), lineX, yForSpeed(0), axisLinePaint)
         for (speed in AXIS_SPEEDS) {
             val y = yForSpeed(speed)
-            canvas.drawText(speed.toString(), dp(4f), y + dp(10f), axisTextPaint)
+            canvas.drawLine(lineX - dp(5f), y, lineX, y, axisLinePaint)
+            canvas.drawText(speed.toString(), dp(4f), y + dp(6f), axisTextPaint)
         }
     }
 
