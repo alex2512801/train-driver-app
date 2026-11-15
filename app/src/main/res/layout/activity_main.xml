@@ -97,10 +97,12 @@
 
             <!-- 2. Станция назначения — следующая по ходу движения, не конечная станция всего
                  маршрута (обновляется и при смене направления/пути, и на каждой GPS-позиции,
-                 см. updateDestinationText). -->
+                 см. updateDestinationText). Расширено (95dp→125dp) за счёт кнопки "Путь" —
+                 машинист попросил сократить её текст до "П1"/"П2" (см. ниже) и отдать
+                 освободившееся место названию станции, которого не хватало. -->
             <TextView
                 android:id="@+id/destinationText"
-                android:layout_width="95dp"
+                android:layout_width="125dp"
                 android:layout_height="wrap_content"
                 android:paddingStart="6dp"
                 android:paddingEnd="6dp"
@@ -116,12 +118,13 @@
                 style="@style/HeaderToggleButton"
                 android:text="Чёт" />
 
-            <!-- 4. Путь 1/2. -->
+            <!-- 4. Путь 1/2 — короткая подпись "П1"/"П2" (было "Путь 1"/"Путь 2", машинист
+                 попросил сократить, чтобы освободить место для названия станции слева). -->
             <Button
                 android:id="@+id/pathButton"
                 style="@style/HeaderToggleButton"
                 android:layout_marginStart="4dp"
-                android:text="Путь 2" />
+                android:text="П2" />
 
             <!-- 5. К1 — сигналы среднего пути Тургутуй—Яблоновая/Карымская (см. doc-комментарий
                  выше: пока без настоящей логики переключения). -->

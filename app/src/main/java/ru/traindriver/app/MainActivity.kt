@@ -812,7 +812,7 @@ class MainActivity : AppCompatActivity() {
         val s = directionSelection
         // Короче, чем "Чётное"/"Нечётное" — машинист попросил, чтобы влезало компактнее.
         directionButton.text = if (s.direction == Direction.EVEN) "Чёт" else "Нечёт"
-        pathButton.text = "Путь ${s.physicalPath}"
+        pathButton.text = "П${s.physicalPath}"
         updateDestinationText(lastChainageM)
 
         trackProfileView.setDirection(s.effectiveDataset)
