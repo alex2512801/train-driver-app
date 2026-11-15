@@ -1029,7 +1029,14 @@ class TrackProfileView @JvmOverloads constructor(
         // сетка пикетов, клип по поверхности рельефа
         canvas.save()
         canvas.clipRect(0f, top, w, top + bandH)
-        val firstPicketIndex = ceil(fromM / PICKET_LENGTH_M).toLong()
+        // fromM соответствует x=graphLeft (правому краю шкалы скорости слева), а не x=0 — сетка
+        // пикетов, если считать от fromM, никогда не рисовалась в полосе под самой шкалой
+        // (x от 0 до graphLeft). Машинист заметил: там сетка как будто "обрывается" — и
+        // переживает, что если состав длинный, хвост на зелёной полосе может оказаться как раз
+        // в этой безсеточной полосе, и не будет видно, где он идёт относительно пикетов. mFor(0f)
+        // даёт км+пк ровно у левого края канваса (x=0), а не у края самого графика — считаем
+        // первый пикет уже от него.
+        val firstPicketIndex = ceil(mFor(0f) / PICKET_LENGTH_M).toLong()
         val lastPicketIndex = floor(toM / PICKET_LENGTH_M).toLong()
         for (i in firstPicketIndex..lastPicketIndex) {
             val picketM = i * PICKET_LENGTH_M
