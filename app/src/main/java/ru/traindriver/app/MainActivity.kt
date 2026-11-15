@@ -2,7 +2,7 @@ package ru.traindriver.app
 
 import android.Manifest
 import android.annotation.SuppressLint
-import android.app.Dialog
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -17,8 +17,6 @@ import android.telephony.TelephonyManager
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
-import android.view.ViewGroup
-import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
@@ -54,11 +52,8 @@ import ru.traindriver.app.route.NeutralInsertAssetLoader
 import ru.traindriver.app.route.PointAnnouncementScheduler
 import ru.traindriver.app.route.ReliefAssetLoader
 import ru.traindriver.app.route.Restriction
-import ru.traindriver.app.route.RestrictionField
-import ru.traindriver.app.route.RestrictionFormFields
-import ru.traindriver.app.route.RestrictionInputParser
 import ru.traindriver.app.route.RestrictionAwareSpeedResolver
-import ru.traindriver.app.route.RestrictionInputResult
+import ru.traindriver.app.route.RestrictionsStore
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
 import ru.traindriver.app.route.SignalAssetLoader
@@ -72,7 +67,6 @@ import ru.traindriver.app.route.TrainParams
 import ru.traindriver.app.route.TrainParamsStore
 import ru.traindriver.app.route.nearestStationName
 import ru.traindriver.app.route.nextStationAhead
-import ru.traindriver.app.route.sortedForDirection
 import ru.traindriver.app.ui.OpasnoeIconView
 import ru.traindriver.app.ui.RecenterIconView
 import ru.traindriver.app.ui.SignalBarsView
@@ -157,7 +151,9 @@ class MainActivity : AppCompatActivity() {
     // раздел 7/8 — см. TrackProfileView.setRestrictions), но пока не влияют на V= в статусной
     // строке (speedLimitResolver учитывает только постоянные ограничения) — это отдельный,
     // ещё не сделанный шаг.
-    private val restrictions = mutableListOf<Restriction>()
+    // Сам список теперь хранится не здесь, а в RestrictionsStore — общий с RestrictionsActivity
+    // (отдельный полноэкранный экран ввода ограничений, см. openRestrictionsScreen() ниже).
+    private val restrictions: MutableList<Restriction> get() = RestrictionsStore.list
 
     // Ограничение с заданным путём показывается только на этом пути (ТЗ раздел 11: "число —
     // по стандартному правилу чётный/нечётный"); path == null — на любом (это "правильный
@@ -426,7 +422,7 @@ class MainActivity : AppCompatActivity() {
         }
         paramsButton.setOnClickListener { showTrainParamsDialog() }
         recenterButton.setOnClickListener { trackProfileView.recenter() }
-        restrictionsButton.setOnClickListener { showRestrictionsDialog() }
+        restrictionsButton.setOnClickListener { openRestrictionsScreen() }
         dayNightButton.setOnClickListener {
             isDayMode = !isDayMode
             dayNightButton.text = if (isDayMode) "☀️" else "🌙"
@@ -453,6 +449,14 @@ class MainActivity : AppCompatActivity() {
         } else {
             requestPhoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
         }
+    }
+
+    // Список ограничений теперь вводится на отдельном экране (RestrictionsActivity) — после
+    // возврата оттуда (кнопкой "Закрыть" или системной "Назад") нужно заново отрисовать график
+    // с учётом того, что машинист там добавил/удалил.
+    override fun onResume() {
+        super.onResume()
+        refreshTrackProfileRestrictions()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -762,183 +766,17 @@ class MainActivity : AppCompatActivity() {
     private fun formatNumber(value: Double): String =
         if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
 
-    // "Ограничения" (ТЗ раздел 11) — та же форма, что и в HTML-макете (км/пк начала и конца,
-    // скорость, путь), но полями обычной телефонной клавиатуры вместо самодельной цифровой
-    // накладки из макета (см. dialog_restrictions.xml). "Добавить" не закрывает диалог — можно
-    // сразу вводить следующее ограничение, список тут же обновляется и пересортировывается.
-    private fun showRestrictionsDialog() {
-        val view = layoutInflater.inflate(R.layout.dialog_restrictions, null)
-        val startKmInput = view.findViewById<EditText>(R.id.restrictionStartKmInput)
-        val startPkInput = view.findViewById<EditText>(R.id.restrictionStartPkInput)
-        val endKmInput = view.findViewById<EditText>(R.id.restrictionEndKmInput)
-        val endPkInput = view.findViewById<EditText>(R.id.restrictionEndPkInput)
-        val speedInput = view.findViewById<EditText>(R.id.restrictionSpeedInput)
-        val pathInput = view.findViewById<EditText>(R.id.restrictionPathInput)
-        val errorText = view.findViewById<TextView>(R.id.restrictionErrorText)
-        val addButton = view.findViewById<Button>(R.id.restrictionAddButton)
-        val rowsContainer = view.findViewById<LinearLayout>(R.id.restrictionRowsContainer)
-
-        fun refreshRestrictionsList() {
-            rowsContainer.removeAllViews()
-            for (r in restrictions.sortedForDirection(directionSelection.effectiveDataset)) {
-                val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                val info = TextView(this).apply {
-                    val endTxt = if (r.endM == r.startM) "—" else ChainageFormatter.formatDot(r.endM)
-                    text = "%-8s %-8s %3d  %s".format(
-                        ChainageFormatter.formatDot(r.startM), endTxt, r.speedKmh, r.path?.toString() ?: "—"
-                    )
-                    setTextColor(0xFFFFFFFF.toInt())
-                    typeface = android.graphics.Typeface.MONOSPACE
-                    textSize = 12f
-                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-                }
-                val delete = TextView(this).apply {
-                    text = "✕"
-                    setTextColor(0xFFE05A5A.toInt())
-                    setPadding(16, 0, 0, 0)
-                    setOnClickListener {
-                        restrictions.remove(r)
-                        refreshRestrictionsList()
-                        refreshTrackProfileRestrictions()
-                    }
-                }
-                row.addView(info)
-                row.addView(delete)
-                rowsContainer.addView(row)
-            }
-        }
-
-        val fieldInputs = mapOf(
-            RestrictionField.START_KM to startKmInput,
-            RestrictionField.START_PK to startPkInput,
-            RestrictionField.END_KM to endKmInput,
-            RestrictionField.END_PK to endPkInput,
-            RestrictionField.SPEED to speedInput,
-            RestrictionField.PATH to pathInput
+    // "Ограничения" (ТЗ раздел 11) — отдельный полноэкранный экран (RestrictionsActivity), а не
+    // диалог поверх главного: ни AlertDialog, ни полноэкранный Dialog не удалось сделать
+    // надёжно прокручиваемым на невысоком альбомном экране — клавиатура(своя цифровая)
+    // раз за разом оставалась обрезанной (см. doc-комментарий в RestrictionsActivity.kt и
+    // activity_restrictions.xml). Список ограничений общий через RestrictionsStore, поэтому
+    // при возврате с этого экрана нужно обновить график — см. onResume() ниже.
+    private fun openRestrictionsScreen() {
+        startActivity(
+            Intent(this, RestrictionsActivity::class.java)
+                .putExtra(RestrictionsActivity.EXTRA_EFFECTIVE_DATASET, directionSelection.effectiveDataset.name)
         )
-
-        // Своя маленькая клавиатура вместо системной (машинист: системная занимала весь экран
-        // и не видно было, что вводишь) — ← → переключают "активное" поле строго по порядку
-        // км→пк→км→пк→скорость→путь, а не как получится у системного "Далее" (оно искало
-        // следующее поле по расположению на экране, а не по порядку — из-за этого с "км"
-        // попадало сразу на следующее "км", а не на "пк", см. doc-комментарий в
-        // dialog_restrictions.xml). orderedInputs/fieldOrder — один и тот же порядок, по
-        // индексу.
-        val orderedInputs = listOf(startKmInput, startPkInput, endKmInput, endPkInput, speedInput, pathInput)
-        // android:showSoftInputOnFocus не существует как публичный XML-атрибут (AAPT: "attribute
-        // not found"), хоть одноимённый метод и есть — выключаем системную клавиатуру кодом.
-        for (input in orderedInputs) input.setShowSoftInputOnFocus(false)
-        val fieldOrder = listOf(
-            RestrictionField.START_KM, RestrictionField.START_PK,
-            RestrictionField.END_KM, RestrictionField.END_PK,
-            RestrictionField.SPEED, RestrictionField.PATH
-        )
-        var activeIndex = 0
-        var currentErrorFields: Set<RestrictionField> = emptySet()
-
-        fun refreshFieldBackgrounds() {
-            for ((i, field) in fieldOrder.withIndex()) {
-                orderedInputs[i].setBackgroundColor(
-                    when {
-                        field in currentErrorFields -> 0x33E05A5A
-                        i == activeIndex -> 0x405AAADC
-                        else -> 0x00000000
-                    }
-                )
-            }
-        }
-
-        fun setActive(index: Int) {
-            activeIndex = index.coerceIn(0, orderedInputs.lastIndex)
-            val input = orderedInputs[activeIndex]
-            input.requestFocus()
-            input.setSelection(input.text.length)
-            refreshFieldBackgrounds()
-        }
-
-        orderedInputs.forEachIndexed { index, input ->
-            input.setOnClickListener { setActive(index) }
-        }
-
-        fun appendToActive(digit: String) {
-            orderedInputs[activeIndex].text.append(digit)
-        }
-
-        val digitButtonIds = listOf(
-            R.id.restrictionKey0, R.id.restrictionKey1, R.id.restrictionKey2, R.id.restrictionKey3,
-            R.id.restrictionKey4, R.id.restrictionKey5, R.id.restrictionKey6, R.id.restrictionKey7,
-            R.id.restrictionKey8, R.id.restrictionKey9
-        )
-        digitButtonIds.forEachIndexed { digit, id ->
-            view.findViewById<Button>(id).setOnClickListener { appendToActive(digit.toString()) }
-        }
-        view.findViewById<Button>(R.id.restrictionKeyPrev).setOnClickListener { setActive(activeIndex - 1) }
-        view.findViewById<Button>(R.id.restrictionKeyNext).setOnClickListener { setActive(activeIndex + 1) }
-        view.findViewById<Button>(R.id.restrictionBackspaceButton).setOnClickListener {
-            val input = orderedInputs[activeIndex]
-            val len = input.text.length
-            if (len > 0) input.text.delete(len - 1, len)
-        }
-
-        addButton.setOnClickListener {
-            val fields = RestrictionFormFields(
-                startKm = startKmInput.text.toString(),
-                startPk = startPkInput.text.toString(),
-                endKm = endKmInput.text.toString(),
-                endPk = endPkInput.text.toString(),
-                speed = speedInput.text.toString(),
-                path = pathInput.text.toString()
-            )
-            when (val result = RestrictionInputParser.parse(fields)) {
-                is RestrictionInputResult.Success -> {
-                    restrictions.add(result.restriction)
-                    for (input in fieldInputs.values) input.text.clear()
-                    errorText.visibility = View.GONE
-                    currentErrorFields = emptySet()
-                    setActive(0)
-                    refreshRestrictionsList()
-                    refreshTrackProfileRestrictions()
-                }
-                is RestrictionInputResult.Error -> {
-                    errorText.text = result.message
-                    errorText.visibility = View.VISIBLE
-                    currentErrorFields = result.fields
-                    refreshFieldBackgrounds()
-                }
-            }
-        }
-
-        refreshRestrictionsList()
-        setActive(0)
-
-        // Раньше это был обычный AlertDialog (wrap_content по высоте) — на невысоком
-        // альбомном экране содержимое (поля+клавиатура) было выше самого окна, а ScrollView
-        // внутри с такой же wrap_content высотой прокрутку так и не включал: ему самому
-        // "хватало места" — он измерялся как "сколько нужно под весь контент", а не как
-        // "сколько реально доступно". Даже принудительно заданная высота окна
-        // (Dialog.window.setLayout) не помогла до конца — машинист прислал скриншот, где
-        // клавиатура так и осталась обрезанной. Теперь это полноэкранный Dialog (своя шапка и
-        // кнопка "Закрыть" нарисованы прямо в dialog_restrictions.xml) — area с полями
-        // получает ЧЁТКО заданную высоту (layout_weight, не wrap_content), и ScrollView внутри
-        // наконец по-настоящему прокручивается, если что-то не поместилось (см. doc-комментарий
-        // в самом файле разметки).
-        val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-        // setShowSoftInputOnFocus(false) на самих полях (выше) запрещает клавиатуре появляться
-        // именно "по фокусу поля" — но у НОВОГО отдельного окна (а не поля внутри него) есть
-        // ещё и своё собственное поведение показа клавиатуры при появлении на экране, и
-        // полноэкранный Dialog, в отличие от прежнего AlertDialog, показывал её сам, в обход
-        // запрета у полей — машинист снова увидел системную клавиатуру. Запрещаем явно самому
-        // ОКНУ, а не только полям.
-        dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
-        dialog.setContentView(view)
-        view.findViewById<Button>(R.id.restrictionCloseButton).setOnClickListener { dialog.dismiss() }
-        dialog.show()
-        // "Fullscreen" в названии темы убирает только верхнюю системную полоску — окно самого
-        // диалога от этого ещё не становится во весь экран, оно по-прежнему "плавающее" и
-        // подстраивается под содержимое (та же причина, по которой клавиатура в прошлый раз
-        // снова не поместилась целиком). Явно растягиваем окно на весь экран здесь, ПОСЛЕ
-        // show() — до show() Android иногда сбрасывает этот размер обратно.
-        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
     }
 
     private fun hasLocationPermission(): Boolean =

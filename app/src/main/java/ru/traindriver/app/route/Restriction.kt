@@ -24,3 +24,14 @@ data class Restriction(
  */
 fun List<Restriction>.sortedForDirection(direction: Direction): List<Restriction> =
     if (direction == Direction.EVEN) sortedBy { it.startM } else sortedByDescending { it.startM }
+
+/**
+ * Общий список ограничений между MainActivity и RestrictionsActivity (ввод ограничений —
+ * отдельный полноэкранный экран, не диалог поверх главного — см. RestrictionsActivity,
+ * README/чат: диалог/Dialog поверх главного экрана на альбомном телефоне так и не удалось
+ * сделать надёжно прокручиваемым). Простой общий объект, а не Intent-данные или БД — список
+ * живёт только в памяти на время сессии в любом случае (см. doc-комментарий у Restriction).
+ */
+object RestrictionsStore {
+    val list = mutableListOf<Restriction>()
+}

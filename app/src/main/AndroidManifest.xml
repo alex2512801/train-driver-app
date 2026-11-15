@@ -25,6 +25,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- "Ограничения" (ТЗ раздел 11) — отдельный полноэкранный экран, не диалог поверх
+             MainActivity (см. doc-комментарий в RestrictionsActivity.kt). -->
+        <activity
+            android:name=".RestrictionsActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout" />
     </application>
 
 </manifest>
