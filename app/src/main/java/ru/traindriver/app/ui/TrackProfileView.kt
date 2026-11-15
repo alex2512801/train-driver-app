@@ -12,6 +12,7 @@ import android.os.Looper
 import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.cos
 import kotlin.math.floor
@@ -97,6 +98,13 @@ class TrackProfileView @JvmOverloads constructor(
         private const val MIN_SEGMENT_DP_FOR_LABEL = 50f
         private const val PICTOGRAM_MIN_HATCH_WIDTH_DP = 6f
 
+        // Метка места (см. doc-комментарий у headMarkers): исчезает, когда хвост поезда отъедет
+        // от неё на 100 метров — машинист сам продиктовал это расстояние ("проезжает ещё 100
+        // метров, и она исчезает"). Допуск тапа по горизонтали — "около головы", не точно в
+        // пиксель по тонкой линии, иначе попасть пальцем почти невозможно.
+        private const val HEAD_MARKER_CLEAR_M = 100.0
+        private const val HEAD_MARKER_TAP_TOLERANCE_DP = 40f
+
         // Пиктограммы на рельефе — два фиксированных места (см. doc-комментарий класса).
         private const val ICON_HALF_DP = 16f
         private const val ICON_GAP_DP = 6f
@@ -164,6 +172,15 @@ class TrackProfileView @JvmOverloads constructor(
     private var airGaps: List<AirGap> = emptyList()
     private var neutralInserts: List<NeutralInsert> = emptyList()
 
+    // Метки места (машинист, не из ТЗ/макета): тап около головы поезда в верхней зоне (где
+    // сигналы) ставит метку ровно на ТЕКУЩЕМ месте головы — например, прямо на стрелке, когда
+    // поезд её проезжает. Метка остаётся на этом месте пути (не едет с поездом), а исчезает
+    // сама, когда хвост поезда отъедет от неё на [HEAD_MARKER_CLEAR_M] метров — машинист: "вижу,
+    // что хвост выехал, можно увеличить скорость". См. maybeAddHeadMarker/pruneHeadMarkers/
+    // drawHeadMarkers.
+    private data class HeadMarker(val positionM: Double)
+    private val headMarkers = mutableListOf<HeadMarker>()
+
     // Позади головы поезда — 2,5 км (было 3), машинист попросил сдвинуть голову левее по
     // экрану, чтобы было больше видно впереди. ВАЖНО: сэкономленные 500 м добавлены именно
     // ВПЕРЁД (5000→5500), а не просто убраны сзади — иначе общий охват графика (behindM+aheadM)
@@ -180,6 +197,12 @@ class TrackProfileView @JvmOverloads constructor(
     // (recenter()) делает то же самое сразу.
     private var panOffsetM: Double = 0.0
     private var lastTouchX: Float = 0f
+    // Нужны, чтобы отличить настоящий тап (для метки места, см. headMarkers) от протягивания
+    // пальцем — ACTION_UP срабатывает в обоих случаях одинаково, разница только в том, двигался
+    // ли палец между ACTION_DOWN и ACTION_UP больше чем на HEAD_MARKER_TAP_TOLERANCE_DP.
+    private var touchDownX: Float = 0f
+    private var touchDownY: Float = 0f
+    private var touchMoved: Boolean = false
     private val panRevertHandler = Handler(Looper.getMainLooper())
     private val panRevertRunnable = Runnable { recenter() }
     private val panRevertDelayMs = 10_000L
@@ -191,6 +214,8 @@ class TrackProfileView @JvmOverloads constructor(
     private val density: Float = resources.displayMetrics.density
     private fun dp(value: Float): Float = value * density
 
+    private val tapTolerancePx = dp(10f)
+    private val headMarkerTapTolerancePx = dp(HEAD_MARKER_TAP_TOLERANCE_DP)
     private val minSegmentPxForLabel = dp(MIN_SEGMENT_DP_FOR_LABEL)
     private val pictogramMinHatchWidthPx = dp(PICTOGRAM_MIN_HATCH_WIDTH_DP)
     private val iconHalfPx = dp(ICON_HALF_DP)
@@ -226,6 +251,24 @@ class TrackProfileView @JvmOverloads constructor(
     private val trainMarkerPaint = Paint().apply {
         color = Color.rgb(160, 159, 164)
         strokeWidth = dp(2f)
+    }
+    // Метка места (см. doc-комментарий у headMarkers) — красная линия вверх от головы в
+    // момент тапа + значок-"капля" (как в Google Картах) над её верхним концом. Цвет красный
+    // ЗАФИКСИРОВАН (не зависит от applyPalette/день-ночь) — это предупреждающая отметка, она
+    // должна выглядеть одинаково в любом режиме, а не менять цвет вместе с темой.
+    private val headMarkerLinePaint = Paint().apply {
+        color = Color.RED
+        strokeWidth = dp(3f)
+    }
+    private val headMarkerPinPaint = Paint().apply {
+        color = Color.RED
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+    private val headMarkerPinHolePaint = Paint().apply {
+        color = Color.WHITE
+        style = Paint.Style.FILL
+        isAntiAlias = true
     }
     // Серая полоска поезда НА ЛИНИИ СИГНАЛОВ (та же заливка, что у ступеней) + её белая
     // окантовка — ТЗ раздел 7. Не путать с зелёной полосой НА РЕЛЬЕФЕ ниже.
@@ -282,6 +325,21 @@ class TrackProfileView @JvmOverloads constructor(
         textSize = dp(48f)
         typeface = Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.LEFT
+        isAntiAlias = true
+    }
+    // Окошко вокруг Vф — непрозрачный чёрный фон с тонкой белой каёмкой (машинист: "не просто
+    // цифру, а окно... чтобы она не перекрывалась ничем, не было линий"). Рисуется ПОСЛЕДНИМ в
+    // onDraw (см. drawCurrentSpeedLabel), поэтому фон гарантированно перекрывает всё, что
+    // нарисовано под ним (сетку, ступени, сигналы), а не только зрительно совпадает по месту.
+    private val speedWindowBgPaint = Paint().apply {
+        color = Color.BLACK
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+    private val speedWindowBorderPaint = Paint().apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = dp(2f)
         isAntiAlias = true
     }
 
@@ -453,6 +511,8 @@ class TrackProfileView @JvmOverloads constructor(
         stepNumberPaint.color = c(Color.WHITE)
         speedTextPaint.color = c(Color.WHITE)
         actualSpeedTextPaint.color = c(Color.WHITE)
+        speedWindowBgPaint.color = c(Color.BLACK)
+        speedWindowBorderPaint.color = c(Color.WHITE)
         hatchLinePaint.color = c(Color.WHITE)
         hatchBorderPaint.color = c(Color.WHITE)
         restrictionNumberPaint.color = c(Color.WHITE)
@@ -502,7 +562,17 @@ class TrackProfileView @JvmOverloads constructor(
 
     fun setTrainPositionM(meters: Double) {
         trainPositionM = meters
+        pruneExpiredHeadMarkers()
         invalidate()
+    }
+
+    /** Убирает метки, место которых хвост поезда уже проехал на HEAD_MARKER_CLEAR_M и больше
+     *  (см. doc-комментарий у headMarkers). tailM — та же формула, что везде в этом файле
+     *  (drawTrainSignalStripe/drawPerpendiculars): позиция минус длина поезда. */
+    private fun pruneExpiredHeadMarkers() {
+        if (headMarkers.isEmpty()) return
+        val tailM = trainPositionM - trainLengthM
+        headMarkers.removeAll { tailM >= it.positionM + HEAD_MARKER_CLEAR_M }
     }
 
     /** Vф — крупная цифра факт. скорости в углу графика (см. doc-комментарий у [actualSpeedKmh]). */
@@ -526,12 +596,18 @@ class TrackProfileView @JvmOverloads constructor(
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 lastTouchX = event.x
+                touchDownX = event.x
+                touchDownY = event.y
+                touchMoved = false
                 panRevertHandler.removeCallbacks(panRevertRunnable)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
                 val dxPx = event.x - lastTouchX
                 lastTouchX = event.x
+                if (abs(event.x - touchDownX) > tapTolerancePx || abs(event.y - touchDownY) > tapTolerancePx) {
+                    touchMoved = true
+                }
                 // graphWidth — вся ширина канваса, должно совпадать с тем же graphWidth в
                 // onDraw (см. его doc-комментарий) — иначе протягивание пальцем сдвигало бы
                 // график не на то расстояние, которое прошёл палец.
@@ -545,6 +621,7 @@ class TrackProfileView @JvmOverloads constructor(
             }
             MotionEvent.ACTION_UP -> {
                 performClick()
+                if (!touchMoved) maybeAddHeadMarker(touchDownX, touchDownY)
                 panRevertHandler.postDelayed(panRevertRunnable, panRevertDelayMs)
                 return true
             }
@@ -554,6 +631,22 @@ class TrackProfileView @JvmOverloads constructor(
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    /** Тап около головы поезда, в верхней зоне (где сигналы) — ставит метку места на текущем
+     *  месте головы (см. doc-комментарий у headMarkers). Допуск по X — "около", не точно в
+     *  тонкую линию головы; по Y — только верхний ярус (ступени/сигналы), не рельеф снизу. */
+    private fun maybeAddHeadMarker(x: Float, y: Float) {
+        val graphWidth = width.toFloat()
+        if (graphWidth <= 0f) return
+        val stepsH = height * (STEPS_TO_RELIEF_RATIO / (STEPS_TO_RELIEF_RATIO + 1f))
+        if (y > stepsH) return
+        val spanM = behindM + aheadM
+        val fromM = trainPositionM - behindM + panOffsetM
+        val headX = ((trainPositionM - fromM) / spanM * graphWidth).toFloat()
+        if (abs(x - headX) > headMarkerTapTolerancePx) return
+        headMarkers.add(HeadMarker(trainPositionM))
+        invalidate()
     }
 
     override fun performClick(): Boolean {
@@ -658,6 +751,7 @@ class TrackProfileView @JvmOverloads constructor(
 
         drawPerpendiculars(canvas, fromM, toM, ::xFor, stepRegionBottoms, pictograms, headY, tailY)
         drawTrainMarker(canvas, ::xFor)
+        drawHeadMarkers(canvas, ::xFor, lineY)
         drawCurrentSpeedLabel(canvas)
     }
 
@@ -1247,16 +1341,57 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.drawLine(headX, 0f, headX, height.toFloat(), trainMarkerPaint)
     }
 
-    // Vф (факт. скорость, крупно) — над V= (разрешённая скорость на текущем месте), в левом
-    // верхнем углу графика — там, где раньше была шкала-линейка (машинист: "эта линейка нам
-    // зачем, если скорости на графике и так подписаны у каждой ступени" — убрали её, а
-    // освободившееся место отдали самому важному показателю, Vф, по отдельной просьбе).
+    // Метка(и) места (см. doc-комментарий у headMarkers) — рисуются на СВОЕЙ позиции в метрах
+    // (не на текущей голове поезда), поэтому с движением поезда уезжают влево по экрану вместе
+    // со всем остальным графиком через тот же xFor, что и всё прочее.
+    private fun drawHeadMarkers(canvas: Canvas, xFor: (Double) -> Float, lineY: Float) {
+        if (headMarkers.isEmpty()) return
+        val lineTopY = dp(36f)
+        for (marker in headMarkers) {
+            val x = xFor(marker.positionM)
+            canvas.drawLine(x, lineY, x, lineTopY, headMarkerLinePaint)
+            drawHeadMarkerPin(canvas, x, lineTopY)
+        }
+    }
+
+    /** Значок-"капля", как в Google Картах — красная капля с белым кружком внутри, остриём
+     *  вниз, на верхний конец красной линии (см. drawHeadMarkers). */
+    private fun drawHeadMarkerPin(canvas: Canvas, cx: Float, tipY: Float) {
+        val r = dp(9f)
+        val ballCy = tipY - r * 2.1f
+        val tailHalfWidth = r * 0.55f
+        val path = Path()
+        path.moveTo(cx - tailHalfWidth, ballCy + r * 0.8f)
+        path.quadTo(cx, tipY, cx + tailHalfWidth, ballCy + r * 0.8f)
+        path.close()
+        canvas.drawPath(path, headMarkerPinPaint)
+        canvas.drawCircle(cx, ballCy, r, headMarkerPinPaint)
+        canvas.drawCircle(cx, ballCy, r * 0.42f, headMarkerPinHolePaint)
+    }
+
+    // Vф (факт. скорость) — в отдельном окошке (чёрный фон + белая каёмка), в левом верхнем
+    // углу графика — там, где раньше была шкала-линейка (машинист: "эта линейка нам зачем, если
+    // скорости на графике и так подписаны у каждой ступени" — убрали её). Окошко рисуется
+    // ПОСЛЕДНИМ в onDraw, поэтому его непрозрачный фон гарантированно перекрывает всё
+    // нарисованное под ним (машинист: "чтобы не перекрывалась ничем, не было линий"). V=
+    // (разрешённая скорость на текущем месте) — отдельной строкой под окошком, как и раньше.
     private fun drawCurrentSpeedLabel(canvas: Canvas) {
         val activeRestriction = restrictions.firstOrNull { trainPositionM in it.startM..it.endM }
         val speedKmh = activeRestriction?.speedKmh ?: resolver.speedAt(direction, trainPositionM)?.speedKmh
         val limitText = if (speedKmh != null) "V=$speedKmh км/ч" else "V=?"
         val actualText = actualSpeedKmh?.let { "Vф=${it.toInt()}" } ?: "Vф=?"
-        canvas.drawText(actualText, dp(8f), dp(52f), actualSpeedTextPaint)
-        canvas.drawText(limitText, dp(8f), dp(88f), speedTextPaint)
+
+        val paddingH = dp(14f)
+        val paddingV = dp(10f)
+        val metrics = actualSpeedTextPaint.fontMetrics
+        val boxLeft = dp(8f)
+        val boxTop = dp(8f)
+        val boxRight = boxLeft + actualSpeedTextPaint.measureText(actualText) + paddingH * 2
+        val boxBottom = boxTop + (metrics.descent - metrics.ascent) + paddingV * 2
+        canvas.drawRect(boxLeft, boxTop, boxRight, boxBottom, speedWindowBgPaint)
+        canvas.drawRect(boxLeft, boxTop, boxRight, boxBottom, speedWindowBorderPaint)
+        canvas.drawText(actualText, boxLeft + paddingH, boxTop + paddingV - metrics.ascent, actualSpeedTextPaint)
+
+        canvas.drawText(limitText, dp(8f), boxBottom + dp(34f), speedTextPaint)
     }
 }
