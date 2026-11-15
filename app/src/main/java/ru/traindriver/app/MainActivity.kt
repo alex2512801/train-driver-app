@@ -289,6 +289,7 @@ class MainActivity : AppCompatActivity() {
      *  из timeUpdater с позицией от [estimatedChainageM], а не напрямую от GPS. */
     private fun updateTrainPositionDerivedState(chainageM: Double) {
         trackProfileView.setTrainPositionM(chainageM)
+        trackProfileView.setActualSpeedKmh(lastSpeedKmh)
         refreshStatusBar(lastSpeedKmh, chainageM)
         updateDestinationText(chainageM)
 

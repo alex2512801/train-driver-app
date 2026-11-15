@@ -72,7 +72,6 @@ class TrackProfileView @JvmOverloads constructor(
         private const val SAMPLE_STEP_M = 20.0
         private const val KM_LINE_LENGTH_M = 1000.0
         private const val PICKET_LENGTH_M = 100.0
-        private val AXIS_SPEEDS = intArrayOf(100, 80, 60, 40, 20)
 
         // Верх:низ = 7,5:3 = 2,5:1 (машинист продиктовал по измерению на экране: вся высота
         // экрана 15,5 условных единиц — шапка 1,3, график 10,5 (из них скорости+сигналы 7,5 и
@@ -95,7 +94,6 @@ class TrackProfileView @JvmOverloads constructor(
         // на глаз по HTML-макету на экране компьютера — на настоящем телефоне с другой
         // плотностью экрана они оказались почти нечитаемо мелкими (машинист: "там вообще
         // ничего не видно"). Значения увеличены и переведены в dp, чтобы исправить это разом.
-        private const val AXIS_WIDTH_DP = 70f
         private const val MIN_SEGMENT_DP_FOR_LABEL = 50f
         private const val PICTOGRAM_MIN_HATCH_WIDTH_DP = 6f
 
@@ -148,6 +146,12 @@ class TrackProfileView @JvmOverloads constructor(
     private var direction: Direction = Direction.EVEN
     private var rawDirection: Direction = Direction.EVEN
     private var trainPositionM: Double = 0.0
+    // Факт. скорость (Vф, с GPS/одометра) — крупно в левом верхнем углу графика, на месте
+    // бывшей шкалы-линейки (машинист: "эта линейка нам зачем, если скорости на графике и так
+    // подписаны у каждой ступени" — убрали линейку, см. drawCurrentSpeedLabel, и освободившееся
+    // место отдали самому важному показателю, который раньше был только маленьким текстом в
+    // нижней строке статуса).
+    private var actualSpeedKmh: Double? = null
 
     private var restrictions: List<Restriction> = emptyList()
     private var trainLengthM: Double = 0.0
@@ -187,7 +191,6 @@ class TrackProfileView @JvmOverloads constructor(
     private val density: Float = resources.displayMetrics.density
     private fun dp(value: Float): Float = value * density
 
-    private val axisWidthPx = dp(AXIS_WIDTH_DP)
     private val minSegmentPxForLabel = dp(MIN_SEGMENT_DP_FOR_LABEL)
     private val pictogramMinHatchWidthPx = dp(PICTOGRAM_MIN_HATCH_WIDTH_DP)
     private val iconHalfPx = dp(ICON_HALF_DP)
@@ -256,20 +259,6 @@ class TrackProfileView @JvmOverloads constructor(
         textAlign = Paint.Align.CENTER
         isAntiAlias = true
     }
-    // 16dp — машинист попросил: такого же размера, как цифры времени в шапке (раньше 28dp,
-    // "лежали друг на друге").
-    private val axisTextPaint = Paint().apply {
-        color = Color.rgb(178, 178, 178)
-        textSize = dp(16f)
-        textAlign = Paint.Align.LEFT
-        isAntiAlias = true
-    }
-    // Линия+засечки самой шкалы слева (как на линейке) — см. drawSpeedAxis.
-    private val axisLinePaint = Paint().apply {
-        color = Color.rgb(178, 178, 178)
-        strokeWidth = dp(1.5f)
-        isAntiAlias = true
-    }
     // Намного меньше, чем было (54dp→26dp) — машинист попросил, число скорости на ступени
     // занимало слишком много места, но должно оставаться читабельным (в отличие от
     // km/сигнальных подписей, это не упало до размера часов).
@@ -283,6 +272,15 @@ class TrackProfileView @JvmOverloads constructor(
     private val speedTextPaint = Paint().apply {
         color = Color.WHITE
         textSize = dp(34f)
+        textAlign = Paint.Align.LEFT
+        isAntiAlias = true
+    }
+    // Крупнее и жирным — Vф (факт. скорость) машинист попросил сделать самым заметным
+    // показателем на экране ("самый важный... крупными буквами, чтобы я его хорошо видел").
+    private val actualSpeedTextPaint = Paint().apply {
+        color = Color.WHITE
+        textSize = dp(48f)
+        typeface = Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.LEFT
         isAntiAlias = true
     }
@@ -452,9 +450,9 @@ class TrackProfileView @JvmOverloads constructor(
         picketLinePaint.color = c(Color.rgb(178, 178, 178))
         reliefFillPaint.color = c(Color.rgb(178, 178, 178))
         kmTextPaint.color = c(Color.WHITE)
-        axisTextPaint.color = c(Color.rgb(178, 178, 178))
         stepNumberPaint.color = c(Color.WHITE)
         speedTextPaint.color = c(Color.WHITE)
+        actualSpeedTextPaint.color = c(Color.WHITE)
         hatchLinePaint.color = c(Color.WHITE)
         hatchBorderPaint.color = c(Color.WHITE)
         restrictionNumberPaint.color = c(Color.WHITE)
@@ -504,6 +502,12 @@ class TrackProfileView @JvmOverloads constructor(
 
     fun setTrainPositionM(meters: Double) {
         trainPositionM = meters
+        invalidate()
+    }
+
+    /** Vф — крупная цифра факт. скорости в углу графика (см. doc-комментарий у [actualSpeedKmh]). */
+    fun setActualSpeedKmh(speedKmh: Double?) {
+        actualSpeedKmh = speedKmh
         invalidate()
     }
 
@@ -617,11 +621,10 @@ class TrackProfileView @JvmOverloads constructor(
         val toM = trainPositionM + aheadM + panOffsetM
         val spanM = toM - fromM
         // graphLeft=0, graphWidth=вся ширина канваса — машинист поправил: 2,5 км позади головы
-        // должны считаться от САМОГО левого края экрана, а не от правого края отдельной полосы,
-        // отведённой под шкалу скорости (раньше тут было graphLeft=axisWidthPx, и график реально
-        // начинался правее этой полосы). Шкала скорости (drawSpeedAxis) просто рисуется ПОВЕРХ
-        // самого начала графика, а не в отдельной зарезервированной области — ровно так же, как
-        // и остальные подписи на этом графике (километровые числа, таблички сигналов).
+        // должны считаться от САМОГО левого края экрана, а не от правого края отдельной полосы
+        // (раньше под шкалу скорости была зарезервирована отдельная полоса слева, график начинался
+        // правее неё). Шкалу-линейку позже убрали целиком (машинист: скорость уже подписана у
+        // каждой ступени, линейка не нужна) — её место занял крупный Vф, см. drawCurrentSpeedLabel.
         val graphLeft = 0f
         val graphWidth = width.toFloat()
 
@@ -645,7 +648,6 @@ class TrackProfileView @JvmOverloads constructor(
         val segments = computeSegments(fromM, toM)
         val stepRegionBottoms = drawSpeedSteps(canvas, segments, ::xFor, ::yForSpeed)
         drawRestrictionHatching(canvas, fromM, toM, ::xFor, ::yForSpeed)
-        drawSpeedAxis(canvas, ::yForSpeed)
         drawSignalLineTicksAndNumbers(canvas, fromM, toM, ::xFor, lineY)
         drawTrainSignalStripe(canvas, ::xFor, lineY)
         drawNeutralInsertBar(canvas, fromM, toM, ::xFor, lineY)
@@ -780,19 +782,6 @@ class TrackProfileView @JvmOverloads constructor(
             d += dp(12f)
         }
         canvas.restore()
-    }
-
-    // Шкала скорости слева — как на линейке (машинист попросил): сплошная вертикальная линия
-    // от 100 до 0 км/ч, с короткими засечками напротив каждого подписанного деления
-    // (100/80/60/40/20), а не просто плавающие цифры без самой линейки.
-    private fun drawSpeedAxis(canvas: Canvas, yForSpeed: (Int) -> Float) {
-        val lineX = axisWidthPx - dp(8f)
-        canvas.drawLine(lineX, yForSpeed(AXIS_SPEEDS.first()), lineX, yForSpeed(0), axisLinePaint)
-        for (speed in AXIS_SPEEDS) {
-            val y = yForSpeed(speed)
-            canvas.drawLine(lineX - dp(5f), y, lineX, y, axisLinePaint)
-            canvas.drawText(speed.toString(), dp(4f), y + dp(6f), axisTextPaint)
-        }
     }
 
     /** Засечки пикетов/км и номера км — ПРЯМО на линии сигналов (не отдельной полосой-линейкой). */
@@ -1258,10 +1247,16 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.drawLine(headX, 0f, headX, height.toFloat(), trainMarkerPaint)
     }
 
+    // Vф (факт. скорость, крупно) — над V= (разрешённая скорость на текущем месте), в левом
+    // верхнем углу графика — там, где раньше была шкала-линейка (машинист: "эта линейка нам
+    // зачем, если скорости на графике и так подписаны у каждой ступени" — убрали её, а
+    // освободившееся место отдали самому важному показателю, Vф, по отдельной просьбе).
     private fun drawCurrentSpeedLabel(canvas: Canvas) {
         val activeRestriction = restrictions.firstOrNull { trainPositionM in it.startM..it.endM }
         val speedKmh = activeRestriction?.speedKmh ?: resolver.speedAt(direction, trainPositionM)?.speedKmh
-        val text = if (speedKmh != null) "V=$speedKmh км/ч" else "V=?"
-        canvas.drawText(text, axisWidthPx, dp(40f), speedTextPaint)
+        val limitText = if (speedKmh != null) "V=$speedKmh км/ч" else "V=?"
+        val actualText = actualSpeedKmh?.let { "Vф=${it.toInt()}" } ?: "Vф=?"
+        canvas.drawText(actualText, dp(8f), dp(52f), actualSpeedTextPaint)
+        canvas.drawText(limitText, dp(8f), dp(88f), speedTextPaint)
     }
 }
