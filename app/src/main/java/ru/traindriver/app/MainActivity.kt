@@ -543,8 +543,27 @@ class MainActivity : AppCompatActivity() {
     // из timeUpdater (см. refreshSimSignalPolling), а не полагаемся только на событие.
     private val activeSimPolls = mutableListOf<Pair<TelephonyManager, SignalBarsView>>()
 
+    // TelephonyManager.getSignalStrength() (использовался раньше) существует только с
+    // Android 10 (Q) — на телефоне ниже этой версии он просто ничего не делал, столбики
+    // оставались пустыми (машинист снова прислал скриншот с пустыми полосками). Но даже на
+    // Android 10+ этот метод, вызванный у TelephonyManager, привязанного к НЕосновной SIM
+    // (через createForSubscriptionId), на некоторых прошивках ненадёжно возвращает актуальное
+    // значение. getAllCellInfo() — гораздо более старый и универсальный способ (с Android 4.2,
+    // API 17), который явно привязан к конкретной SIM через тот же createForSubscriptionId и
+    // не требует ждать события "сигнал изменился" — читаем СЕЙЧАС, а не ждём колбэк. Берём
+    // первую зарегистрированную вышку, а если такой нет — вообще первую из списка.
     @Suppress("DEPRECATION")
     private fun pollSimSignal(manager: TelephonyManager, barsView: SignalBarsView) {
+        val level = try {
+            val cells = manager.allCellInfo
+            (cells?.firstOrNull { it.isRegistered } ?: cells?.firstOrNull())?.cellSignalStrength?.level
+        } catch (e: SecurityException) {
+            null
+        }
+        if (level != null) {
+            barsView.level = level
+            return
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             manager.signalStrength?.let { barsView.level = it.level }
         }
