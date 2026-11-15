@@ -402,6 +402,9 @@
         android:gravity="center_vertical"
         android:background="#1A1A1A">
 
+        <!-- 14sp вместо 20sp + maxLines=1 — машинист: вся строка (Vф/Уклон/V=/S=/Голова/Хвост)
+             при 20sp не помещалась в ширину и переносилась на вторую строку, а вторая строка
+             обрезалась высотой самой панели — часть данных просто не было видно. -->
         <TextView
             android:id="@+id/statusBarText"
             android:layout_width="0dp"
@@ -410,7 +413,8 @@
             android:paddingStart="8dp"
             android:textColor="#FFFFFF"
             android:textStyle="bold"
-            android:textSize="20sp"
+            android:textSize="14sp"
+            android:maxLines="1"
             android:letterSpacing="0.02"
             android:fontFamily="monospace"
             android:text="Vф=? Уклон=? V=? S=? Голова=? Хвост=?" />

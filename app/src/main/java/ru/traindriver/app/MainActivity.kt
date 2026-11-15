@@ -969,6 +969,8 @@ class MainActivity : AppCompatActivity() {
         val headText = distanceToNextSignalM(chainageM, forward)?.let { "Голова=${it.toInt()}м" } ?: "Голова=—"
         val tailText = distanceToNextSignalM(tailM, forward)?.let { "Хвост=${it.toInt()}м" } ?: "Хвост=—"
 
-        return "$vf   Уклон=—   $nextText   $headText   $tailText"
+        // Одинарные пробелы вместо тройных — на 14sp уже не нужен такой большой зазор между
+        // полями, а место лучше сэкономить, чтобы строка точно уместилась в одну строку.
+        return "$vf  Уклон=—  $nextText  $headText  $tailText"
     }
 }
