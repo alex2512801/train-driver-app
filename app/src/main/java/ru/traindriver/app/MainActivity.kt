@@ -154,9 +154,8 @@ class MainActivity : AppCompatActivity() {
     // "Ограничения" (ТЗ раздел 11) — временные ограничения скорости, введённые машинистом.
     // Живут только в памяти на время сессии (ни ТЗ, ни макет не говорят о сохранении между
     // запусками — см. Restriction.kt). Рисуются на графике (штриховка + пиктограммы, ТЗ
-    // раздел 7/8 — см. TrackProfileView.setRestrictions), но пока не влияют на V= в статусной
-    // строке (speedLimitResolver учитывает только постоянные ограничения) — это отдельный,
-    // ещё не сделанный шаг.
+    // раздел 7/8 — см. TrackProfileView.setRestrictions) и учитываются в V=/S= статусной строки
+    // через RestrictionAwareSpeedResolver (см. refreshStatusBar).
     // Сам список теперь хранится не здесь, а в RestrictionsStore — общий с RestrictionsActivity
     // (отдельный полноэкранный экран ввода ограничений, см. openRestrictionsScreen() ниже).
     private val restrictions: MutableList<Restriction> get() = RestrictionsStore.list
