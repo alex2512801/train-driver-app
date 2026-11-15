@@ -17,6 +17,7 @@ import android.telephony.TelephonyManager
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.AdapterView
 import android.widget.ArrayAdapter
@@ -932,6 +933,12 @@ class MainActivity : AppCompatActivity() {
         dialog.setContentView(view)
         view.findViewById<Button>(R.id.restrictionCloseButton).setOnClickListener { dialog.dismiss() }
         dialog.show()
+        // "Fullscreen" в названии темы убирает только верхнюю системную полоску — окно самого
+        // диалога от этого ещё не становится во весь экран, оно по-прежнему "плавающее" и
+        // подстраивается под содержимое (та же причина, по которой клавиатура в прошлый раз
+        // снова не поместилась целиком). Явно растягиваем окно на весь экран здесь, ПОСЛЕ
+        // show() — до show() Android иногда сбрасывает этот размер обратно.
+        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
     }
 
     private fun hasLocationPermission(): Boolean =
