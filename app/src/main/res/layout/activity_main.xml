@@ -26,8 +26,9 @@
     пустыми рамками без текста) — машинист поправил: забрать примерно половину веса у нижней
     строки и отдать шапке. Сейчас: шапка 32 | график 105 (внутри — то же отношение 7,5:3 =
     STEPS_TO_RELIEF_RATIO в TrackProfileView, не менялось) | нижняя строка 18.
-    directionInfoText (диагностическая строка под шапкой) в это отношение не входит —
-    машинист её не называл, оставлена как было, wrap_content.
+    directionInfoText (диагностическая строка "путь правильный, датасет..." под шапкой) —
+    машинист попросил убрать как лишнюю информацию, удалена целиком (и из разметки, и из
+    MainActivity).
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -38,23 +39,20 @@
     <!-- Вес 32 — машинист поправил продиктованную пропорцию (13:105:37): в шапку с весом 13
          кнопки/иконки/время физически не влезали (показывались пустыми рамками без текста,
          машинист прислал скриншот) — он попросил забрать примерно половину веса у нижней
-         строки (37→18) и отдать шапке (13→32), см. её doc-комментарий ниже. -->
-    <HorizontalScrollView
+         строки (37→18) и отдать шапке (13→32), см. её doc-комментарий ниже. Без
+         HorizontalScrollView (как раньше) — машинист попросил прижать SIM+время к правому
+         краю экрана через гибкий разделитель (см. simHeaderSpacer ниже), а это работает
+         только когда сама строка на всю ширину экрана, не wrap_content внутри скролла. -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="32"
-        android:scrollbars="none"
-        android:overScrollMode="never">
-
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:paddingStart="6dp"
-            android:paddingEnd="6dp"
-            android:paddingTop="3dp"
-            android:paddingBottom="3dp">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingStart="6dp"
+        android:paddingEnd="6dp"
+        android:paddingTop="3dp"
+        android:paddingBottom="3dp">
 
             <!-- 1. Координата км+пк — по тапу переключается в формат КЛУБ-У. -->
             <TextView
@@ -140,6 +138,16 @@
 
             <View style="@style/HeaderDivider" />
 
+            <!-- Гибкий разделитель — прижимает SIM+время (см. ниже) к правому краю экрана
+                 (машинист: "чтобы они были ближе к правой части экрана"). Работает только
+                 потому, что сама строка шапки теперь во всю ширину экрана (см. комментарий
+                 у неё выше), а не wrap_content внутри HorizontalScrollView — иначе у веса
+                 нет "лишнего" места, которое можно забрать. -->
+            <View
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1" />
+
             <!-- 10. Уровень сигнала SIM-карт + тип сети (ТЗ раздел 7, HTML-макет .hdr-sim) —
                  своя замена системной строке состояния, которую мы теперь скрываем (см.
                  MainActivity.hideSystemUi). На месте "Параметры" (машинист попросил: она
@@ -200,13 +208,18 @@
 
             <View style="@style/HeaderDivider" />
 
-            <!-- 11. Время — МСК (всегда) и местное (часовой пояс телефона), друг под другом —
-                 специально в самом конце шапки (машинист попросил перенести его туда). -->
+            <!-- 11. Время — МСК (всегда) и местное (часовой пояс телефона), друг под другом,
+                 специально в самом конце шапки (машинист попросил перенести его туда) —
+                 выровнено по ПРАВОМУ краю (gravity=end), не по левому: машинист поправил —
+                 раньше обе строки начинались с одного места слева ("МСК"/"Мест" — разная
+                 длина слова), из-за чего сами цифры времени не совпадали по вертикали;
+                 gravity=end выравнивает по последним символам (по секундам), так как они
+                 обе заканчиваются в одном и том же месте — у правого края TextView. -->
             <TextView
                 android:id="@+id/timeText"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:paddingStart="6dp"
+                android:gravity="end"
                 android:paddingEnd="6dp"
                 android:textColor="#FFFFFF"
                 android:textStyle="bold"
@@ -216,21 +229,11 @@
 
         </LinearLayout>
 
-    </HorizontalScrollView>
-
-    <!-- Диагностическая строка (путь правильный/неправильный, какой датасет и т.д.) — не из
-         макета, служебная, оставлена маленькой. -->
-    <TextView
-        android:id="@+id/directionInfoText"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:paddingStart="8dp"
-        android:textColor="#AAAAAA"
-        android:textSize="15sp" />
-
     <!-- Вес 105 (= 75 скорости+сигналы + 30 рельеф — см. doc-комментарий класса) — сам график
          внутри делит эту высоту в том же отношении 7,5:3 через STEPS_TO_RELIEF_RATIO
-         (TrackProfileView). -->
+         (TrackProfileView). Раньше под шапкой была ещё diagnostic-строка directionInfoText
+         ("путь правильный, датасет...") — машинист попросил убрать как лишнюю информацию;
+         освободившееся место ушло графику (он и так самый большой вес, 105 из 155). -->
     <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"

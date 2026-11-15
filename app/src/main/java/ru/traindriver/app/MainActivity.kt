@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.location.Location
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -47,7 +48,6 @@ import ru.traindriver.app.route.Direction
 import ru.traindriver.app.route.DirectionSelection
 import ru.traindriver.app.route.LocomotiveTable
 import ru.traindriver.app.route.NeutralInsertAssetLoader
-import ru.traindriver.app.route.PathStatus
 import ru.traindriver.app.route.PointAnnouncementScheduler
 import ru.traindriver.app.route.ReliefAssetLoader
 import ru.traindriver.app.route.Restriction
@@ -78,7 +78,6 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var coordinateText: TextView
     private lateinit var destinationText: TextView
-    private lateinit var directionInfoText: TextView
     private lateinit var timeText: TextView
     private lateinit var statusBarText: TextView
     private lateinit var directionButton: Button
@@ -257,7 +256,6 @@ class MainActivity : AppCompatActivity() {
 
         coordinateText = findViewById(R.id.coordinateText)
         destinationText = findViewById(R.id.destinationText)
-        directionInfoText = findViewById(R.id.directionInfoText)
         timeText = findViewById(R.id.timeText)
         statusBarText = findViewById(R.id.statusBarText)
         directionButton = findViewById(R.id.directionButton)
@@ -419,6 +417,14 @@ class MainActivity : AppCompatActivity() {
         manager.listen(listener, PhoneStateListener.LISTEN_SIGNAL_STRENGTHS)
         activeSimListeners.add(manager to listener)
         textView.text = networkTypeLabel(manager.networkType)
+
+        // onSignalStrengthsChanged выше срабатывает только на ИЗМЕНЕНИЕ сигнала — если он не
+        // меняется, пока приложение открыто, столбики так и остаются на нуле (машинист: "у
+        // обоих есть связь, но не показана ни одна полоска"). Поэтому сразу после подписки
+        // читаем ТЕКУЩЕЕ значение напрямую, не дожидаясь события.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            manager.signalStrength?.let { barsView.level = it.level }
+        }
     }
 
     private fun networkTypeLabel(networkType: Int): String = when (networkType) {
@@ -505,12 +511,6 @@ class MainActivity : AppCompatActivity() {
         directionButton.text = if (s.direction == Direction.EVEN) "Чётное" else "Нечётное"
         pathButton.text = "Путь ${s.physicalPath}"
         updateDestinationText(lastChainageM)
-
-        val statusText = if (s.pathStatus == PathStatus.CORRECT) "правильный" else "неправильный"
-        val datasetText = if (s.effectiveDataset == Direction.EVEN) "чётный" else "нечётный"
-        val picketsText = if (s.picketsGrowing) "растут" else "убывают"
-        directionInfoText.text =
-            "Путь $statusText, датасет: $datasetText, пикеты $picketsText"
 
         trackProfileView.setDirection(s.effectiveDataset)
         // Нейтральная вставка — по направлению движения как есть, без поправки на

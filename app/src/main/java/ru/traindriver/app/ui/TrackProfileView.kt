@@ -196,10 +196,13 @@ class TrackProfileView @JvmOverloads constructor(
         color = Color.rgb(178, 178, 178)
         style = Paint.Style.FILL
     }
-    // Вертикальная позиционная линия (голова поезда) — на всю высоту графика.
+    // Вертикальная позиционная линия (голова поезда) — на всю высоту графика. Раньше была
+    // зелёной и толстой — машинист поправил: голова и хвост поезда (см. thickPerpendicularPaint
+    // ниже) должны выглядеть ОДИНАКОВО (обе серые, тонкие), а зелёный цвет — только у полосы
+    // поезда НА РЕЛЬЕФЕ (trainReliefGreenPaint), чтобы не путать два разных элемента.
     private val trainMarkerPaint = Paint().apply {
-        color = Color.rgb(44, 255, 39)
-        strokeWidth = dp(6f)
+        color = Color.rgb(160, 159, 164)
+        strokeWidth = dp(2f)
     }
     // Серая полоска поезда НА ЛИНИИ СИГНАЛОВ (та же заливка, что у ступеней) + её белая
     // окантовка — ТЗ раздел 7. Не путать с зелёной полосой НА РЕЛЬЕФЕ ниже.
@@ -349,7 +352,7 @@ class TrackProfileView @JvmOverloads constructor(
     }
     private val thickPerpendicularPaint = Paint().apply {
         color = Color.rgb(160, 159, 164)
-        strokeWidth = dp(3f)
+        strokeWidth = dp(2f)
     }
 
     // Пиктограмма "опасное место" (ТЗ раздел 8) — см. drawOpasnoeGlyph.
@@ -428,9 +431,13 @@ class TrackProfileView @JvmOverloads constructor(
         stationInnerRingLightPaint.color = c(Color.WHITE)
         thinPerpendicularPaint.color = if (isDayMode) Color.argb(128, 55, 55, 55) else Color.argb(128, 200, 200, 200)
         thickPerpendicularPaint.color = c(Color.rgb(160, 159, 164))
-        // trainMarkerPaint/trainSignalStripePaint/trainReliefGreenPaint/trainReliefOutlinePaint,
-        // все opasnoe*/shield*/airGap*/neutralGlyph*, и signalTagBg/Border/Text — сознательно
-        // НЕ входят сюда, см. комментарий у isDayMode выше.
+        trainMarkerPaint.color = c(Color.rgb(160, 159, 164))
+        // trainSignalStripePaint/trainReliefGreenPaint/trainReliefOutlinePaint, все
+        // opasnoe*/shield*/airGap*/neutralGlyph*, и signalTagBg/Border/Text — сознательно НЕ
+        // входят сюда, см. комментарий у isDayMode выше. trainMarkerPaint раньше тоже не
+        // входил (был зелёным, фиксированным цветом) — после того как машинист попросил
+        // сделать его обычным серым (как thickPerpendicularPaint), стал обычным цветом
+        // интерфейса и тоже инвертируется днём/ночью.
     }
 
     fun setDayMode(day: Boolean) {
