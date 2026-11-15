@@ -303,41 +303,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Секундомер по тапу на время (не из ТЗ/макета — отдельная просьба машиниста): тап на
-    // timeText открывает окошко со счётчиком и кнопкой "Сброс" под ним, повторный тап —
-    // скрывает окошко, но счётчик продолжает идти в фоне (как настоящий секундомер, не
-    // сбрасывается при скрытии — сбрасывает только сама кнопка "Сброс").
-    //
-    // stopwatchStartMs хранится не просто в переменной, а в SharedPreferences (machinist:
-    // "закрываю его... открываю, время не продолжает идти, идёт с нуля"). Причина: MainActivity
-    // может быть пересоздана системой между закрытием и открытием окошка секундомера (Android
-    // убивает активность в фоне, когда не хватает памяти, даже без явного выхода из приложения,
-    // и создаёт её заново при возврате) — обычная переменная в этом случае просто обнуляется, а
-    // счётчик начинает заново. Через SharedPreferences значение переживает и такое пересоздание,
-    // и полный перезапуск приложения — ведёт себя как настоящий секундомер, а не как часть экрана.
-    private val stopwatchPrefs by lazy { getSharedPreferences("stopwatch_prefs", MODE_PRIVATE) }
-    private var stopwatchStartMsCache: Long? = null
-    private var stopwatchStartMs: Long?
-        get() {
-            if (stopwatchStartMsCache == null) {
-                val saved = stopwatchPrefs.getLong("start_ms", -1L)
-                stopwatchStartMsCache = if (saved >= 0) saved else null
-            }
-            return stopwatchStartMsCache
-        }
-        set(value) {
-            stopwatchStartMsCache = value
-            stopwatchPrefs.edit().putLong("start_ms", value ?: -1L).apply()
-        }
+    // timeText открывает окошко со счётчиком и кнопкой "Сброс" под ним. Счётчик нигде не
+    // хранится между открытиями: каждое открытие окошка — это новый отсчёт с нуля, и закрытие
+    // окошка (повторный тап) тоже сбрасывает его — кнопка "Сброс" просто делает то же самое,
+    // не закрывая окошко.
     private var stopwatchVisible = false
+    private var stopwatchStartMs: Long? = null
     private lateinit var stopwatchWindow: View
     private lateinit var stopwatchText: TextView
     private lateinit var stopwatchResetButton: Button
 
     private fun toggleStopwatch() {
         stopwatchVisible = !stopwatchVisible
-        if (stopwatchVisible && stopwatchStartMs == null) {
-            stopwatchStartMs = System.currentTimeMillis()
-        }
+        stopwatchStartMs = if (stopwatchVisible) System.currentTimeMillis() else null
         refreshStopwatch()
     }
 
