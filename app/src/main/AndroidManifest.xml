@@ -33,6 +33,14 @@
             android:exported="false"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout" />
+
+        <!-- "Параметры" (ТЗ раздел 5/12.2) — та же причина, что и у "Ограничений" (см.
+             doc-комментарий в TrainParamsActivity.kt). -->
+        <activity
+            android:name=".TrainParamsActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout" />
     </application>
 
 </manifest>

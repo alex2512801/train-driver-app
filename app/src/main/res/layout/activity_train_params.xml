@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    "Параметры" (ТЗ раздел 5 / раздел 12.2) — отдельный полноэкранный экран (TrainParamsActivity),
+    не диалог поверх главного — та же причина и то же решение, что и у "Ограничений"
+    (см. RestrictionsActivity.kt/activity_restrictions.xml): диалог с системной клавиатурой на
+    невысоком альбомном экране не удавалось сделать надёжно удобным, машинист сам сравнил эту
+    форму с той старой "длинные поля" проблемой у "Ограничений" и попросил сделать так же.
+
+    Машинист сильно сократил список полей:
+      - Номер локомотива убран совсем — не нужен (хватает серии).
+      - Вес/длина локомотива, тара/вагон, полная длина состава — не вводятся машинистом, а
+        считаются сами (см. TrainParamsActivity) — показаны серым обычным текстом, БЕЗ рамки
+        (машинист: "чтобы было видно, что их не выбираешь") — в отличие от полей, которые
+        реально вводятся (белый текст в рамке, как в "Ограничениях").
+      - Вводятся только: Брутто (до 5 цифр), Нетто (до 5 цифр), Кол-во вагонов (до 3 цифр),
+        Условная длина состава (до 3 цифр) — машинист сам продиктовал эти ограничения.
+
+    Серия локомотива — выбирается обычным выпадающим списком (Spinner), не цифровой
+    клавиатурой — машинист сам разделил: "выбираем серия локомотива, он сам, список выпадает" —
+    это не ввод цифр, трогать его не нужно.
+
+    Слева — поля (подписаны явно, машинист: "непонятно, что я туда ввожу"), справа — клавиатура
+    на всю высоту (та же причина, что и в "Ограничениях" — так клавиатура никогда не окажется
+    обрезанной, её высота не зависит от того, сколько места заняли поля слева). Клавиатура —
+    тот же телефонный номеронабор 1-2-3/4-5-6/7-8-9, но вместо ←/→ (которые в "Ограничениях"
+    переключали поле влево/вправо, т.к. поля там стояли в ряд) здесь ↑/↓ — машинист: "слева
+    была стрелка вверх, а справа стрелка вниз" — поля здесь стоят друг под другом, а не в ряд.
+    Внизу — Стереть и Сохранить пополам делят последнюю строку (как Стереть/Добавить у
+    "Ограничений").
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#000000">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#333333"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:text="Параметры"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:padding="16dp">
+
+        <!-- Левая колонка: поля, друг под другом, компактно — без ScrollView (см. история
+             "Ограничений": прокрутка на невысоком альбомном экране ненадёжна, лучше не
+             полагаться на неё вовсе, если можно уместить без неё). -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="2"
+            android:orientation="vertical"
+            android:paddingEnd="14dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ЛОКОМОТИВ"
+                android:textColor="#5AAADC"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="70dp"
+                    android:layout_height="wrap_content"
+                    android:text="Серия:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+
+                <Spinner
+                    android:id="@+id/locoSeriesSpinner"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1" />
+
+            </LinearLayout>
+
+            <!-- Авто-значения — серым, БЕЗ рамки (машинист: чтобы было видно, что их не
+                 выбираешь, в отличие от настоящих полей ввода ниже). -->
+            <TextView
+                android:id="@+id/weightAutoText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Вес (авто): — т"
+                android:textColor="#888888"
+                android:textSize="13sp"
+                android:fontFamily="monospace" />
+
+            <TextView
+                android:id="@+id/lengthAutoText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="Длина (авто): — м"
+                android:textColor="#888888"
+                android:textSize="13sp"
+                android:fontFamily="monospace" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="6dp"
+                android:background="#222222" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ВАГОНЫ"
+                android:textColor="#5AAADC"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="110dp"
+                    android:layout_height="wrap_content"
+                    android:text="Брутто, т:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/bruttoInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="64dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="5" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="110dp"
+                    android:layout_height="wrap_content"
+                    android:text="Нетто, т:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/nettoInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="64dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="5" />
+
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="110dp"
+                    android:layout_height="wrap_content"
+                    android:text="Кол-во вагонов:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/wagonCountInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="48dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="3" />
+
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tareAutoText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Тара/вагон (авто): — т"
+                android:textColor="#888888"
+                android:textSize="13sp"
+                android:fontFamily="monospace" />
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="6dp"
+                android:background="#222222" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ДЛИНА СОСТАВА"
+                android:textColor="#5AAADC"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="110dp"
+                    android:layout_height="wrap_content"
+                    android:text="Усл. длина:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+
+                <EditText
+                    android:id="@+id/condLengthInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="48dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="3" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="усл. ваг."
+                    android:textColor="#888888"
+                    android:textSize="12sp" />
+
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/composedLengthAutoText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Полная длина (авто): — м"
+                android:textColor="#888888"
+                android:textSize="13sp"
+                android:fontFamily="monospace" />
+
+        </LinearLayout>
+
+        <!-- Правая колонка: ТОЛЬКО клавиатура, на всю высоту (см. doc-комментарий класса выше —
+             та же логика, что в "Ограничениях": её размер не зависит от того, сколько места
+             заняли поля слева). -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/tpKey1" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="1" />
+                <Button android:id="@+id/tpKey2" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="2" />
+                <Button android:id="@+id/tpKey3" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="3" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/tpKey4" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="4" />
+                <Button android:id="@+id/tpKey5" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="5" />
+                <Button android:id="@+id/tpKey6" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="6" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/tpKey7" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="7" />
+                <Button android:id="@+id/tpKey8" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="8" />
+                <Button android:id="@+id/tpKey9" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="9" />
+            </LinearLayout>
+
+            <!-- ↑/↓ вместо ←/→ (машинист: поля здесь стоят друг под другом, а не в ряд). -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/tpKeyUp" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="↑" />
+                <Button android:id="@+id/tpKey0" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="0" />
+                <Button android:id="@+id/tpKeyDown" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="↓" />
+            </LinearLayout>
+
+            <!-- Стереть и Сохранить пополам делят последнюю строку (как Стереть/Добавить у
+                 "Ограничений"). "Сохранить" — обычный стиль кнопки, чтобы выделяться. -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:layout_marginTop="3dp"
+                android:orientation="horizontal">
+                <Button
+                    android:id="@+id/tpBackspaceButton"
+                    style="@style/RestrictionKeypadButton"
+                    android:layout_height="match_parent"
+                    android:text="Стереть" />
+                <Button
+                    android:id="@+id/tpSaveButton"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_margin="3dp"
+                    android:text="Сохранить" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#333333"
+        android:gravity="end"
+        android:padding="12dp">
+
+        <Button
+            android:id="@+id/tpCloseButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:textColor="#B39DDB"
+            android:textStyle="bold"
+            android:text="ЗАКРЫТЬ" />
+
+    </LinearLayout>
+
+</LinearLayout>

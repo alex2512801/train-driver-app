@@ -15,19 +15,12 @@ import android.telephony.SignalStrength
 import android.telephony.SubscriptionManager
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
-import android.text.Editable
-import android.text.TextWatcher
 import android.view.View
-import android.widget.AdapterView
-import android.widget.ArrayAdapter
 import android.widget.Button
-import android.widget.EditText
 import android.widget.LinearLayout
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import java.text.SimpleDateFormat
@@ -48,7 +41,6 @@ import ru.traindriver.app.route.ChainageFormatter
 import ru.traindriver.app.route.CrossingAssetLoader
 import ru.traindriver.app.route.Direction
 import ru.traindriver.app.route.DirectionSelection
-import ru.traindriver.app.route.LocomotiveTable
 import ru.traindriver.app.route.NeutralInsertAssetLoader
 import ru.traindriver.app.route.PointAnnouncementScheduler
 import ru.traindriver.app.route.ReliefAssetLoader
@@ -64,7 +56,6 @@ import ru.traindriver.app.route.SpeedLimitResolver
 import ru.traindriver.app.route.StationAnnouncement
 import ru.traindriver.app.route.StationAnnouncementAssetLoader
 import ru.traindriver.app.route.StationAssetLoader
-import ru.traindriver.app.route.TrainComposition
 import ru.traindriver.app.route.TrainParams
 import ru.traindriver.app.route.TrainParamsStore
 import ru.traindriver.app.route.nearestStationName
@@ -219,10 +210,11 @@ class MainActivity : AppCompatActivity() {
     private var stationScheduler =
         PointAnnouncementScheduler<StationAnnouncement>(emptyList(), { it.chainageM }, thresholdOf = { it.thresholdM })
 
-    // "Параметры" (ТЗ раздел 5 / раздел 12.2) — пока диалог поверх главного экрана (кнопка
-    // paramsButton, см. showTrainParamsDialog), не отдельный подэкран меню, самого меню в
-    // реальном приложении ещё нет. Значения сохраняются между запусками (TrainParamsStore) —
-    // до первого сохранения используются те же дефолты, что и в HTML-макете.
+    // "Параметры" (ТЗ раздел 5 / раздел 12.2) — отдельный полноэкранный экран
+    // (TrainParamsActivity, кнопка paramsButton запускает его через Intent), не отдельный
+    // подэкран меню, самого меню в реальном приложении ещё нет. Значения сохраняются между
+    // запусками (TrainParamsStore) — до первого сохранения используются те же дефолты, что и
+    // в HTML-макете.
     private val trainParamsStore by lazy { TrainParamsStore(this) }
     private var trainParams: TrainParams = TrainParamsStore.DEFAULT
 
@@ -453,7 +445,7 @@ class MainActivity : AppCompatActivity() {
         k1Button.setOnClickListener {
             Toast.makeText(this, "К1: логика переключения путей ещё не готова", Toast.LENGTH_SHORT).show()
         }
-        paramsButton.setOnClickListener { showTrainParamsDialog() }
+        paramsButton.setOnClickListener { startActivity(Intent(this, TrainParamsActivity::class.java)) }
         recenterButton.setOnClickListener { trackProfileView.recenter() }
         restrictionsButton.setOnClickListener { openRestrictionsScreen() }
         dayNightButton.setOnClickListener {
@@ -484,11 +476,14 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Список ограничений теперь вводится на отдельном экране (RestrictionsActivity) — после
-    // возврата оттуда (кнопкой "Закрыть" или системной "Назад") нужно заново отрисовать график
-    // с учётом того, что машинист там добавил/удалил.
+    // Список ограничений и параметры состава теперь вводятся на отдельных экранах
+    // (RestrictionsActivity/TrainParamsActivity) — после возврата оттуда нужно заново
+    // перечитать параметры из хранилища (TrainParamsActivity сохраняет их напрямую, эта копия
+    // в памяти о том не узнает сама) и отрисовать график с учётом изменений.
     override fun onResume() {
         super.onResume()
+        trainParams = trainParamsStore.load()
+        trackProfileView.setTrainLengthM(trainParams.composition.lengthM)
         refreshTrackProfileRestrictions()
     }
 
@@ -775,97 +770,6 @@ class MainActivity : AppCompatActivity() {
             else -> next
         }
     }
-
-    // "Параметры" (ТЗ раздел 5): серия локомотива -> вес/длина автоматически по таблице
-    // (LocomotiveTable), брутто/нетто/кол-во вагонов -> тара на вагон автоматически, условная
-    // длина состава (усл. ваг.) -> полная физическая длина автоматически (см. TrainComposition:
-    // усл. ваг. × 14 м + длина локомотива). Все "авто" поля пересчитываются на лету при вводе.
-    private fun showTrainParamsDialog() {
-        val view = layoutInflater.inflate(R.layout.dialog_train_params, null)
-        val seriesSpinner = view.findViewById<Spinner>(R.id.locoSeriesSpinner)
-        val numberInput = view.findViewById<EditText>(R.id.locoNumberInput)
-        val weightText = view.findViewById<TextView>(R.id.locoWeightText)
-        val lengthText = view.findViewById<TextView>(R.id.locoLengthText)
-        val bruttoInput = view.findViewById<EditText>(R.id.wagonBruttoInput)
-        val nettoInput = view.findViewById<EditText>(R.id.wagonNettoInput)
-        val countInput = view.findViewById<EditText>(R.id.wagonCountInput)
-        val tareText = view.findViewById<TextView>(R.id.wagonTareText)
-        val condLengthInput = view.findViewById<EditText>(R.id.condLengthInput)
-        val composedLengthText = view.findViewById<TextView>(R.id.composedLengthText)
-
-        val seriesNames = LocomotiveTable.SERIES.keys.toList()
-        seriesSpinner.adapter =
-            ArrayAdapter(this, android.R.layout.simple_spinner_dropdown_item, seriesNames)
-
-        val current = trainParams
-        seriesSpinner.setSelection(seriesNames.indexOf(current.locomotiveSeries).coerceAtLeast(0))
-        numberInput.setText(current.locoNumber)
-        bruttoInput.setText(formatNumber(current.bruttoT))
-        nettoInput.setText(formatNumber(current.nettoT))
-        countInput.setText(current.wagonCount.toString())
-        condLengthInput.setText(formatNumber(current.conditionalLengthUslVag))
-
-        fun refreshAuto() {
-            val series = seriesNames.getOrNull(seriesSpinner.selectedItemPosition) ?: current.locomotiveSeries
-            val spec = LocomotiveTable.SERIES.getValue(series)
-            weightText.text = "Вес (авто): ${formatNumber(spec.weightT)} т"
-            lengthText.text = "Длина (авто): ${formatNumber(spec.lengthM)} м"
-
-            val brutto = bruttoInput.text.toString().toDoubleOrNull() ?: 0.0
-            val netto = nettoInput.text.toString().toDoubleOrNull() ?: 0.0
-            val count = countInput.text.toString().toIntOrNull() ?: 0
-            tareText.text = if (count > 0) {
-                "Тара/вагон (авто): ${"%.1f".format((brutto - netto) / count)} т"
-            } else {
-                "Тара/вагон (авто): —"
-            }
-
-            val condLength = condLengthInput.text.toString().toDoubleOrNull() ?: 0.0
-            val totalLength = condLength * TrainComposition.CONDITIONAL_WAGON_LENGTH_M + spec.lengthM
-            composedLengthText.text = "Полная длина (авто): ${"%.1f".format(totalLength)} м"
-        }
-
-        val watcher = object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) = refreshAuto()
-        }
-        bruttoInput.addTextChangedListener(watcher)
-        nettoInput.addTextChangedListener(watcher)
-        countInput.addTextChangedListener(watcher)
-        condLengthInput.addTextChangedListener(watcher)
-        seriesSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) =
-                refreshAuto()
-            override fun onNothingSelected(parent: AdapterView<*>?) {}
-        }
-        refreshAuto()
-
-        AlertDialog.Builder(this)
-            .setTitle("Параметры")
-            .setView(view)
-            .setPositiveButton("Сохранить") { _, _ ->
-                val newParams = TrainParams(
-                    locomotiveSeries = seriesNames.getOrNull(seriesSpinner.selectedItemPosition)
-                        ?: current.locomotiveSeries,
-                    locoNumber = numberInput.text.toString(),
-                    bruttoT = bruttoInput.text.toString().toDoubleOrNull() ?: current.bruttoT,
-                    nettoT = nettoInput.text.toString().toDoubleOrNull() ?: current.nettoT,
-                    wagonCount = countInput.text.toString().toIntOrNull() ?: current.wagonCount,
-                    conditionalLengthUslVag = (condLengthInput.text.toString().toDoubleOrNull()
-                        ?: current.conditionalLengthUslVag).coerceAtLeast(0.0)
-                )
-                trainParams = newParams
-                trainParamsStore.save(newParams)
-                trackProfileView.setTrainLengthM(newParams.composition.lengthM)
-            }
-            .setNegativeButton("Отмена", null)
-            .show()
-    }
-
-    /** "4200" вместо "4200.0" для целых значений — как в HTML-макете. */
-    private fun formatNumber(value: Double): String =
-        if (value == value.toLong().toDouble()) value.toLong().toString() else value.toString()
 
     // "Ограничения" (ТЗ раздел 11) — отдельный полноэкранный экран (RestrictionsActivity), а не
     // диалог поверх главного: ни AlertDialog, ни полноэкранный Dialog не удалось сделать
