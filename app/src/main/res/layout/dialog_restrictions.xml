@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     "Ограничения" (ТЗ раздел 11, машинист называет их "предупреждения") — диалог поверх
-    главного экрана, тем же способом, что и "Параметры" (dialog_train_params.xml): полей
-    поменьше, но такая же обычная числовая клавиатура телефона вместо самодельной цифровой
-    накладки из ТЗ-макета (см. README) — сознательное упрощение, тот же уровень сложности,
-    что и у остальных диалогов реального экрана.
+    главного экрана. Раньше поля открывали обычную системную клавиатуру телефона — машинист
+    пожаловался на два момента: (1) системная кнопка "Далее" перескакивала с "км" сразу на
+    следующее "км" вместо "пк" (так работает системный поиск следующего поля — он смотрит на
+    расположение на экране, а не на порядок полей, с которым это не совпадает), и (2) сама
+    клавиатура занимала весь экран, не видно было, что вводишь. Поэтому поля теперь НЕ
+    открывают системную клавиатуру (showSoftInputOnFocus=false) — ввод идёт через свою
+    маленькую цифровую клавиатуру ниже (restrictionKeypad, тот же набор кнопок, что был в
+    HTML-макете, .limits-keypad), а ← → явно и однозначно переключают активное поле (оно
+    подсвечивается синим, см. MainActivity.refreshRestrictionFieldBackgrounds) — порядок
+    заранее известный и правильный, гадать не на что.
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -37,6 +43,7 @@
                 android:layout_weight="2"
                 android:hint="км"
                 android:inputType="number"
+                android:showSoftInputOnFocus="false"
                 android:maxLength="4"
                 android:textColor="#FFFFFF"
                 android:textColorHint="#777777" />
@@ -49,6 +56,7 @@
                 android:layout_marginStart="8dp"
                 android:hint="пк"
                 android:inputType="number"
+                android:showSoftInputOnFocus="false"
                 android:maxLength="2"
                 android:textColor="#FFFFFF"
                 android:textColorHint="#777777" />
@@ -76,6 +84,7 @@
                 android:layout_weight="2"
                 android:hint="км"
                 android:inputType="number"
+                android:showSoftInputOnFocus="false"
                 android:maxLength="4"
                 android:textColor="#FFFFFF"
                 android:textColorHint="#777777" />
@@ -88,6 +97,7 @@
                 android:layout_marginStart="8dp"
                 android:hint="пк"
                 android:inputType="number"
+                android:showSoftInputOnFocus="false"
                 android:maxLength="2"
                 android:textColor="#FFFFFF"
                 android:textColorHint="#777777" />
@@ -113,6 +123,7 @@
                 android:layout_weight="1"
                 android:hint="Скорость, км/ч"
                 android:inputType="number"
+                android:showSoftInputOnFocus="false"
                 android:maxLength="3"
                 android:textColor="#FFFFFF"
                 android:textColorHint="#777777" />
@@ -125,9 +136,67 @@
                 android:layout_marginStart="8dp"
                 android:hint="Путь (пусто = текущий)"
                 android:inputType="number"
+                android:showSoftInputOnFocus="false"
                 android:maxLength="1"
                 android:textColor="#FFFFFF"
                 android:textColorHint="#777777" />
+
+        </LinearLayout>
+
+        <!-- Своя маленькая цифровая клавиатура (см. doc-комментарий класса выше) — пишет в
+             то поле, которое сейчас активно (подсвечено синим); ← → переключают активное поле
+             строго в правильном порядке: км→пк→км→пк→скорость→путь. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button android:id="@+id/restrictionKey1" style="@style/RestrictionKeypadButton" android:text="1" />
+                <Button android:id="@+id/restrictionKey2" style="@style/RestrictionKeypadButton" android:text="2" />
+                <Button android:id="@+id/restrictionKey3" style="@style/RestrictionKeypadButton" android:text="3" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button android:id="@+id/restrictionKey4" style="@style/RestrictionKeypadButton" android:text="4" />
+                <Button android:id="@+id/restrictionKey5" style="@style/RestrictionKeypadButton" android:text="5" />
+                <Button android:id="@+id/restrictionKey6" style="@style/RestrictionKeypadButton" android:text="6" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button android:id="@+id/restrictionKey7" style="@style/RestrictionKeypadButton" android:text="7" />
+                <Button android:id="@+id/restrictionKey8" style="@style/RestrictionKeypadButton" android:text="8" />
+                <Button android:id="@+id/restrictionKey9" style="@style/RestrictionKeypadButton" android:text="9" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+                <Button android:id="@+id/restrictionKeyPrev" style="@style/RestrictionKeypadButton" android:text="←" />
+                <Button android:id="@+id/restrictionKey0" style="@style/RestrictionKeypadButton" android:text="0" />
+                <Button android:id="@+id/restrictionKeyNext" style="@style/RestrictionKeypadButton" android:text="→" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/restrictionBackspaceButton"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_margin="3dp"
+                android:minHeight="46dp"
+                android:background="@drawable/bg_header_toggle"
+                android:textColor="#FFFFFF"
+                android:text="⌫ Стереть" />
 
         </LinearLayout>
 

@@ -797,6 +797,66 @@ class MainActivity : AppCompatActivity() {
             RestrictionField.PATH to pathInput
         )
 
+        // Своя маленькая клавиатура вместо системной (машинист: системная занимала весь экран
+        // и не видно было, что вводишь) — ← → переключают "активное" поле строго по порядку
+        // км→пк→км→пк→скорость→путь, а не как получится у системного "Далее" (оно искало
+        // следующее поле по расположению на экране, а не по порядку — из-за этого с "км"
+        // попадало сразу на следующее "км", а не на "пк", см. doc-комментарий в
+        // dialog_restrictions.xml). orderedInputs/fieldOrder — один и тот же порядок, по
+        // индексу.
+        val orderedInputs = listOf(startKmInput, startPkInput, endKmInput, endPkInput, speedInput, pathInput)
+        val fieldOrder = listOf(
+            RestrictionField.START_KM, RestrictionField.START_PK,
+            RestrictionField.END_KM, RestrictionField.END_PK,
+            RestrictionField.SPEED, RestrictionField.PATH
+        )
+        var activeIndex = 0
+        var currentErrorFields: Set<RestrictionField> = emptySet()
+
+        fun refreshFieldBackgrounds() {
+            for ((i, field) in fieldOrder.withIndex()) {
+                orderedInputs[i].setBackgroundColor(
+                    when {
+                        field in currentErrorFields -> 0x33E05A5A
+                        i == activeIndex -> 0x405AAADC
+                        else -> 0x00000000
+                    }
+                )
+            }
+        }
+
+        fun setActive(index: Int) {
+            activeIndex = index.coerceIn(0, orderedInputs.lastIndex)
+            val input = orderedInputs[activeIndex]
+            input.requestFocus()
+            input.setSelection(input.text.length)
+            refreshFieldBackgrounds()
+        }
+
+        orderedInputs.forEachIndexed { index, input ->
+            input.setOnClickListener { setActive(index) }
+        }
+
+        fun appendToActive(digit: String) {
+            orderedInputs[activeIndex].text.append(digit)
+        }
+
+        val digitButtonIds = listOf(
+            R.id.restrictionKey0, R.id.restrictionKey1, R.id.restrictionKey2, R.id.restrictionKey3,
+            R.id.restrictionKey4, R.id.restrictionKey5, R.id.restrictionKey6, R.id.restrictionKey7,
+            R.id.restrictionKey8, R.id.restrictionKey9
+        )
+        digitButtonIds.forEachIndexed { digit, id ->
+            view.findViewById<Button>(id).setOnClickListener { appendToActive(digit.toString()) }
+        }
+        view.findViewById<Button>(R.id.restrictionKeyPrev).setOnClickListener { setActive(activeIndex - 1) }
+        view.findViewById<Button>(R.id.restrictionKeyNext).setOnClickListener { setActive(activeIndex + 1) }
+        view.findViewById<Button>(R.id.restrictionBackspaceButton).setOnClickListener {
+            val input = orderedInputs[activeIndex]
+            val len = input.text.length
+            if (len > 0) input.text.delete(len - 1, len)
+        }
+
         addButton.setOnClickListener {
             val fields = RestrictionFormFields(
                 startKm = startKmInput.text.toString(),
@@ -811,31 +871,28 @@ class MainActivity : AppCompatActivity() {
                     restrictions.add(result.restriction)
                     for (input in fieldInputs.values) input.text.clear()
                     errorText.visibility = View.GONE
-                    highlightRestrictionFields(emptySet(), fieldInputs)
+                    currentErrorFields = emptySet()
+                    setActive(0)
                     refreshRestrictionsList()
                     refreshTrackProfileRestrictions()
                 }
                 is RestrictionInputResult.Error -> {
                     errorText.text = result.message
                     errorText.visibility = View.VISIBLE
-                    highlightRestrictionFields(result.fields, fieldInputs)
+                    currentErrorFields = result.fields
+                    refreshFieldBackgrounds()
                 }
             }
         }
 
         refreshRestrictionsList()
+        setActive(0)
 
         AlertDialog.Builder(this)
             .setTitle("Ограничения")
             .setView(view)
             .setPositiveButton("Закрыть", null)
             .show()
-    }
-
-    private fun highlightRestrictionFields(fields: Set<RestrictionField>, inputs: Map<RestrictionField, EditText>) {
-        for ((field, input) in inputs) {
-            input.setBackgroundColor(if (field in fields) 0x33E05A5A else 0x00000000)
-        }
     }
 
     private fun hasLocationPermission(): Boolean =
