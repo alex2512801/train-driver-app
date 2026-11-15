@@ -244,9 +244,11 @@ class TrackProfileView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeWidth = dp(6f)
     }
+    // 16dp — машинист попросил сделать километровые числа такими же маленькими, как цифры
+    // времени в шапке (timeText, 16sp) — раньше (34dp) они "захламляли экран".
     private val kmTextPaint = Paint().apply {
         color = Color.WHITE
-        textSize = dp(34f)
+        textSize = dp(16f)
         textAlign = Paint.Align.CENTER
         isAntiAlias = true
     }
@@ -342,9 +344,12 @@ class TrackProfileView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         strokeWidth = dp(1.5f)
     }
+    // 16dp — та же просьба машиниста, что и у kmTextPaint: название сигнала и расстояние до
+    // него (одна и та же надпись, см. drawSignalTags) — такого же маленького размера, как
+    // цифры времени в шапке (раньше 26dp).
     private val signalTagTextPaint = Paint().apply {
         color = Color.BLACK
-        textSize = dp(26f)
+        textSize = dp(16f)
         typeface = Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.LEFT
         isAntiAlias = true
@@ -858,8 +863,11 @@ class TrackProfileView @JvmOverloads constructor(
             val text = tag.label + distanceLabel
 
             val textW = signalTagTextPaint.measureText(text)
-            val boxW = textW + dp(12f)
-            val boxH = dp(26f)
+            // Коробка вокруг надписи пропорционально уменьшена вместе с самим текстом
+            // (signalTagTextPaint 26dp→16dp) — иначе вокруг мелкого текста осталась бы
+            // непропорционально широкая белая рамка.
+            val boxW = textW + dp(8f)
+            val boxH = dp(18f)
 
             var tier = 0
             while (tier < tierRightEdge.size && x < tierRightEdge[tier] + tierGapPx) tier++
@@ -886,7 +894,7 @@ class TrackProfileView @JvmOverloads constructor(
             canvas.drawLine(x, tagBottom, x, iconCy - rOuter, signalPolePaint)
             canvas.drawRect(x + dp(0.7f), tagTop + dp(0.7f), x + boxW - dp(0.7f), tagTop + boxH - dp(0.7f), signalTagBgPaint)
             canvas.drawRect(x, tagTop, x + boxW, tagTop + boxH, signalTagBorderPaint)
-            canvas.drawText(text, x + dp(6f), tagTop + boxH - dp(7f), signalTagTextPaint)
+            canvas.drawText(text, x + dp(4f), tagTop + boxH - dp(5f), signalTagTextPaint)
         }
     }
 
