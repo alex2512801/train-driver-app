@@ -36,6 +36,7 @@ import java.util.TimeZone
 import ru.traindriver.app.audio.Announcement
 import ru.traindriver.app.audio.VoiceAnnouncer
 import ru.traindriver.app.location.GpsLocationProvider
+import ru.traindriver.app.location.LocationSource
 import ru.traindriver.app.route.AirGapAssetLoader
 import ru.traindriver.app.route.ArrivalDepartureState
 import ru.traindriver.app.route.ArrivalDepartureTracker
@@ -790,22 +791,34 @@ class MainActivity : AppCompatActivity() {
 
         if (!hasLocationPermission()) return
 
-        gpsLocationProvider.start { location ->
+        gpsLocationProvider.start { location, source ->
             val chainageM = routeTrack.chainageMetersFor(location.latitude, location.longitude)
-            lastChainageM = chainageM
-            if (location.hasSpeed()) lastSpeedKmh = location.speed * 3.6
-            coordinateText.text = formatCoordinate(chainageM)
-            trackProfileView.setTrainPositionM(chainageM)
-            statusBarText.text = buildStatusBarText(location, chainageM)
-            updateDestinationText(chainageM)
 
-            val brakeTest = brakeTestScheduler.update(chainageM, directionSelection.picketsGrowing)
-            if (brakeTest != null) {
-                voiceAnnouncer.play(if (brakeTest.doubleTrain) Announcement.BRAKE_TEST_DOUBLE else Announcement.BRAKE_TEST)
-            }
+            if (source == LocationSource.NETWORK) {
+                // Резервный источник (по сотовым вышкам/Wi-Fi) — машинист попросил, чтобы
+                // экран не оставался совсем пустым при пропаже GPS. НАМНОГО грубее настоящего
+                // GPS (сотни метров — километр), поэтому используем его ТОЛЬКО для текста
+                // координаты, с явной пометкой неточности — график, объявления, V=/S= и
+                // остальное продолжают показывать последнюю настоящую GPS-позицию, а не эту
+                // грубую оценку (см. doc-комментарий GpsLocationProvider).
+                val accuracyM = if (location.hasAccuracy()) " ±${location.accuracy.toInt()}м" else ""
+                coordinateText.text = "≈ ${formatCoordinate(chainageM)}$accuracyM, нет GPS"
+            } else {
+                lastChainageM = chainageM
+                if (location.hasSpeed()) lastSpeedKmh = location.speed * 3.6
+                coordinateText.text = formatCoordinate(chainageM)
+                trackProfileView.setTrainPositionM(chainageM)
+                statusBarText.text = buildStatusBarText(location, chainageM)
+                updateDestinationText(chainageM)
 
-            if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
-                voiceAnnouncer.play(Announcement.STATION)
+                val brakeTest = brakeTestScheduler.update(chainageM, directionSelection.picketsGrowing)
+                if (brakeTest != null) {
+                    voiceAnnouncer.play(if (brakeTest.doubleTrain) Announcement.BRAKE_TEST_DOUBLE else Announcement.BRAKE_TEST)
+                }
+
+                if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
+                    voiceAnnouncer.play(Announcement.STATION)
+                }
             }
         }
     }
