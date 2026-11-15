@@ -62,4 +62,21 @@
         <item name="android:textStyle">bold</item>
         <item name="android:textSize">20sp</item>
     </style>
+
+    <!-- Поля в диалоге "Ограничения" — машинист попросил: км нужно 4 цифры, пк/скорость — 2,
+         путь — 1, так что поля не должны тянуться на всю ширину строки "про запас", а быть
+         ровно под своё число цифр, аккуратной рамкой-коробочкой (а не обычной подчёркнутой
+         строкой). Ширину каждого поля задаём отдельно — см. restrictionXxxInput. -->
+    <style name="RestrictionDigitBox">
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:gravity">center</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">20sp</item>
+        <item name="android:background">@drawable/bg_header_toggle</item>
+        <item name="android:paddingTop">6dp</item>
+        <item name="android:paddingBottom">6dp</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textColorHint">#555555</item>
+    </style>
 </resources>

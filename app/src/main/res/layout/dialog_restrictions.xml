@@ -51,32 +51,26 @@
                 android:layout_marginBottom="6dp" />
 
             <LinearLayout
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
 
                 <EditText
                     android:id="@+id/restrictionStartKmInput"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="2"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="64dp"
                     android:hint="км"
                     android:inputType="number"
-                    android:maxLength="4"
-                    android:textColor="#FFFFFF"
-                    android:textColorHint="#777777" />
+                    android:maxLength="4" />
 
                 <EditText
                     android:id="@+id/restrictionStartPkInput"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="44dp"
                     android:layout_marginStart="8dp"
                     android:hint="пк"
                     android:inputType="number"
-                    android:maxLength="2"
-                    android:textColor="#FFFFFF"
-                    android:textColorHint="#777777" />
+                    android:maxLength="2" />
 
             </LinearLayout>
 
@@ -90,32 +84,26 @@
                 android:layout_marginBottom="6dp" />
 
             <LinearLayout
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
 
                 <EditText
                     android:id="@+id/restrictionEndKmInput"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="2"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="64dp"
                     android:hint="км"
                     android:inputType="number"
-                    android:maxLength="4"
-                    android:textColor="#FFFFFF"
-                    android:textColorHint="#777777" />
+                    android:maxLength="4" />
 
                 <EditText
                     android:id="@+id/restrictionEndPkInput"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="44dp"
                     android:layout_marginStart="8dp"
                     android:hint="пк"
                     android:inputType="number"
-                    android:maxLength="2"
-                    android:textColor="#FFFFFF"
-                    android:textColorHint="#777777" />
+                    android:maxLength="2" />
 
             </LinearLayout>
 
@@ -127,32 +115,58 @@
                 android:background="#222222" />
 
             <LinearLayout
-                android:layout_width="match_parent"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal">
 
-                <EditText
-                    android:id="@+id/restrictionSpeedInput"
-                    android:layout_width="0dp"
+                <!-- Скорость — 2 цифры (машинист: "для скорости тоже 2"). -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:hint="Скорость, км/ч"
-                    android:inputType="number"
-                    android:maxLength="3"
-                    android:textColor="#FFFFFF"
-                    android:textColorHint="#777777" />
+                    android:orientation="vertical">
 
-                <EditText
-                    android:id="@+id/restrictionPathInput"
-                    android:layout_width="0dp"
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Скорость"
+                        android:textColor="#5AAADC"
+                        android:textSize="11sp"
+                        android:layout_marginBottom="4dp" />
+
+                    <EditText
+                        android:id="@+id/restrictionSpeedInput"
+                        style="@style/RestrictionDigitBox"
+                        android:layout_width="44dp"
+                        android:hint="—"
+                        android:inputType="number"
+                        android:maxLength="2" />
+
+                </LinearLayout>
+
+                <!-- Путь — 1 цифра (пусто = текущий путь). -->
+                <LinearLayout
+                    android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="8dp"
-                    android:hint="Путь (пусто = текущий)"
-                    android:inputType="number"
-                    android:maxLength="1"
-                    android:textColor="#FFFFFF"
-                    android:textColorHint="#777777" />
+                    android:layout_marginStart="12dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="Путь"
+                        android:textColor="#5AAADC"
+                        android:textSize="11sp"
+                        android:layout_marginBottom="4dp" />
+
+                    <EditText
+                        android:id="@+id/restrictionPathInput"
+                        style="@style/RestrictionDigitBox"
+                        android:layout_width="36dp"
+                        android:hint="—"
+                        android:inputType="number"
+                        android:maxLength="1" />
+
+                </LinearLayout>
 
             </LinearLayout>
 
