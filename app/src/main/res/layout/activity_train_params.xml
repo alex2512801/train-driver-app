@@ -330,8 +330,11 @@
                 <Button android:id="@+id/tpKeyDown" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="↓" />
             </LinearLayout>
 
-            <!-- Стереть и Сохранить пополам делят последнюю строку (как Стереть/Добавить у
-                 "Ограничений"). "Сохранить" — обычный стиль кнопки, чтобы выделяться. -->
+            <!-- Стереть/Очистить/Сохранить делят последнюю строку на три (машинист попросил:
+                 старое значение при переходе на поле остаётся на месте, не стирается само —
+                 "Стереть" стирает один знак у курсора, "Очистить" — сразу всё поле целиком,
+                 если нужно быстро ввести новое значение заново). "Сохранить" — обычный стиль
+                 кнопки, чтобы выделяться. -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
@@ -343,6 +346,11 @@
                     style="@style/RestrictionKeypadButton"
                     android:layout_height="match_parent"
                     android:text="Стереть" />
+                <Button
+                    android:id="@+id/tpClearButton"
+                    style="@style/RestrictionKeypadButton"
+                    android:layout_height="match_parent"
+                    android:text="Очистить" />
                 <Button
                     android:id="@+id/tpSaveButton"
                     android:layout_width="0dp"

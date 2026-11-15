@@ -212,6 +212,12 @@ class RestrictionsActivity : AppCompatActivity() {
                 input.setSelection(lo - 1)
             }
         }
+        // "Очистить" — стирает всё активное поле разом (машинист: старое значение при переходе
+        // на поле специально НЕ стирается само, оставляем это машинисту на выбор — одна цифра
+        // за раз через "Стереть", или сразу всё целиком через эту кнопку).
+        findViewById<Button>(R.id.restrictionClearButton).setOnClickListener {
+            orderedInputs[activeIndex].text.clear()
+        }
 
         addButton.setOnClickListener {
             val fields = RestrictionFormFields(
