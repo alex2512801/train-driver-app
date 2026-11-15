@@ -27,7 +27,12 @@
     была стрелка вверх, а справа стрелка вниз" — поля здесь стоят друг под другом, а не в ряд.
     Внизу — Стереть и Сохранить пополам делят последнюю строку (как Стереть/Добавить у
     "Ограничений").
--->
+
+    Колонки 3:2 вместо 2:3 (клавиатура уже́ примерно на треть — машинист попросил, полям отдано
+    освободившееся место). Левая колонка — ВНУТРИ ScrollView (в отличие от клавиатуры справа,
+    которой прокрутка категорически не подходит, см. всю историю "Ограничений" — здесь другая
+    ситуация: полей много, они не помещались целиком, и прокрутка для них — это именно то, что
+    попросил машинист: "нужен скроллинг... чтобы я мог пролистнуть вниз"). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
@@ -54,13 +59,16 @@
         android:orientation="horizontal"
         android:padding="16dp">
 
-        <!-- Левая колонка: поля, друг под другом, компактно — без ScrollView (см. история
-             "Ограничений": прокрутка на невысоком альбомном экране ненадёжна, лучше не
-             полагаться на неё вовсе, если можно уместить без неё). -->
-        <LinearLayout
+        <!-- Левая колонка: поля, друг под другом — в ScrollView (см. doc-комментарий класса
+             выше), т.к. все поля разом не помещались и были недоступны без прокрутки. -->
+        <ScrollView
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="2"
+            android:layout_weight="3">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
             android:orientation="vertical"
             android:paddingEnd="14dp">
 
@@ -269,13 +277,16 @@
 
         </LinearLayout>
 
+        </ScrollView>
+
         <!-- Правая колонка: ТОЛЬКО клавиатура, на всю высоту (см. doc-комментарий класса выше —
              та же логика, что в "Ограничениях": её размер не зависит от того, сколько места
-             заняли поля слева). -->
+             заняли поля слева). Кнопки уже́ (машинист попросил), ширина колонки уменьшена
+             соответственно (3→2, см. doc-комментарий класса выше). -->
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="3"
+            android:layout_weight="2"
             android:orientation="vertical">
 
             <LinearLayout
