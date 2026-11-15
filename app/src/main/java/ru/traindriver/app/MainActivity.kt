@@ -576,15 +576,16 @@ class MainActivity : AppCompatActivity() {
     // из timeUpdater (см. refreshSimSignalPolling), а не полагаемся только на событие.
     private val activeSimPolls = mutableListOf<Pair<TelephonyManager, SignalBarsView>>()
 
-    // TelephonyManager.getSignalStrength() (использовался раньше) существует только с
-    // Android 10 (Q) — на телефоне ниже этой версии он просто ничего не делал, столбики
-    // оставались пустыми (машинист снова прислал скриншот с пустыми полосками). Но даже на
-    // Android 10+ этот метод, вызванный у TelephonyManager, привязанного к НЕосновной SIM
-    // (через createForSubscriptionId), на некоторых прошивках ненадёжно возвращает актуальное
-    // значение. getAllCellInfo() — гораздо более старый и универсальный способ (с Android 4.2,
-    // API 17), который явно привязан к конкретной SIM через тот же createForSubscriptionId и
-    // не требует ждать события "сигнал изменился" — читаем СЕЙЧАС, а не ждём колбэк. Берём
-    // первую зарегистрированную вышку, а если такой нет — вообще первую из списка.
+    // ИСПРАВЛЕНИЕ ПОСЛЕ ПОВТОРНОЙ ПРОВЕРКИ: в прошлый раз здесь было написано, что
+    // CellInfo.getCellSignalStrength() (без приведения к конкретному подклассу вроде
+    // CellInfoLte) работает аж с API 17 — это неверно. Общий абстрактный CellSignalStrength
+    // (из которого и берётся .level) появился только в Android 10 (API 29), вместе с
+    // getSignalStrength() — то есть оба способа ниже на самом деле требуют одну и ту же
+    // версию Android, и преимущество getAllCellInfo() не в "работает на старых телефонах"
+    // (это было ошибкой), а в том, что это НЕЗАВИСИМЫЙ второй способ прочитать значение
+    // ПРЯМО СЕЙЧАС, не дожидаясь события "сигнал изменился" — если на конкретной прошивке
+    // барахлит один из двух API, есть шанс, что сработает другой. У машиниста телефон
+    // заведомо современный (Android 16/17), так что для него оба пути доступны.
     @Suppress("DEPRECATION")
     private fun pollSimSignal(manager: TelephonyManager, barsView: SignalBarsView) {
         // ВАЖНО: эта функция вызывается каждую секунду из timeUpdater. Телефонные API на
@@ -592,21 +593,21 @@ class MainActivity : AppCompatActivity() {
         // практике) — если здесь вылетит необработанное исключение, оно уронит весь таймер
         // обновлений (а с ним — скорость, объявления, график) на главном потоке, не только
         // столбики сигнала. Поэтому ловим Exception целиком, а не одну SecurityException.
-        val level = try {
-            val cells = manager.allCellInfo
-            (cells?.firstOrNull { it.isRegistered } ?: cells?.firstOrNull())?.cellSignalStrength?.level
-        } catch (e: Exception) {
-            null
-        }
-        if (level != null) {
-            barsView.level = level
-            return
-        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val level = try {
+                val cells = manager.allCellInfo
+                (cells?.firstOrNull { it.isRegistered } ?: cells?.firstOrNull())?.cellSignalStrength?.level
+            } catch (e: Exception) {
+                null
+            }
+            if (level != null) {
+                barsView.level = level
+                return
+            }
             try {
                 manager.signalStrength?.let { barsView.level = it.level }
             } catch (e: Exception) {
-                // см. комментарий выше про allCellInfo — та же подстраховка.
+                // см. комментарий выше — та же подстраховка.
             }
         }
     }
