@@ -44,15 +44,22 @@ class ReliefProfile(points: List<ReliefPoint>) {
     }
 
     /**
-     * Самая низкая точка рельефа в видимом окне [fromM, toM] — нужна для панорамирования
-     * (машинист: самая низкая точка видимого окна лежит у пола полосы, см. drawGridAndRelief
-     * в HTML-макете). Null, если в окне вообще нет покрытия.
+     * Самая низкая точка рельефа в видимом окне [fromM, toM] — нужна для масштабирования
+     * полосы рельефа (машинист: "самая нижняя точка... внизу, чтобы поезд был как можно
+     * ниже, чтобы не заезжал за линию сигналов" — см. drawReliefAndTrain, где эта точка
+     * вместе с [maxHeightInRange] задаёт масштаб так, чтобы весь видимый перепад высот
+     * укладывался в полосу ровно от пола до потолка). Границы окна учитываются так же, как в
+     * [maxHeightInRange] — и по той же причине (при панорамировании настоящий минимум кривой
+     * на интерполированной границе экрана мог оказаться НИЖЕ посчитанного здесь, если
+     * смотреть только на точки данных строго внутри окна).
+     * Null, если в окне вообще нет покрытия.
      */
-    fun minHeightInRange(direction: Direction, fromM: Double, toM: Double): Double? =
-        byDirection[direction]
-            ?.asSequence()
-            ?.filter { it.chainageM in fromM..toM }
-            ?.minOfOrNull { it.heightStitched }
+    fun minHeightInRange(direction: Direction, fromM: Double, toM: Double): Double? {
+        val pts = byDirection[direction] ?: return null
+        val interior = pts.asSequence().filter { it.chainageM in fromM..toM }.map { it.heightStitched }
+        val boundary = sequenceOf(heightAt(direction, fromM), heightAt(direction, toM)).filterNotNull()
+        return (interior + boundary).minOrNull()
+    }
 
     /**
      * Самая высокая точка рельефа в видимом окне [fromM, toM] — машинист: рельеф рисуется

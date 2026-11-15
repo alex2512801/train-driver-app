@@ -109,10 +109,6 @@ class TrackProfileView @JvmOverloads constructor(
         private const val ICON_HALF_DP = 16f
         private const val ICON_GAP_DP = 6f
 
-        // dp на 1pt склеенной шкалы рельефа (REAL_RELIEF_PX_PER_PT в HTML-макете) — подобрано
-        // визуально, это не калибровка в метры (её нет, см. README шаг 15).
-        private const val RELIEF_DP_PER_PT = 1.5f
-
         // Геометрия значка сигнала/станции (капсула/кольцо) — те же пропорции, что в
         // HTML-макете (rx:ry:столбик = 5:7:8), но крупнее в dp; станция крупнее сигнала в
         // 7/6 раза по полной высоте, ножка:радиус = 50:45 — оба выводятся из этого отношения,
@@ -220,7 +216,6 @@ class TrackProfileView @JvmOverloads constructor(
     private val pictogramMinHatchWidthPx = dp(PICTOGRAM_MIN_HATCH_WIDTH_DP)
     private val iconHalfPx = dp(ICON_HALF_DP)
     private val iconGapPx = dp(ICON_GAP_DP)
-    private val reliefPxPerPt = dp(RELIEF_DP_PER_PT)
     private val signalRyPx = dp(SIGNAL_RY_DP)
     private val signalRxPx = dp(SIGNAL_RX_DP)
     private val signalPolePx = dp(SIGNAL_POLE_DP)
@@ -1094,24 +1089,39 @@ class TrackProfileView @JvmOverloads constructor(
     ): Pair<Float, Float> {
         val hasCoverage = relief.hasCoverage(direction)
         val floorY = top + bandH * RELIEF_FLOOR_FRACTION
-        // Привязка к МАКСИМУМУ видимого окна, не к минимуму (машинист про реальный экран:
-        // "пересчитывается на каждую отрисовку от максимума в видимом окне" — см. HTML-макет).
-        // Раньше здесь была привязка к минимуму без верхней границы — из-за этого высокий
-        // участок рельефа мог нарисоваться ВЫШЕ линии сигналов, в чужой зоне графика (машинист
-        // прислал скриншот именно такого наложения). Привязка к максимуму гарантирует обратное:
-        // самая высокая точка всегда ровно у верхней границы полосы, ниже неё — никогда.
-        val maxInView = if (hasCoverage) relief.maxHeightInRange(direction, fromM, toM) else null
         val ceilY = top + dp(6f)
+        // Привязка СРАЗУ к максимуму И минимуму видимого окна, масштаб — заново на каждую
+        // отрисовку, а не фиксированный reliefPxPerPt (машинист про реальный экран, второй
+        // заход: "самая нижняя точка... внизу, чтобы поезд был как можно ниже, не заезжал за
+        // линию сигналов" — пролистывая, он видел низкую точку ВЫСОКО, у самого потолка).
+        // Раньше был фиксированный масштаб (reliefPxPerPt) при привязке только к максимуму —
+        // если видимый перепад высот МАЛЕНЬКИЙ (ровный участок), вся кривая при фиксированном
+        // масштабе сжималась в маленький кусочек у потолка, а не растягивалась до пола, хотя
+        // место в полосе internally пустовало. Пересчитывая масштаб так, чтобы РОВНО весь
+        // видимый перепад (максимум минус минимум) укладывался между потолком и полом, кривая
+        // всегда использует всю высоту полосы целиком — минимум у пола, максимум у потолка,
+        // и то, и другое никогда не вылезает за свои границы (в т.ч. не выше линии сигналов —
+        // именно ради этого в своё время появилась привязка к максимуму, см. README/чат).
+        val maxInView = if (hasCoverage) relief.maxHeightInRange(direction, fromM, toM) else null
+        val minInView = if (hasCoverage) relief.minHeightInRange(direction, fromM, toM) else null
+        val range = if (maxInView != null && minInView != null) maxInView - minInView else null
+        val scale = if (range != null && range > 0.0) (floorY - ceilY) / range else null
 
         fun reliefY(m: Double): Float {
             val h = relief.heightAt(direction, m)
-            return if (h != null && maxInView != null) {
-                ceilY + ((maxInView - h) * reliefPxPerPt).toFloat()
-            } else {
-                // Вне покрытия (км5930-6604, README шаг 15) — ровная линия у пола полосы, а
-                // не выдуманная синусоида (в отличие от HTML-макета — там это было нужно для
-                // наглядности пропорций, здесь настоящему приложению это не нужно).
-                floorY
+            return when {
+                h == null || maxInView == null -> {
+                    // Вне покрытия (км5930-6604, README шаг 15) — ровная линия у пола полосы, а
+                    // не выдуманная синусоида (в отличие от HTML-макета — там это было нужно
+                    // для наглядности пропорций, здесь настоящему приложению это не нужно).
+                    floorY
+                }
+                scale == null -> {
+                    // Видимый перепад высот ровно 0 (совсем плоский участок) — весь целиком
+                    // внизу, а не у потолка (машинист именно это и просил).
+                    floorY
+                }
+                else -> ceilY + ((maxInView - h) * scale).toFloat()
             }
         }
 
