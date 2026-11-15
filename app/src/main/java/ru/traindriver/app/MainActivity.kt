@@ -57,6 +57,7 @@ import ru.traindriver.app.route.RestrictionsStore
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
 import ru.traindriver.app.route.SignalAssetLoader
+import ru.traindriver.app.route.effectiveDirection
 import ru.traindriver.app.route.SpeedLimitAssetLoader
 import ru.traindriver.app.route.SpeedLimitResolver
 import ru.traindriver.app.route.StationAnnouncement
@@ -829,7 +830,10 @@ class MainActivity : AppCompatActivity() {
      *  это голова поезда (chainageM), для "Хвост" — хвост (chainageM минус длина состава, та же
      *  формула, что и у TrackProfileView при рисовании хвостового маркера на графике). */
     private fun distanceToNextSignalM(fromM: Double, forward: Boolean): Double? {
-        val relevant = signals.filter { it.direction == directionSelection.effectiveDataset }
+        // effectiveDirection, а не сырой Signal.direction — см. doc-комментарий у
+        // effectiveDirection (Signal.kt): сырой тег означает только "из какого PDF-документа",
+        // не "к какому направлению реально относится этот светофор".
+        val relevant = signals.filter { it.effectiveDirection == directionSelection.effectiveDataset }
         val nextSignal = if (forward) {
             relevant.filter { it.chainageM > fromM }.minByOrNull { it.chainageM }
         } else {

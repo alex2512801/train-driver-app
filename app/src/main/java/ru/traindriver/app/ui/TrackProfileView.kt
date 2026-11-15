@@ -26,6 +26,7 @@ import ru.traindriver.app.route.Restriction
 import ru.traindriver.app.route.ReliefProfile
 import ru.traindriver.app.route.ShortSegmentSpeedResolver
 import ru.traindriver.app.route.Signal
+import ru.traindriver.app.route.effectiveDirection
 import ru.traindriver.app.route.SpeedLimit
 import ru.traindriver.app.route.SpeedLimitResolver
 import ru.traindriver.app.route.Station
@@ -815,10 +816,14 @@ class TrackProfileView @JvmOverloads constructor(
     }
 
     /** Значки сигналов (капсула) и станций (кольцо) + таблички с расстоянием — настоящие
-     *  данные ([signals] главного пути + [stations] + [blockPosts] как доп. сигналы). */
+     *  данные ([signals] главного пути + [stations] + [blockPosts] как доп. сигналы).
+     *  [Signal.effectiveDirection], а не "сырой" [Signal.direction] — см. doc-комментарий у
+     *  effectiveDirection: сырой тег означает только "из какого PDF-документа", а не "к какому
+     *  направлению реально относится этот светофор" (машинист прислал скриншот с сигналами
+     *  обоих направлений одновременно на чётном пути — именно из-за использования сырого тега). */
     private fun drawSignalTags(canvas: Canvas, fromM: Double, toM: Double, xFor: (Double) -> Float, lineY: Float) {
         val tags = buildList {
-            for (s in signals) if (s.direction == direction) add(SignalTag(s.chainageM, s.name, false))
+            for (s in signals) if (s.effectiveDirection == direction) add(SignalTag(s.chainageM, s.name, false))
             for (b in blockPosts) if (b.direction == direction) add(SignalTag(b.chainageM, b.label, false))
             for (st in stations) if (st.direction == direction) add(SignalTag(st.chainageM, st.name, true))
         }.sortedBy { it.chainageM }

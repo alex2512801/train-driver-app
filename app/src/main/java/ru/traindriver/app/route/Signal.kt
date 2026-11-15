@@ -17,13 +17,42 @@ data class Signal(
     val track: String?
 )
 
+/**
+ * Направление, которому сигнал реально служит — НЕ то же самое, что [Signal.direction]!
+ * [Signal.direction] — это просто "из какого PDF-документа извлечена запись"
+ * (tools/parse_track_profile.py, SOURCE_FILES: Хилок-Крм.pdf → чётное, Крм-Хилок.pdf —
+ * нечётное, и т.д.), а не "к какому пути относится конкретный светофор". Проверено по самим
+ * данным track_signals.json: голые номера автоблокировки (например, "3" и "4" у км6210пк2)
+ * ПОЧТИ ПОРОВНУ встречаются и под "чётное", и под "нечётное" тегом (совпадает с собственным
+ * комментарием скрипта: "голые числа... действительно совпадают в обоих документах почти
+ * всегда" — ожидаемо, раз оба документа одного перегона физически видят одни и те же столбы).
+ * Даже у буквенных литер (Ч.../Н...) тег не всегда совпадает с самой буквой (например, литеры
+ * на "Ч" встречаются 154 раза под тегом "чётное", но 80 раз — под тегом "нечётное") — машинист
+ * подтвердил напрямую: "У нас сигналы
+ * только четного пути... идут четные там 6, 4, 2, предвходной, входной" — то есть машинисту
+ * нужны сигналы ТОЛЬКО своего направления движения, а не оба сразу, и правильный критерий —
+ * не тег документа, а сама литера/номер:
+ *  - буква Ч → чётное, буква Н → нечётное (однозначно, сама буква это и означает);
+ *  - голый номер (автоблокировка, без буквы) → по чётности числа: чётный номер — чётное
+ *    направление, нечётный — нечётное (ровно то, что машинист продиктовал).
+ */
+val Signal.effectiveDirection: Direction
+    get() {
+        val letter = name.firstOrNull { it.isLetter() }
+        return when (letter) {
+            'Ч' -> Direction.EVEN
+            'Н' -> Direction.ODD
+            else -> name.toIntOrNull()?.let { if (it % 2 == 0) Direction.EVEN else Direction.ODD } ?: direction
+        }
+    }
+
 /** Читает track_signals.json в список [Signal]. */
 object SignalAssetLoader {
 
     fun loadSignals(context: Context, assetFileName: String = "track_signals.json"): List<Signal> {
         val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
         val array = JSONArray(json)
-        return buildList(array.length()) {
+        val raw = buildList(array.length()) {
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
                 val direction = if (obj.getString("direction") == "чётное") Direction.EVEN else Direction.ODD
@@ -32,6 +61,15 @@ object SignalAssetLoader {
                 add(Signal(obj.getString("name"), direction, chainageM, track))
             }
         }
+        // Одна и та же запись (та же литера на том же км+пк) часто встречается в ОБОИХ
+        // исходных PDF-документах перегона под разными "сырыми" тегами direction — то же самое,
+        // из-за чего понадобился effectiveDirection (см. его doc-комментарий). После того как
+        // фильтрация по направлению стала смотреть на effectiveDirection, а не на сырой тег,
+        // такие записи с ОДИНАКОВЫМ именем и км+пк стали бы проходить фильтр ДВАЖДЫ и рисовались
+        // бы на графике как два полностью совпадающих значка в одной точке — схлопываем их в
+        // один (сырой direction при этом больше ни на что не влияет, т.к. effectiveDirection его
+        // не использует для букв/голых номеров — см. выше).
+        return raw.distinctBy { Triple(it.name, it.chainageM, it.track) }
     }
 
     /** Сигналы главного пути (без среднего пути Тургутуй — Яблоновая, см. [Signal.track]). */
