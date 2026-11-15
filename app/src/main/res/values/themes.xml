@@ -90,7 +90,10 @@
         <item name="android:textStyle">bold</item>
         <item name="android:fontFamily">monospace</item>
         <item name="android:textSize">13sp</item>
-        <item name="android:gravity">center</item>
+        <!-- start|center_vertical, не center — машинист: значение должно быть прижато к
+             левому краю своего сектора, а цифры просто дописываются вправо, а не весь текст
+             целиком "гуляет" туда-сюда по центру сектора при каждом новом значении. -->
+        <item name="android:gravity">start|center_vertical</item>
         <item name="android:maxLines">1</item>
     </style>
 
