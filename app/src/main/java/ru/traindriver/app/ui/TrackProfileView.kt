@@ -172,7 +172,6 @@ class TrackProfileView @JvmOverloads constructor(
     private var stations: List<Station> = emptyList()
     private var blockPosts: List<BlockPost> = emptyList()
     private var relief: ReliefProfile = ReliefProfile(emptyList())
-    private var reliefGlobalRange: Map<Direction, Pair<Double, Double>?> = emptyMap()
     private var crossings: List<Crossing> = emptyList()
     private var airGaps: List<AirGap> = emptyList()
     private var neutralInserts: List<NeutralInsert> = emptyList()
@@ -731,9 +730,6 @@ class TrackProfileView @JvmOverloads constructor(
 
     fun setRelief(profile: ReliefProfile) {
         relief = profile
-        // Глобальный диапазон высот — считается один раз здесь, не на каждый кадр от
-        // видимого окна (см. doc-комментарий у ReliefProfile.globalRange, почему именно так).
-        reliefGlobalRange = Direction.entries.associateWith { profile.globalRange(it) }
         invalidate()
     }
 
@@ -1184,36 +1180,28 @@ class TrackProfileView @JvmOverloads constructor(
         val hasCoverage = relief.hasCoverage(direction)
         val floorY = top + bandH * RELIEF_FLOOR_FRACTION
         val ceilY = top + dp(6f)
-        // Масштаб ФИКСИРОВАННЫЙ, от глобального диапазона высот по всему маршруту (см.
-        // ReliefProfile.globalRange/setRelief), а НЕ пересчитывается от видимого окна на
-        // каждый кадр — машинист поправил предыдущий вариант: "высота профиля меняется...
-        // должно быть пропорционально... горы не должны увеличиваться... нужно, чтобы были
-        // точные данные". При панорамировании кривая просто едет мимо, сохраняя настоящие
-        // пропорции подъёмов/спусков, а не "резинится" от того, что сейчас видно в окне.
-        // Переполнение выше линии сигналов при этом всё равно невозможно: любая высота h всегда
-        // лежит внутри [globalMin, globalMax] (в т.ч. интерполированная — между двумя точками
-        // внутри этого диапазона), а значит reliefY(h) всегда внутри [ceilY, floorY].
-        // globalRange = (минимум, максимум) по всему маршруту этого направления, см.
-        // ReliefProfile.globalRange — именно в этом порядке (lo to hi).
-        val globalRange = reliefGlobalRange[direction]
-        val scale = globalRange?.let { (min, max) -> if (max - min > 0.0) (floorY - ceilY) / (max - min) else null }
-
+        // Масштаб — поблочный (15 км, см. doc-комментарий у ReliefProfile.blockRangeAt), а не
+        // один на весь маршрут и не от видимого окна. У каждой точки СВОЙ масштаб, зависящий
+        // ТОЛЬКО от её собственного км+пк (какой блок ей достался) — поэтому высота любой точки
+        // не меняется при панорамировании (машинист: "если поднимался, то просто поднимался, а
+        // не увеличился сверху вниз"), а локальные подъёмы/спуски при этом видны так же чётко,
+        // как на бумажных режимных картах (машинист: "почти как по линейке... ни бугров не
+        // видно" — тем самым был отвергнут вариант с диапазоном по ВСЕМУ маршруту, см. git
+        // history: единственный огромный перепад высоты на перевале возле Тургутуя сжимал всю
+        // остальную, гораздо более мелкую, рельефную "рябь" почти до прямой линии).
         fun reliefY(m: Double): Float {
             val h = relief.heightAt(direction, m)
-            return when {
-                h == null || globalRange == null -> {
-                    // Вне покрытия (км5930-6604, README шаг 15) — ровная линия у пола полосы, а
-                    // не выдуманная синусоида (в отличие от HTML-макета — там это было нужно
-                    // для наглядности пропорций, здесь настоящему приложению это не нужно).
-                    floorY
-                }
-                scale == null -> {
-                    // Весь маршрут этого направления на одной высоте (globalMin==globalMax) —
-                    // вырожденный случай, рисуем у пола, а не у потолка.
-                    floorY
-                }
-                else -> ceilY + ((globalRange.second - h) * scale).toFloat()
-            }
+                // Вне покрытия (км5930-6604, README шаг 15) — ровная линия у пола полосы, а не
+                // выдуманная синусоида (в отличие от HTML-макета — там это было нужно для
+                // наглядности пропорций, здесь настоящему приложению это не нужно).
+                ?: return floorY
+            val blockRange = relief.blockRangeAt(direction, m) ?: return floorY
+            val (blockMin, blockMax) = blockRange
+            // Весь блок на одной высоте (blockMin==blockMax) — вырожденный случай, рисуем у
+            // пола, а не у потолка.
+            if (blockMax - blockMin <= 0.0) return floorY
+            val scale = (floorY - ceilY) / (blockMax - blockMin)
+            return ceilY + ((blockMax - h) * scale).toFloat()
         }
 
         // заливка рельефа
