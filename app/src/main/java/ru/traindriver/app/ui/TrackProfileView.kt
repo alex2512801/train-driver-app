@@ -136,7 +136,7 @@ class TrackProfileView @JvmOverloads constructor(
 
     private data class Pictogram(val chainageM: Double, val kind: PictogramKind)
 
-    private enum class PictogramKind { OPASNOE_START, OPASNOE_END, YELLOW_SHIELD, GREEN_SHIELD, AIR_GAP, NEUTRAL }
+    private enum class PictogramKind { OPASNOE_START, OPASNOE_END, YELLOW_SHIELD, GREEN_SHIELD, AIR_GAP, NEUTRAL, CROSSING }
 
     private var speedLimits: List<SpeedLimit> = emptyList()
     private var resolver = SpeedLimitResolver(emptyList())
@@ -468,6 +468,18 @@ class TrackProfileView @JvmOverloads constructor(
     // Жёлтый/зелёный щит (ТЗ раздел 8).
     private val shieldWhitePaint = Paint().apply { color = Color.WHITE }
     private val shieldBlackPaint = Paint().apply { color = Color.BLACK }
+
+    // Переезд (знак 1.1 ГОСТ Р 52290) — красный треугольник с белой каймой и чёрной решёткой-
+    // шлагбаумом внутри, образец прислал машинист (см. doc-комментарий у drawCrossingGlyph).
+    private val crossingWhitePaint = Paint().apply { color = Color.WHITE; isAntiAlias = true }
+    private val crossingRedPaint = Paint().apply { color = Color.rgb(213, 0, 0); isAntiAlias = true }
+    private val crossingBlackPaint = Paint().apply { color = Color.BLACK; isAntiAlias = true }
+    private val crossingOutlinePaint = Paint().apply {
+        color = Color.BLACK
+        style = Paint.Style.STROKE
+        strokeWidth = dp(1f)
+        isAntiAlias = true
+    }
     private val shieldColorPaint = Paint()
     private val yellowShieldColor = Color.rgb(255, 230, 0)
     private val greenShieldColor = Color.rgb(58, 194, 90)
@@ -1068,11 +1080,17 @@ class TrackProfileView @JvmOverloads constructor(
     }
 
     /** Все пиктограммы в видимом окне, отсортированные по м — настоящие (переезды/возд.
-     *  промежутки/нейтральные вставки) + динамические (ограничения, ТЗ раздел 11). Переезды
-     *  визуально пока не дорисованы (нужен настоящий чертёж-PNG знака 1.1 ГОСТ Р 52290, см.
-     *  README/чат) — данные загружаются, но в этот список намеренно не попадают. */
+     *  промежутки/нейтральные вставки) + динамические (ограничения, ТЗ раздел 11). Переезды —
+     *  знак 1.1 ГОСТ Р 52290 (красный треугольник, чёрный шлагбаум-решётка внутри), машинист
+     *  прислал образец — рисуется одинаково для охраняемых и неохраняемых (у ГОСТ они на самом
+     *  деле разные — 1.1 со шлагбаумом/1.2 с паровозом без шлагбаума, но образец второго знака
+     *  не присылали, см. [Crossing.guarded] — различать визуально начнём, когда будет на что
+     *  ориентироваться). */
     private fun buildPictograms(fromM: Double, toM: Double): List<Pictogram> {
         val result = mutableListOf<Pictogram>()
+        for (c in crossings) if (c.direction == direction && c.chainageM in fromM..toM) {
+            result.add(Pictogram(c.chainageM, PictogramKind.CROSSING))
+        }
         for (a in airGaps) if (a.direction == direction && a.chainageM in fromM..toM) {
             result.add(Pictogram(a.chainageM, PictogramKind.AIR_GAP))
         }
@@ -1257,6 +1275,7 @@ class TrackProfileView @JvmOverloads constructor(
             PictogramKind.GREEN_SHIELD -> drawShieldGlyph(canvas, cx, cy, s, greenShieldColor)
             PictogramKind.AIR_GAP -> drawAirGapGlyph(canvas, cx, cy, s)
             PictogramKind.NEUTRAL -> drawNeutralGlyph(canvas, cx, cy, s)
+            PictogramKind.CROSSING -> drawCrossingGlyph(canvas, cx, cy, s)
         }
     }
 
@@ -1356,6 +1375,63 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.drawRoundRect(cx - gap / 2f - sq, sqTop, cx - gap / 2f, sqTop + sq, cornerR, cornerR, neutralGlyphWhitePaint)
         canvas.drawRoundRect(cx + gap / 2f, sqTop, cx + gap / 2f + sq, sqTop + sq, cornerR, cornerR, neutralGlyphWhitePaint)
         canvas.drawRoundRect(cx - contentW / 2f, barTop, cx + contentW / 2f, barTop + barH, cornerR, cornerR, neutralGlyphWhitePaint)
+    }
+
+    /** Переезд (знак 1.1 ГОСТ Р 52290) — красный треугольник, белая кайма, чёрная окантовка
+     *  снаружи, внутри чёрная решётка-шлагбаум (5 кольев с острым верхом + 2 горизонтальные
+     *  перекладины) в нижней половине поля. Образец прислал машинист — пропорции треугольника
+     *  и решётки подобраны по картинке на глаз, не по чертежу с миллиметрами (та же оговорка,
+     *  что и у drawAirGapGlyph). Уменьшенные концентрические треугольники (а не настоящий
+     *  отступ от каждой стороны) — на размере значка разница не видна, а код проще. */
+    private fun drawCrossingGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
+        val baseHalf = s * 1.1547f // равносторонний треугольник высотой 2s: baseHalf = 2s/√3
+        val topY = -s
+        val baseY = s
+        val centroidY = (topY + baseY + baseY) / 3f
+
+        fun triangle(f: Float): Path {
+            val tY = centroidY + f * (topY - centroidY)
+            val bY = centroidY + f * (baseY - centroidY)
+            val bHalf = f * baseHalf
+            val p = Path()
+            p.moveTo(0f, tY)
+            p.lineTo(bHalf, bY)
+            p.lineTo(-bHalf, bY)
+            p.close()
+            return p
+        }
+
+        canvas.save()
+        canvas.translate(cx, cy)
+        canvas.drawPath(triangle(1f), crossingWhitePaint)
+        canvas.drawPath(triangle(1f), crossingOutlinePaint)
+        canvas.drawPath(triangle(0.88f), crossingRedPaint)
+        canvas.drawPath(triangle(0.64f), crossingWhitePaint)
+
+        val postCount = 5
+        val fenceHalfW = s * 0.58f
+        val fenceTopY = s * 0.05f
+        val fenceBottomY = s * 0.58f
+        val postW = fenceHalfW * 2f / (postCount * 2f - 1f) // столб:зазор = 1:1
+        val spikeH = postW * 0.9f
+        val barH = postW * 0.55f
+
+        for (i in 0 until postCount) {
+            val left = -fenceHalfW + i * postW * 2f
+            val mid = left + postW / 2f
+            val right = left + postW
+            val path = Path()
+            path.moveTo(left, fenceTopY + spikeH)
+            path.lineTo(mid, fenceTopY)
+            path.lineTo(right, fenceTopY + spikeH)
+            path.lineTo(right, fenceBottomY)
+            path.lineTo(left, fenceBottomY)
+            path.close()
+            canvas.drawPath(path, crossingBlackPaint)
+        }
+        canvas.drawRect(-fenceHalfW, fenceTopY + spikeH * 0.3f, fenceHalfW, fenceTopY + spikeH * 0.3f + barH, crossingBlackPaint)
+        canvas.drawRect(-fenceHalfW, fenceBottomY - barH, fenceHalfW, fenceBottomY, crossingBlackPaint)
+        canvas.restore()
     }
 
     /**
