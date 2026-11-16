@@ -1302,25 +1302,28 @@ class TrackProfileView @JvmOverloads constructor(
         return reliefY(trainPositionM) to reliefY(headX0M)
     }
 
-    /** Короткая красная стрелка с шариком на конце — шарик касается кривой рельефа, хвостик
-     *  стрелки уходит в сторону от неё (вверх, если стрелка "висит сверху", вниз — если
-     *  "растёт снизу"), см. doc-комментарий у вызова выше. */
-    // Машинист поправил форму: шарик должен касаться линии профиля своим КРАЕМ, а не проседать
-    // в неё центром (раньше центр шарика стоял ровно на curveY — половина шарика "тонула" в
-    // заливке рельефа под кривой). Плюс настоящие "усы" стрелки по бокам от шарика, сходящиеся
-    // остриём точно на линии профиля — диаметр шарика равен расстоянию между их началами (там,
-    // где усы отходят от шарика в стороны), как машинист и продиктовал.
+    /** Короткая красная стрелка с шариком на хвосте — остриё стрелки касается кривой рельефа,
+     *  шарик висит отдельно над ним (вверх, если стрелка "висит сверху", вниз — если "растёт
+     *  снизу"), см. doc-комментарий у вызова выше. */
+    // Машинист поправил: "не шарик должен касаться линии, а стрелка, наоборот" — раньше
+    // ballCy стоял ровно в одном радиусе шарика от tipY, из-за чего нижний край шарика попадал
+    // точно на curveY и визуально ИМЕННО шарик, а не остриё "усов", лежал на линии профиля
+    // (сама V-образная стрелка была нулевой высоты, пряталась внутри шарика). Теперь между
+    // шариком и остриём есть настоящий зазор (arrowLen) — усы заметно тянутся от шарика вниз
+    // к линии, шарик при этом явно висит над ней, не касаясь.
     private fun drawWashoutGlyph(canvas: Canvas, cx: Float, curveY: Float, pointingDown: Boolean) {
         val ballR = dp(6f)
+        val arrowLen = dp(10f)
         val shaftLen = dp(14f)
         val dir = if (pointingDown) 1f else -1f
         val tipY = curveY
-        val ballCy = tipY - dir * ballR
+        val arrowBaseY = tipY - dir * arrowLen
+        val ballCy = arrowBaseY - dir * ballR
         val shaftFarY = ballCy - dir * (ballR + shaftLen)
 
         canvas.drawLine(cx, shaftFarY, cx, ballCy, washoutLinePaint)
-        canvas.drawLine(cx - ballR, ballCy, cx, tipY, washoutLinePaint)
-        canvas.drawLine(cx + ballR, ballCy, cx, tipY, washoutLinePaint)
+        canvas.drawLine(cx - ballR, arrowBaseY, cx, tipY, washoutLinePaint)
+        canvas.drawLine(cx + ballR, arrowBaseY, cx, tipY, washoutLinePaint)
         canvas.drawCircle(cx, ballCy, ballR, washoutBallPaint)
     }
 
