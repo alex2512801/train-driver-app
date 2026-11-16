@@ -41,15 +41,28 @@ class GpsLocationProvider(context: Context) {
     fun start(minTimeMs: Long = 1000L, minDistanceM: Float = 1f, onLocation: (Location, LocationSource) -> Unit) {
         stop()
 
-        val gps = LocationListener { location -> onLocation(location, LocationSource.GPS) }
-        gpsListener = gps
-        locationManager.requestLocationUpdates(
-            LocationManager.GPS_PROVIDER,
-            minTimeMs,
-            minDistanceM,
-            gps,
-            Looper.getMainLooper()
-        )
+        // Не у всех устройств вообще ЕСТЬ GPS-чип (машинист: дешёвый планшет без SIM-слота,
+        // "тёмный экран и сразу вылетает") — requestLocationUpdates с несуществующим
+        // провайдером кидает IllegalArgumentException, и это было НЕПОЙМАННЫМ исключением,
+        // крашащим всё приложение прямо при запуске (та же причина, что и у NETWORK_PROVIDER
+        // ниже — тот уже был защищён такой же проверкой, а GPS почему-то нет). На планшете без
+        // GPS просто останется резервный NETWORK_PROVIDER, если он есть.
+        if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+            try {
+                val gps = LocationListener { location -> onLocation(location, LocationSource.GPS) }
+                gpsListener = gps
+                locationManager.requestLocationUpdates(
+                    LocationManager.GPS_PROVIDER,
+                    minTimeMs,
+                    minDistanceM,
+                    gps,
+                    Looper.getMainLooper()
+                )
+            } catch (e: Exception) {
+                // Провайдер числится включённым, но запрос всё равно отказал на какой-то
+                // нестандартной прошивке — не критично, работаем дальше без GPS.
+            }
+        }
 
         // Не у всех устройств/прошивок NETWORK_PROVIDER вообще включён или доступен — это
         // необязательный резерв, поэтому молча пропускаем, если его нет или он откажет.
