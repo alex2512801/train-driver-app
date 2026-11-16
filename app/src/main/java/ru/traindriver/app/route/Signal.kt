@@ -14,7 +14,11 @@ data class Signal(
     val name: String,
     val direction: Direction,
     val chainageM: Double,
-    val track: String?
+    val track: String?,
+    // Условно разрешающий сигнал (ТЗ/машинист: "если условно разрешающий, пишем номер и
+    // букву Т, тире и расстояние" — см. drawSignalTags, где label получает суффикс "Т").
+    // Список таких точек машинист диктует перегонами по мере вождения — conditional_signals.json.
+    val conditionallyPermissive: Boolean = false
 )
 
 /**
@@ -77,6 +81,7 @@ fun Signal.isVisibleFor(effectiveDataset: Direction, actualDirection: Direction)
 object SignalAssetLoader {
 
     fun loadSignals(context: Context, assetFileName: String = "track_signals.json"): List<Signal> {
+        val conditional = ConditionalSignalAssetLoader.loadConditionalChainages(context)
         val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
         val array = JSONArray(json)
         val raw = buildList(array.length()) {
@@ -85,7 +90,9 @@ object SignalAssetLoader {
                 val direction = if (obj.getString("direction") == "чётное") Direction.EVEN else Direction.ODD
                 val chainageM = ChainageFormatter.toMeters(obj.getInt("km"), obj.getInt("pk"))
                 val track = if (obj.isNull("track")) null else obj.getString("track")
-                add(Signal(obj.getString("name"), direction, chainageM, track))
+                val name = obj.getString("name")
+                val conditionallyPermissive = (name to chainageM) in conditional
+                add(Signal(name, direction, chainageM, track, conditionallyPermissive))
             }
         }
         // Одна и та же запись (та же литера на том же км+пк) часто встречается в ОБОИХ
@@ -102,4 +109,27 @@ object SignalAssetLoader {
     /** Сигналы главного пути (без среднего пути Тургутуй — Яблоновая, см. [Signal.track]). */
     fun loadMainTrackSignals(context: Context, assetFileName: String = "track_signals.json"): List<Signal> =
         loadSignals(context, assetFileName).filter { it.track == null }
+}
+
+/**
+ * Список точек (голый номер автоблокировки + км/пк), которые являются "условно разрешающим
+ * сигналом" — машинист диктует их перегонами по мере вождения (пока не весь маршрут размечен,
+ * список будет пополняться), см. [Signal.conditionallyPermissive].
+ */
+object ConditionalSignalAssetLoader {
+
+    fun loadConditionalChainages(
+        context: Context,
+        assetFileName: String = "conditional_signals.json"
+    ): Set<Pair<String, Double>> {
+        val json = DataOverrideStore.readJson(context, assetFileName)
+        val array = JSONArray(json)
+        val result = mutableSetOf<Pair<String, Double>>()
+        for (i in 0 until array.length()) {
+            val obj = array.getJSONObject(i)
+            val chainageM = ChainageFormatter.toMeters(obj.getInt("km"), obj.getInt("pk"))
+            result.add(obj.getString("name") to chainageM)
+        }
+        return result
+    }
 }

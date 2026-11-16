@@ -1012,7 +1012,12 @@ class TrackProfileView @JvmOverloads constructor(
      *  пути", у него на правильном пути всё равно показывался ЧД). */
     private fun drawSignalTags(canvas: Canvas, fromM: Double, toM: Double, xFor: (Double) -> Float, lineY: Float) {
         val tags = buildList {
-            for (s in signals) if (s.isVisibleFor(direction, rawDirection)) add(SignalTag(s.chainageM, s.name, false))
+            for (s in signals) if (s.isVisibleFor(direction, rawDirection)) {
+                // Условно разрешающий сигнал — буква "Т" сразу после номера, перед тире и
+                // расстоянием (машинист: "пишем 12 и букву Т, тире и расстояние").
+                val label = if (s.conditionallyPermissive) s.name + "Т" else s.name
+                add(SignalTag(s.chainageM, label, false))
+            }
             for (b in blockPosts) if (b.direction == direction) add(SignalTag(b.chainageM, b.label, false))
             for (st in stations) if (st.direction == direction) add(SignalTag(st.chainageM, st.name, true))
         }.sortedBy { it.chainageM }
