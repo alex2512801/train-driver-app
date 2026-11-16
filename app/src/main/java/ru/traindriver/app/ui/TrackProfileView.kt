@@ -136,7 +136,10 @@ class TrackProfileView @JvmOverloads constructor(
 
     private data class Pictogram(val chainageM: Double, val kind: PictogramKind)
 
-    private enum class PictogramKind { OPASNOE_START, OPASNOE_END, YELLOW_SHIELD, GREEN_SHIELD, AIR_GAP, NEUTRAL, CROSSING }
+    private enum class PictogramKind {
+        OPASNOE_START, OPASNOE_END, YELLOW_SHIELD, GREEN_SHIELD, AIR_GAP, NEUTRAL,
+        CROSSING_GUARDED, CROSSING_UNGUARDED
+    }
 
     private var speedLimits: List<SpeedLimit> = emptyList()
     private var resolver = SpeedLimitResolver(emptyList())
@@ -1081,15 +1084,13 @@ class TrackProfileView @JvmOverloads constructor(
 
     /** Все пиктограммы в видимом окне, отсортированные по м — настоящие (переезды/возд.
      *  промежутки/нейтральные вставки) + динамические (ограничения, ТЗ раздел 11). Переезды —
-     *  знак 1.1 ГОСТ Р 52290 (красный треугольник, чёрный шлагбаум-решётка внутри), машинист
-     *  прислал образец — рисуется одинаково для охраняемых и неохраняемых (у ГОСТ они на самом
-     *  деле разные — 1.1 со шлагбаумом/1.2 с паровозом без шлагбаума, но образец второго знака
-     *  не присылали, см. [Crossing.guarded] — различать визуально начнём, когда будет на что
-     *  ориентироваться). */
+     *  оба знака ГОСТ Р 52290, по [Crossing.guarded]: 1.1 со шлагбаумом (решётка) для охраняемых,
+     *  1.2 с паровозом (без шлагбаума) для неохраняемых — машинист прислал образцы обоих. */
     private fun buildPictograms(fromM: Double, toM: Double): List<Pictogram> {
         val result = mutableListOf<Pictogram>()
         for (c in crossings) if (c.direction == direction && c.chainageM in fromM..toM) {
-            result.add(Pictogram(c.chainageM, PictogramKind.CROSSING))
+            val kind = if (c.guarded) PictogramKind.CROSSING_GUARDED else PictogramKind.CROSSING_UNGUARDED
+            result.add(Pictogram(c.chainageM, kind))
         }
         for (a in airGaps) if (a.direction == direction && a.chainageM in fromM..toM) {
             result.add(Pictogram(a.chainageM, PictogramKind.AIR_GAP))
@@ -1275,7 +1276,8 @@ class TrackProfileView @JvmOverloads constructor(
             PictogramKind.GREEN_SHIELD -> drawShieldGlyph(canvas, cx, cy, s, greenShieldColor)
             PictogramKind.AIR_GAP -> drawAirGapGlyph(canvas, cx, cy, s)
             PictogramKind.NEUTRAL -> drawNeutralGlyph(canvas, cx, cy, s)
-            PictogramKind.CROSSING -> drawCrossingGlyph(canvas, cx, cy, s)
+            PictogramKind.CROSSING_GUARDED -> drawCrossingGlyph(canvas, cx, cy, s, guarded = true)
+            PictogramKind.CROSSING_UNGUARDED -> drawCrossingGlyph(canvas, cx, cy, s, guarded = false)
         }
     }
 
@@ -1377,13 +1379,14 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.drawRoundRect(cx - contentW / 2f, barTop, cx + contentW / 2f, barTop + barH, cornerR, cornerR, neutralGlyphWhitePaint)
     }
 
-    /** Переезд (знак 1.1 ГОСТ Р 52290) — красный треугольник, белая кайма, чёрная окантовка
-     *  снаружи, внутри чёрная решётка-шлагбаум (5 кольев с острым верхом + 2 горизонтальные
-     *  перекладины) в нижней половине поля. Образец прислал машинист — пропорции треугольника
-     *  и решётки подобраны по картинке на глаз, не по чертежу с миллиметрами (та же оговорка,
-     *  что и у drawAirGapGlyph). Уменьшенные концентрические треугольники (а не настоящий
-     *  отступ от каждой стороны) — на размере значка разница не видна, а код проще. */
-    private fun drawCrossingGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
+    /** Переезд — красный треугольник с белой каймой (общая рамка для обоих знаков ГОСТ Р 52290:
+     *  1.1 со шлагбаумом — [drawFenceGlyph], 1.2 без шлагбаума, с паровозом — [drawLocomotiveGlyph],
+     *  см. [Crossing.guarded]). Пропорции треугольника подобраны по картинке на глаз, не по
+     *  чертежу с миллиметрами (та же оговорка, что и у drawAirGapGlyph). Уменьшенные
+     *  концентрические треугольники (а не настоящий отступ от каждой стороны) — на размере
+     *  значка разница не видна, а код проще. Canvas остаётся переведённым в (cx,cy) после
+     *  вызова — внутренний рисунок (решётка/паровоз) рисуется прямо в этих же координатах. */
+    private fun drawCrossingGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, guarded: Boolean) {
         val baseHalf = s * 1.1547f // равносторонний треугольник высотой 2s: baseHalf = 2s/√3
         val topY = -s
         val baseY = s
@@ -1408,6 +1411,13 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.drawPath(triangle(0.88f), crossingRedPaint)
         canvas.drawPath(triangle(0.64f), crossingWhitePaint)
 
+        if (guarded) drawFenceGlyph(canvas, s) else drawLocomotiveGlyph(canvas, s)
+        canvas.restore()
+    }
+
+    /** Знак 1.1 — решётка-шлагбаум (5 кольев с острым верхом + 2 горизонтальные перекладины) в
+     *  нижней половине поля. Canvas уже переведён в центр значка, см. [drawCrossingGlyph]. */
+    private fun drawFenceGlyph(canvas: Canvas, s: Float) {
         val postCount = 5
         val fenceHalfW = s * 0.58f
         val fenceTopY = s * 0.05f
@@ -1431,7 +1441,51 @@ class TrackProfileView @JvmOverloads constructor(
         }
         canvas.drawRect(-fenceHalfW, fenceTopY + spikeH * 0.3f, fenceHalfW, fenceTopY + spikeH * 0.3f + barH, crossingBlackPaint)
         canvas.drawRect(-fenceHalfW, fenceBottomY - barH, fenceHalfW, fenceBottomY, crossingBlackPaint)
-        canvas.restore()
+    }
+
+    /** Знак 1.2 — силуэт паровоза (котёл+труба слева, будка с окошком справа, 3 колеса-кольца
+     *  на подножке) внизу поля + цепочка клубов дыма по диагонали вверх-вправо от трубы, почти
+     *  до вершины треугольника. Образец прислал машинист — тот самый классический ГОСТовский
+     *  силуэт. Canvas уже переведён в центр значка, см. [drawCrossingGlyph]. */
+    private fun drawLocomotiveGlyph(canvas: Canvas, s: Float) {
+        val wheelR = s * 0.135f
+        val baseY = s * 0.62f
+        val wheelCy = baseY - wheelR
+        val bodyBottom = wheelCy - wheelR * 0.75f
+        val boilerTop = bodyBottom - s * 0.32f
+        val boilerLeft = -s * 0.56f
+        val boilerRight = s * 0.18f
+
+        // подножка (узкая полоса под колёсами) + 3 колеса-кольца
+        canvas.drawRect(boilerLeft - s * 0.06f, baseY - s * 0.07f, s * 0.5f, baseY, crossingBlackPaint)
+        val wheelXs = floatArrayOf(boilerLeft + s * 0.14f, (boilerLeft + s * 0.5f) / 2f + s * 0.1f, s * 0.34f)
+        for (wx in wheelXs) {
+            canvas.drawCircle(wx, wheelCy, wheelR, crossingBlackPaint)
+            canvas.drawCircle(wx, wheelCy, wheelR * 0.4f, crossingWhitePaint)
+        }
+
+        // котёл (цилиндр слева) + будка (повыше, справа, с окошком)
+        canvas.drawRoundRect(boilerLeft, boilerTop, boilerRight, bodyBottom, s * 0.05f, s * 0.05f, crossingBlackPaint)
+        val cabLeft = boilerRight - s * 0.02f
+        val cabRight = s * 0.5f
+        val cabTop = boilerTop - s * 0.14f
+        canvas.drawRoundRect(cabLeft, cabTop, cabRight, bodyBottom, s * 0.04f, s * 0.04f, crossingBlackPaint)
+        canvas.drawRect(cabLeft + s * 0.08f, cabTop + s * 0.06f, cabRight - s * 0.08f, cabTop + s * 0.24f, crossingWhitePaint)
+
+        // труба (маленький столбик на левом конце котла)
+        val stackCx = boilerLeft + s * 0.12f
+        canvas.drawRect(stackCx - s * 0.06f, boilerTop - s * 0.14f, stackCx + s * 0.06f, boilerTop + s * 0.02f, crossingBlackPaint)
+
+        // дым — цепочка клубов по диагонали вверх-вправо от трубы, почти до вершины
+        var px = stackCx
+        var py = boilerTop - s * 0.16f
+        var r = s * 0.1f
+        for (i in 0 until 4) {
+            canvas.drawCircle(px, py, r, crossingBlackPaint)
+            px += r * 0.9f
+            py -= r * 1.6f
+            r *= 1.12f
+        }
     }
 
     /**
