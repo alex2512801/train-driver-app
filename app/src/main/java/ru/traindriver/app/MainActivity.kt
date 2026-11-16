@@ -561,6 +561,7 @@ class MainActivity : AppCompatActivity() {
         trackProfileView.setAirGaps(airGaps)
         trackProfileView.setNeutralInserts(neutralInserts)
         trackProfileView.setWashouts(washouts)
+        trackProfileView.setBrakeTests(brakeTests)
         timeHandler.post(timeUpdater)
 
         directionButton.setOnClickListener {

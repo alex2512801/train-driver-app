@@ -17,7 +17,7 @@ object StationAssetLoader {
     fun loadStations(context: Context, assetFileName: String = "track_stations.json"): List<Station> {
         val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
         val array = JSONArray(json)
-        return buildList(array.length()) {
+        val raw = buildList(array.length()) {
             for (i in 0 until array.length()) {
                 val obj = array.getJSONObject(i)
                 val direction = if (obj.getString("direction") == "чётное") Direction.EVEN else Direction.ODD
@@ -25,6 +25,13 @@ object StationAssetLoader {
                 add(Station(obj.getString("name"), direction, chainageM))
             }
         }
+        // Два соседних исходных PDF (Хилок-Крм.pdf/Крм-Чернышевск.pdf — и их пара для
+        // нечётного) физически пересекаются на км 6290-6304.9 (см. tools/stitch_relief.py) —
+        // в этом диапазоне одна и та же станция/парк извлекалась из ОБОИХ файлов и попадала в
+        // track_signals.json дважды (там уже есть такая же защита, см. SignalAssetLoader), но
+        // в этот загрузчик её забыли добавить — на графике "Парк" на 6292/6300 км и "Карымская"
+        // на 6295/6296 км показывались задвоенными, друг над другом (машинист прислал скриншот).
+        return raw.distinctBy { Triple(it.name, it.direction, it.chainageM) }
     }
 }
 

@@ -31,6 +31,7 @@ import ru.traindriver.app.route.isVisibleFor
 import ru.traindriver.app.route.SpeedLimit
 import ru.traindriver.app.route.SpeedLimitResolver
 import ru.traindriver.app.route.Station
+import ru.traindriver.app.route.BrakeTest
 import ru.traindriver.app.route.Washout
 
 /**
@@ -138,7 +139,7 @@ class TrackProfileView @JvmOverloads constructor(
 
     private enum class PictogramKind {
         OPASNOE_START, OPASNOE_END, YELLOW_SHIELD, GREEN_SHIELD, AIR_GAP, NEUTRAL,
-        CROSSING_GUARDED, CROSSING_UNGUARDED
+        CROSSING_GUARDED, CROSSING_UNGUARDED, BRAKE_TEST
     }
 
     private var speedLimits: List<SpeedLimit> = emptyList()
@@ -172,6 +173,7 @@ class TrackProfileView @JvmOverloads constructor(
     private var airGaps: List<AirGap> = emptyList()
     private var neutralInserts: List<NeutralInsert> = emptyList()
     private var washouts: List<Washout> = emptyList()
+    private var brakeTests: List<BrakeTest> = emptyList()
 
     // Метки места (машинист, не из ТЗ/макета): тап около головы поезда в верхней зоне (где
     // сигналы) ставит метку ровно на ТЕКУЩЕМ месте головы — например, прямо на стрелке, когда
@@ -472,6 +474,17 @@ class TrackProfileView @JvmOverloads constructor(
     private val shieldWhitePaint = Paint().apply { color = Color.WHITE }
     private val shieldBlackPaint = Paint().apply { color = Color.BLACK }
 
+    // Проба тормозов (ТЗ раздел 6) — белый квадрат, красная окантовка, буквы "НТ" внутри.
+    // Точного чертежа с размерами не присылали (та же оговорка, что и в README про этот
+    // значок) — форма как в README-описании ("белый квадрат/красная окантовка + буквы НТ").
+    private val brakeTestRedPaint = Paint().apply { color = Color.rgb(213, 0, 0); isAntiAlias = true }
+    private val brakeTestTextPaint = Paint().apply {
+        color = Color.rgb(213, 0, 0)
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+        isAntiAlias = true
+    }
+
     // Переезд (знак 1.1 ГОСТ Р 52290) — красный треугольник с белой каймой и чёрной решёткой-
     // шлагбаумом внутри, образец прислал машинист (см. doc-комментарий у drawCrossingGlyph).
     private val crossingWhitePaint = Paint().apply { color = Color.WHITE; isAntiAlias = true }
@@ -730,6 +743,11 @@ class TrackProfileView @JvmOverloads constructor(
 
     fun setWashouts(list: List<Washout>) {
         washouts = list
+        invalidate()
+    }
+
+    fun setBrakeTests(list: List<BrakeTest>) {
+        brakeTests = list
         invalidate()
     }
 
@@ -1095,6 +1113,9 @@ class TrackProfileView @JvmOverloads constructor(
         for (a in airGaps) if (a.direction == direction && a.chainageM in fromM..toM) {
             result.add(Pictogram(a.chainageM, PictogramKind.AIR_GAP))
         }
+        for (b in brakeTests) if (b.direction == direction && b.chainageM in fromM..toM) {
+            result.add(Pictogram(b.chainageM, PictogramKind.BRAKE_TEST))
+        }
         for (n in neutralInserts) if (n.direction == rawDirection && n.chainageM in fromM..toM) {
             result.add(Pictogram(n.chainageM, PictogramKind.NEUTRAL))
         }
@@ -1278,6 +1299,7 @@ class TrackProfileView @JvmOverloads constructor(
             PictogramKind.NEUTRAL -> drawNeutralGlyph(canvas, cx, cy, s)
             PictogramKind.CROSSING_GUARDED -> drawCrossingGlyph(canvas, cx, cy, s, guarded = true)
             PictogramKind.CROSSING_UNGUARDED -> drawCrossingGlyph(canvas, cx, cy, s, guarded = false)
+            PictogramKind.BRAKE_TEST -> drawBrakeTestGlyph(canvas, cx, cy, s)
         }
     }
 
@@ -1313,6 +1335,18 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.drawRect(cx - s + inset1, cy - s + inset1, cx + s - inset1, cy + s - inset1, shieldBlackPaint)
         shieldColorPaint.color = fillColor
         canvas.drawRect(cx - s + inset2, cy - s + inset2, cx + s - inset2, cy + s - inset2, shieldColorPaint)
+    }
+
+    /** Проба тормозов — белый квадрат с красной окантовкой и буквами "НТ" внутри, см.
+     *  doc-комментарий у brakeTestRedPaint. Раньше загружался только для голосового
+     *  оповещения, на графике не рисовался вообще (машинист: "оповещение есть, а на
+     *  режимной карте не указаны"). */
+    private fun drawBrakeTestGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
+        val inset = s * 0.16f
+        canvas.drawRect(cx - s, cy - s, cx + s, cy + s, brakeTestRedPaint)
+        canvas.drawRect(cx - s + inset, cy - s + inset, cx + s - inset, cy + s - inset, shieldWhitePaint)
+        brakeTestTextPaint.textSize = s * 0.95f
+        canvas.drawText("НТ", cx, cy + brakeTestTextPaint.textSize * 0.35f, brakeTestTextPaint)
     }
 
     /** 3×7 клеток, строки 1/3/5/7 (индексы 0,2,4,6) чёрные во всю ширину + сплошная чёрная
