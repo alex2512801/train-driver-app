@@ -25,6 +25,7 @@ import android.telephony.SubscriptionManager
 import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -433,6 +434,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Экран не должен гаснуть сам, пока приложение открыто (машинист — заметка из
+        // ОТЛОЖЕНО.md). Обычный способ через android:keepScreenOn на корневом View работал
+        // бы так же, но FLAG_KEEP_SCREEN_ON на самом окне надёжнее — действует даже если
+        // корневой layout ещё не успел отрисоваться.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_main)
         hideSystemUi()
 
