@@ -41,27 +41,26 @@ class GpsLocationProvider(context: Context) {
     fun start(minTimeMs: Long = 1000L, minDistanceM: Float = 1f, onLocation: (Location, LocationSource) -> Unit) {
         stop()
 
-        // Не у всех устройств вообще ЕСТЬ GPS-чип (машинист: дешёвый планшет без SIM-слота,
-        // "тёмный экран и сразу вылетает") — requestLocationUpdates с несуществующим
-        // провайдером кидает IllegalArgumentException, и это было НЕПОЙМАННЫМ исключением,
-        // крашащим всё приложение прямо при запуске (та же причина, что и у NETWORK_PROVIDER
-        // ниже — тот уже был защищён такой же проверкой, а GPS почему-то нет). На планшете без
-        // GPS просто останется резервный NETWORK_PROVIDER, если он есть.
-        if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
-            try {
-                val gps = LocationListener { location -> onLocation(location, LocationSource.GPS) }
-                gpsListener = gps
-                locationManager.requestLocationUpdates(
-                    LocationManager.GPS_PROVIDER,
-                    minTimeMs,
-                    minDistanceM,
-                    gps,
-                    Looper.getMainLooper()
-                )
-            } catch (e: Exception) {
-                // Провайдер числится включённым, но запрос всё равно отказал на какой-то
-                // нестандартной прошивке — не критично, работаем дальше без GPS.
-            }
+        // ВАЖНО: тут НЕ проверяем isProviderEnabled(GPS_PROVIDER) заранее (машинист поправил —
+        // GPS на его планшете реальный и рабочий, просто мог быть в моьмент запуска выключен
+        // в настройках геолокации). requestLocationUpdates можно вызывать и пока провайдер
+        // выключен — Android сам пришлёт обновления, как только геолокацию включат, подписка
+        // просто ждёт. Падает (IllegalArgumentException) только если такого провайдера у
+        // устройства вообще НЕТ в системе — именно этот, более редкий случай ловим здесь, чтобы
+        // не крашить всё приложение прямо при запуске.
+        try {
+            val gps = LocationListener { location -> onLocation(location, LocationSource.GPS) }
+            gpsListener = gps
+            locationManager.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER,
+                minTimeMs,
+                minDistanceM,
+                gps,
+                Looper.getMainLooper()
+            )
+        } catch (e: Exception) {
+            // Такого провайдера у устройства нет вообще — работаем дальше без GPS (останется
+            // резервный NETWORK_PROVIDER, если он есть).
         }
 
         // Не у всех устройств/прошивок NETWORK_PROVIDER вообще включён или доступен — это
