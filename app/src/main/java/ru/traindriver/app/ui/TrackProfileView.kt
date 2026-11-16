@@ -1634,6 +1634,12 @@ class TrackProfileView @JvmOverloads constructor(
     // ПОСЛЕДНИМ в onDraw, поэтому его непрозрачный фон гарантированно перекрывает всё
     // нарисованное под ним (машинист: "чтобы не перекрывалась ничем, не было линий"). V=
     // (разрешённая скорость на текущем месте) — отдельной строкой под окошком, как и раньше.
+    // Окошко Vф — у правого края графика (было у левого), машинист: "перенести в правую
+    // сторону, к правому краю экрана". Сдвинуто вниз (boxTop = dp(104f), не dp(8f)) специально
+    // ПОД секундомер (MainActivity.toggleStopwatch), который открывается поверх графика в
+    // верхнем правом углу той же стороны (activity_main.xml, stopwatchWindow, gravity=top|end,
+    // высота ≈ отступы 16dp + время 22sp + отступ 6dp + кнопка "Сброс" 40dp ≈ 90dp) — иначе
+    // открытый секундомер накрывал бы собой окошко Vф.
     private fun drawCurrentSpeedLabel(canvas: Canvas) {
         val activeRestriction = restrictions.firstOrNull { trainPositionM in it.startM..it.endM }
         val speedKmh = activeRestriction?.speedKmh ?: resolver.speedAt(direction, trainPositionM)?.speedKmh
@@ -1643,15 +1649,16 @@ class TrackProfileView @JvmOverloads constructor(
         val paddingH = dp(14f)
         val paddingV = dp(10f)
         val metrics = actualSpeedTextPaint.fontMetrics
-        val boxLeft = dp(8f)
-        val boxTop = dp(8f)
-        val boxRight = boxLeft + actualSpeedTextPaint.measureText(actualText) + paddingH * 2
+        val boxRight = width - dp(8f)
+        val boxTop = dp(104f)
+        val boxLeft = boxRight - actualSpeedTextPaint.measureText(actualText) - paddingH * 2
         val boxBottom = boxTop + (metrics.descent - metrics.ascent) + paddingV * 2
         val cornerRadius = dp(10f)
         canvas.drawRoundRect(boxLeft, boxTop, boxRight, boxBottom, cornerRadius, cornerRadius, speedWindowBgPaint)
         canvas.drawRoundRect(boxLeft, boxTop, boxRight, boxBottom, cornerRadius, cornerRadius, speedWindowBorderPaint)
         canvas.drawText(actualText, boxLeft + paddingH, boxTop + paddingV - metrics.ascent, actualSpeedTextPaint)
 
-        canvas.drawText(limitText, dp(8f), boxBottom + dp(34f), speedTextPaint)
+        val limitTextW = speedTextPaint.measureText(limitText)
+        canvas.drawText(limitText, boxRight - limitTextW, boxBottom + dp(34f), speedTextPaint)
     }
 }
