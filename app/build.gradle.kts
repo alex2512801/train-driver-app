@@ -15,7 +15,26 @@ android {
         versionName = "0.1"
     }
 
+    // Без этого debug-ключ генерируется автоматически и РАЗНЫЙ на каждой машине/запуске —
+    // у каждого отдельного запуска GitHub Actions (свежий runner без ~/.android) и у Android
+    // Studio на компьютере машиниста получался СВОЙ ключ. Android отказывается обновить
+    // установленное приложение новым APK с другой подписью (тихо, без явной ошибки на
+    // некоторых прошивках) — именно поэтому после установки "исправленного" APK с GitHub
+    // ничего не менялось: старое приложение с другой подписью просто не обновлялось. Один
+    // закоммиченный keystore (app/debug.keystore) делает подпись одинаковой везде.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debug")
+        }
         release {
             isMinifyEnabled = false
             proguardFiles(
