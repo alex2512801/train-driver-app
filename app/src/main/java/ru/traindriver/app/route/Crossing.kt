@@ -18,7 +18,7 @@ data class Crossing(
 object CrossingAssetLoader {
 
     fun loadCrossings(context: Context, assetFileName: String = "crossings.json"): List<Crossing> {
-        val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
+        val json = DataOverrideStore.readJson(context, assetFileName)
         val array = JSONArray(json)
         val result = mutableListOf<Crossing>()
         for (i in 0 until array.length()) {

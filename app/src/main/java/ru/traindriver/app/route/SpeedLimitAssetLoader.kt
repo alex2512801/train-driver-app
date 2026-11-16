@@ -7,7 +7,7 @@ import org.json.JSONArray
 object SpeedLimitAssetLoader {
 
     fun loadSpeedLimits(context: Context, assetFileName: String = "speed_limits.json"): List<SpeedLimit> {
-        val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
+        val json = DataOverrideStore.readJson(context, assetFileName)
         val array = JSONArray(json)
         return buildList(array.length()) {
             for (i in 0 until array.length()) {

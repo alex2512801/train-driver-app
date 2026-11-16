@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    "База данных" (ТЗ раздел 12, пункт стартового меню) — машинист сам может обновить часть
+    данных прямо с устройства (режимная карта, скорости, переезды и т.п.), без участия Claude
+    и без пересборки всего приложения. По каждой категории — файл нужно прислать уже в том же
+    формате (том же наборе полей JSON), что и у заводского файла этой категории; экран сам
+    формат не конвертирует (см. doc-комментарий в DataOverrideStore.kt).
+
+    Каждая строка — своя категория: подпись + статус (заводские данные/обновлено) + кнопка
+    "Обновить" (выбрать файл) + кнопка "Сбросить" (вернуть заводские). Список статично прописан
+    в XML, а не собирается динамически — та же манера, что и во всех остальных экранах этого
+    приложения (ни один из них не использует RecyclerView/адаптеры).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:orientation="vertical">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="База данных"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:fontFamily="monospace"
+        android:textSize="22sp"
+        android:gravity="center"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp" />
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="12dp">
+
+            <!-- Режимная карта -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Режимная карта (профиль пути)" />
+                <TextView android:id="@+id/reliefStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/reliefUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/reliefResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- Скорости -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Скорости (постоянные ограничения)" />
+                <TextView android:id="@+id/speedStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/speedUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/speedResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- Воздушные промежутки -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Воздушные промежутки" />
+                <TextView android:id="@+id/airGapStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/airGapUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/airGapResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- Переезды -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Переезды" />
+                <TextView android:id="@+id/crossingStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/crossingUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/crossingResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- Обрывные места -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Обрывные места" />
+                <TextView android:id="@+id/washoutStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/washoutUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/washoutResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+        </LinearLayout>
+    </ScrollView>
+
+    <Button
+        android:id="@+id/databaseCloseButton"
+        style="@style/HeaderToggleButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:layout_margin="12dp"
+        android:text="ЗАКРЫТЬ" />
+
+</LinearLayout>

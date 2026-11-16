@@ -15,8 +15,10 @@
         android:theme="@style/Theme.TrainDriverApp"
         android:supportsRtl="true">
 
+        <!-- Стартовое меню (машинист, ТЗ раздел 12) — теперь первый экран при запуске
+             приложения, а не сразу главный экран. См. doc-комментарий в MenuActivity.kt. -->
         <activity
-            android:name=".MainActivity"
+            android:name=".MenuActivity"
             android:exported="true"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout">
@@ -25,6 +27,21 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout" />
+
+        <!-- "База данных" (ТЗ раздел 12, пункт меню) — обновление карт/скоростей/переездов и
+             т.п. прямо с устройства, без пересборки приложения (см. DatabaseActivity.kt /
+             DataOverrideStore.kt). -->
+        <activity
+            android:name=".DatabaseActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout" />
 
         <!-- "Ограничения" (ТЗ раздел 11) — отдельный полноэкранный экран, не диалог поверх
              MainActivity (см. doc-комментарий в RestrictionsActivity.kt). -->

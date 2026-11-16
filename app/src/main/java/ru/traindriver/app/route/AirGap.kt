@@ -14,7 +14,7 @@ data class AirGap(
 object AirGapAssetLoader {
 
     fun loadAirGaps(context: Context, assetFileName: String = "air_gaps.json"): List<AirGap> {
-        val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
+        val json = DataOverrideStore.readJson(context, assetFileName)
         val array = JSONArray(json)
         val result = mutableListOf<AirGap>()
         for (i in 0 until array.length()) {

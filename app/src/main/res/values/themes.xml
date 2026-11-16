@@ -22,6 +22,61 @@
         <item name="android:textAllCaps">false</item>
     </style>
 
+    <!-- Крупная кнопка стартового меню (MenuActivity) — "Запустить приложение"/"База данных".
+         Та же рамка, что у HeaderToggleButton, просто крупнее — это НЕ часть шапки, тут места
+         намного больше, спешить некуда. -->
+    <style name="MenuButton" parent="Widget.AppCompat.Button.Borderless">
+        <item name="android:layout_width">320dp</item>
+        <item name="android:layout_height">64dp</item>
+        <item name="android:background">@drawable/bg_header_toggle</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
+    <!-- Экран "База данных" (DatabaseActivity) — одна строка на категорию данных. -->
+    <style name="DatabaseRow">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:gravity">center_vertical</item>
+        <item name="android:paddingTop">10dp</item>
+        <item name="android:paddingBottom">10dp</item>
+    </style>
+
+    <style name="DatabaseRowLabel">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+
+    <style name="DatabaseRowStatus">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:layout_marginEnd">10dp</item>
+    </style>
+
+    <!-- Та же рамка, что у MenuButton, просто поуже — для строк списка в DatabaseActivity. -->
+    <style name="MenuButtonSmall" parent="Widget.AppCompat.Button.Borderless">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:minWidth">0dp</item>
+        <item name="android:background">@drawable/bg_header_toggle</item>
+        <item name="android:paddingStart">10dp</item>
+        <item name="android:paddingEnd">10dp</item>
+        <item name="android:textColor">#FFFFFF</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textAllCaps">false</item>
+    </style>
+
     <!-- Кнопка-иконка в шапке (⏱/📋/🌙) — без рамки и фона, эмодзи, тап-зона не меньше
          обычного минимального размера (40dp), но компактнее, чем раньше — см. комментарий
          у HeaderToggleButton выше. -->

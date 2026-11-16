@@ -18,7 +18,7 @@ data class Washout(
 object WashoutAssetLoader {
 
     fun loadWashouts(context: Context, assetFileName: String = "washouts.json"): List<Washout> {
-        val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
+        val json = DataOverrideStore.readJson(context, assetFileName)
         val array = JSONArray(json)
         val result = mutableListOf<Washout>()
         for (i in 0 until array.length()) {

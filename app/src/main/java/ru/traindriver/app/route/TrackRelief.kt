@@ -95,7 +95,7 @@ class ReliefProfile(points: List<ReliefPoint>) {
 object ReliefAssetLoader {
 
     fun loadRelief(context: Context, assetFileName: String = "track_relief.json"): ReliefProfile {
-        val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
+        val json = DataOverrideStore.readJson(context, assetFileName)
         val array = JSONArray(json)
         val points = buildList(array.length()) {
             for (i in 0 until array.length()) {
