@@ -86,7 +86,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var gpsStatusText: TextView
     private lateinit var destinationText: TextView
     private lateinit var timeText: TextView
-    private lateinit var statusVfText: TextView
+    private lateinit var signalSyncButton: Button
     private lateinit var statusUklonText: TextView
     private lateinit var statusVText: TextView
     private lateinit var statusSText: TextView
@@ -387,7 +387,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateTrainPositionDerivedState(chainageM: Double) {
         trackProfileView.setTrainPositionM(chainageM)
         trackProfileView.setActualSpeedKmh(lastSpeedKmh)
-        refreshStatusBar(lastSpeedKmh, chainageM)
+        refreshStatusBar(chainageM)
         updateDestinationText(chainageM)
 
         val brakeTest = brakeTestScheduler.update(chainageM, directionSelection.picketsGrowing)
@@ -492,7 +492,8 @@ class MainActivity : AppCompatActivity() {
         stopwatchWindow = findViewById(R.id.stopwatchWindow)
         stopwatchText = findViewById(R.id.stopwatchText)
         stopwatchResetButton = findViewById(R.id.stopwatchResetButton)
-        statusVfText = findViewById(R.id.statusVfText)
+        signalSyncButton = findViewById(R.id.signalSyncButton)
+        signalSyncButton.setOnClickListener { syncToNearestSignal() }
         statusUklonText = findViewById(R.id.statusUklonText)
         statusVText = findViewById(R.id.statusVText)
         statusSText = findViewById(R.id.statusSText)
@@ -1035,7 +1036,39 @@ class MainActivity : AppCompatActivity() {
         return nextSignal?.let { kotlin.math.abs(it.chainageM - fromM) }
     }
 
-    // Нижняя статусная строка (ТЗ раздел 7): Vф | уклон | V= | S= | голова | хвост — каждое
+    // Кнопка "Сигнал" в нижней статусной строке (машинист, не из ТЗ/макета): координата по
+    // GPS в пути может ошибаться на 200-300 м (машинист проверил в реальной поездке — "если
+    // пятый пикет, программа показывает третий, а то и второй"). Чтобы это поправить руками —
+    // в момент проследования светофора (до него или после — в пределах 500 м) машинист жмёт
+    // эту кнопку, приложение находит ближайший сигнал своего направления и "прыгает" прямо на
+    // его место, как будто это была настоящая GPS-точка. Поправка держится ровно до следующего
+    // настоящего фикса GPS/сети (startLocationUpdates его всё равно перезапишет) — это разовая
+    // ручная калибровка, а не постоянное отключение GPS.
+    private fun syncToNearestSignal() {
+        val currentM = estimatedChainageM(System.currentTimeMillis()) ?: lastChainageM
+        val relevant = signals.filter {
+            it.isVisibleFor(directionSelection.effectiveDataset, directionSelection.direction)
+        }
+        val nearest = relevant.minByOrNull { kotlin.math.abs(it.chainageM - currentM) }
+        val distanceM = nearest?.let { kotlin.math.abs(it.chainageM - currentM) }
+        if (nearest == null || distanceM == null || distanceM > 500.0) {
+            Toast.makeText(this, "Рядом нет сигнала (в пределах 500 м)", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        lastChainageM = nearest.chainageM
+        lastGpsFixAtMs = System.currentTimeMillis()
+        hasGpsFix = true
+        coordinateText.text = formatCoordinate(nearest.chainageM)
+        updateTrainPositionDerivedState(nearest.chainageM)
+        Toast.makeText(
+            this,
+            "Привязано к сигналу ${nearest.name}, ${ChainageFormatter.format(nearest.chainageM)}",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
+    // Нижняя статусная строка (ТЗ раздел 7): уклон | V= | S= | голова | хвост — каждое
     // значение теперь в своём отдельном секторе (см. statusBarRow в activity_main.xml), а не
     // одной строкой текста, которая вся целиком съезжала влево, стоило где-то одному значению
     // показать "?". Голова/Хвост раньше были "—" — не было данных о км+пк сигналов (см. README),
@@ -1044,8 +1077,7 @@ class MainActivity : AppCompatActivity() {
     // сколько осталось хвосту до сигнала, который он ещё не прошёл (если состав длинный и сигналы
     // частые, это может быть сигнал, который голова уже проехала — то есть хвост ещё не до конца
     // его освободил). Уклон пока "—" — нужны данные о профиле пути, которых ещё нет.
-    private fun refreshStatusBar(speedKmh: Double, chainageM: Double) {
-        statusVfText.text = "Vф=${speedKmh.toInt()}"
+    private fun refreshStatusBar(chainageM: Double) {
         statusUklonText.text = "Уклон=—"
 
         // V=/S= должны учитывать и постоянные ограничения (speedLimitResolver), и введённые
