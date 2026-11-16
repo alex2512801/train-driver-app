@@ -68,6 +68,8 @@ import ru.traindriver.app.route.StationAnnouncementAssetLoader
 import ru.traindriver.app.route.StationAssetLoader
 import ru.traindriver.app.route.TrainParams
 import ru.traindriver.app.route.TrainParamsStore
+import ru.traindriver.app.route.Washout
+import ru.traindriver.app.route.WashoutAssetLoader
 import ru.traindriver.app.route.nearestStationName
 import ru.traindriver.app.route.nextStationAhead
 import ru.traindriver.app.ui.BatteryIconView
@@ -161,6 +163,7 @@ class MainActivity : AppCompatActivity() {
     private val relief by lazy { ReliefAssetLoader.loadRelief(this) }
     private val crossings by lazy { CrossingAssetLoader.loadCrossings(this) }
     private val airGaps by lazy { AirGapAssetLoader.loadAirGaps(this) }
+    private val washouts by lazy { WashoutAssetLoader.loadWashouts(this) }
     private val neutralInserts by lazy { NeutralInsertAssetLoader.loadNeutralInserts(this) }
 
     // "Ограничения" (ТЗ раздел 11) — временные ограничения скорости, введённые машинистом.
@@ -247,6 +250,10 @@ class MainActivity : AppCompatActivity() {
     // (машинист может добавить ограничение через RestrictionsActivity прямо во время движения) —
     // пересобирается там же, где и остальная работа со списком, см. refreshTrackProfileRestrictions.
     private var tempLimitScheduler = PointAnnouncementScheduler<Restriction>(emptyList(), { it.startM }, thresholdOf = { 2000.0 })
+
+    // Обрывное место (ТЗ раздел 6) — "Внимание! Впереди обрывное место!" за 2000 м, тот же
+    // статичный asset-список, что и переезды — пересобирается в updateDirectionUi.
+    private var washoutScheduler = PointAnnouncementScheduler<Washout>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
 
     // "Параметры" (ТЗ раздел 5 / раздел 12.2) — отдельный полноэкранный экран
     // (TrainParamsActivity, кнопка paramsButton запускает его через Intent), не отдельный
@@ -349,6 +356,7 @@ class MainActivity : AppCompatActivity() {
         if (crossingNear800Scheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.CROSSING_NEAR)
         if (crossingNear300Scheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.CROSSING_NEAR)
         if (tempLimitScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.TEMP_LIMIT)
+        if (washoutScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.WASHOUT)
 
         if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
             voiceAnnouncer.play(Announcement.STATION)
@@ -494,6 +502,7 @@ class MainActivity : AppCompatActivity() {
         trackProfileView.setCrossings(crossings)
         trackProfileView.setAirGaps(airGaps)
         trackProfileView.setNeutralInserts(neutralInserts)
+        trackProfileView.setWashouts(washouts)
         timeHandler.post(timeUpdater)
 
         directionButton.setOnClickListener {
@@ -834,6 +843,9 @@ class MainActivity : AppCompatActivity() {
         crossingFarScheduler = PointAnnouncementScheduler(relevantCrossings, { it.chainageM }, thresholdOf = { 1500.0 })
         crossingNear800Scheduler = PointAnnouncementScheduler(relevantCrossings, { it.chainageM }, thresholdOf = { 800.0 })
         crossingNear300Scheduler = PointAnnouncementScheduler(relevantCrossings, { it.chainageM }, thresholdOf = { 300.0 })
+
+        val relevantWashouts = washouts.filter { it.direction == s.effectiveDataset }
+        washoutScheduler = PointAnnouncementScheduler(relevantWashouts, { it.chainageM }, thresholdOf = { 2000.0 })
 
         refreshTrackProfileRestrictions()
     }

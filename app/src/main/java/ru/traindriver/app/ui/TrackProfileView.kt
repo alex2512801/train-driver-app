@@ -31,6 +31,7 @@ import ru.traindriver.app.route.isVisibleFor
 import ru.traindriver.app.route.SpeedLimit
 import ru.traindriver.app.route.SpeedLimitResolver
 import ru.traindriver.app.route.Station
+import ru.traindriver.app.route.Washout
 
 /**
  * Срез главного экрана (ТЗ раздел 7) — километровая/пикетная линейка, ступенчатый график
@@ -167,6 +168,7 @@ class TrackProfileView @JvmOverloads constructor(
     private var crossings: List<Crossing> = emptyList()
     private var airGaps: List<AirGap> = emptyList()
     private var neutralInserts: List<NeutralInsert> = emptyList()
+    private var washouts: List<Washout> = emptyList()
 
     // Метки места (машинист, не из ТЗ/макета): тап около головы поезда в верхней зоне (где
     // сигналы) ставит метку ровно на ТЕКУЩЕМ месте головы — например, прямо на стрелке, когда
@@ -262,6 +264,18 @@ class TrackProfileView @JvmOverloads constructor(
     }
     private val headMarkerPinHolePaint = Paint().apply {
         color = Color.WHITE
+        style = Paint.Style.FILL
+        isAntiAlias = true
+    }
+    // Обрывное место (см. doc-комментарий у washouts/drawWashoutGlyph) — красная стрелка с
+    // шариком на конце, касается рельефа именно в своей точке. Цвет красный ЗАФИКСИРОВАН
+    // (не зависит от applyPalette/день-ночь) — та же причина, что и у headMarker выше.
+    private val washoutLinePaint = Paint().apply {
+        color = Color.RED
+        strokeWidth = dp(3f)
+    }
+    private val washoutBallPaint = Paint().apply {
+        color = Color.RED
         style = Paint.Style.FILL
         isAntiAlias = true
     }
@@ -696,6 +710,11 @@ class TrackProfileView @JvmOverloads constructor(
 
     fun setNeutralInserts(list: List<NeutralInsert>) {
         neutralInserts = list
+        invalidate()
+    }
+
+    fun setWashouts(list: List<Washout>) {
+        washouts = list
         invalidate()
     }
 
@@ -1200,7 +1219,34 @@ class TrackProfileView @JvmOverloads constructor(
             drawPictogramGlyph(canvas, px, py, iconHalfPx, p.kind)
         }
 
+        // Обрывное место — в отличие от обычных пиктограмм выше (фиксированное место внизу
+        // ИЛИ вверху полосы) стрелка касается рельефа РОВНО в своей точке, а не в одном из
+        // двух условных мест. Машинист продиктовал: если рельеф там низкий (в нижней половине
+        // полосы) — стрелка висит сверху и указывает вниз, на него; если высокий (в верхней
+        // половине) — стрелка стоит снизу и указывает вверх.
+        val midY = top + bandH / 2f
+        for (washout in washouts) {
+            if (washout.direction != direction || washout.chainageM !in fromM..toM) continue
+            val px = xFor(washout.chainageM)
+            val curveY = reliefY(washout.chainageM)
+            drawWashoutGlyph(canvas, px, curveY, pointingDown = curveY > midY)
+        }
+
         return reliefY(trainPositionM) to reliefY(headX0M)
+    }
+
+    /** Короткая красная стрелка с шариком на конце — шарик касается кривой рельефа, хвостик
+     *  стрелки уходит в сторону от неё (вверх, если стрелка "висит сверху", вниз — если
+     *  "растёт снизу"), см. doc-комментарий у вызова выше. */
+    private fun drawWashoutGlyph(canvas: Canvas, cx: Float, curveY: Float, pointingDown: Boolean) {
+        val ballR = dp(5f)
+        val shaftLen = dp(16f)
+        if (pointingDown) {
+            canvas.drawLine(cx, curveY - shaftLen, cx, curveY, washoutLinePaint)
+        } else {
+            canvas.drawLine(cx, curveY, cx, curveY + shaftLen, washoutLinePaint)
+        }
+        canvas.drawCircle(cx, curveY, ballR, washoutBallPaint)
     }
 
     private fun drawPictogramGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, kind: PictogramKind) {
