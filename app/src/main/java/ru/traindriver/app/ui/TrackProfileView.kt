@@ -105,7 +105,10 @@ class TrackProfileView @JvmOverloads constructor(
         // метров, и она исчезает"). Допуск тапа по горизонтали — "около головы", не точно в
         // пиксель по тонкой линии, иначе попасть пальцем почти невозможно.
         private const val HEAD_MARKER_CLEAR_M = 100.0
-        private const val HEAD_MARKER_TAP_TOLERANCE_DP = 40f
+        // 40dp → 90dp — машинист: "попасть в него пальцем очень тяжело". Вертикально допуск
+        // и так уже широкий (вся верхняя зона графика, от потолка до линии сигналов, см.
+        // maybeAddHeadMarker) — тесно было именно по горизонтали, вокруг тонкой линии головы.
+        private const val HEAD_MARKER_TAP_TOLERANCE_DP = 90f
 
         // Пиктограммы на рельефе — два фиксированных места (см. doc-комментарий класса).
         private const val ICON_HALF_DP = 16f
@@ -169,6 +172,7 @@ class TrackProfileView @JvmOverloads constructor(
     private var stations: List<Station> = emptyList()
     private var blockPosts: List<BlockPost> = emptyList()
     private var relief: ReliefProfile = ReliefProfile(emptyList())
+    private var reliefGlobalRange: Map<Direction, Pair<Double, Double>?> = emptyMap()
     private var crossings: List<Crossing> = emptyList()
     private var airGaps: List<AirGap> = emptyList()
     private var neutralInserts: List<NeutralInsert> = emptyList()
@@ -358,9 +362,12 @@ class TrackProfileView @JvmOverloads constructor(
     }
 
     // Штриховка временных ограничений (ТЗ раздел 11, "/") И короткого участка раздела 9 ("\",
-    // reverse) — тот же угол 45°, в разные стороны, см. [drawHatch].
+    // reverse) — тот же угол 45°, в разные стороны, см. [drawHatch]. Машинист: поле ограничения
+    // должно быть серым (на тон светлее самой ступени скорости, чтобы отличалось, но было
+    // видно, что это то же семейство), а штриховка внутри — тоже серой, темнее этого поля, а
+    // не белыми линиями (раньше штриховка шла прямо по тёмному фону без заливки вообще).
+    private val restrictionFillPaint = Paint().apply { style = Paint.Style.FILL }
     private val hatchLinePaint = Paint().apply {
-        color = Color.WHITE
         strokeWidth = dp(2f)
         style = Paint.Style.STROKE
         isAntiAlias = true
@@ -550,7 +557,8 @@ class TrackProfileView @JvmOverloads constructor(
         actualSpeedTextPaint.color = c(Color.WHITE)
         speedWindowBgPaint.color = c(Color.BLACK)
         speedWindowBorderPaint.color = c(Color.WHITE)
-        hatchLinePaint.color = c(Color.WHITE)
+        restrictionFillPaint.color = c(Color.rgb(195, 194, 199))
+        hatchLinePaint.color = c(Color.rgb(108, 107, 112))
         hatchBorderPaint.color = c(Color.WHITE)
         restrictionNumberPaint.color = c(Color.WHITE)
         signalLinePaint.color = c(Color.WHITE)
@@ -723,6 +731,9 @@ class TrackProfileView @JvmOverloads constructor(
 
     fun setRelief(profile: ReliefProfile) {
         relief = profile
+        // Глобальный диапазон высот — считается один раз здесь, не на каждый кадр от
+        // видимого окна (см. doc-комментарий у ReliefProfile.globalRange, почему именно так).
+        reliefGlobalRange = Direction.entries.associateWith { profile.globalRange(it) }
         invalidate()
     }
 
@@ -902,6 +913,7 @@ class TrackProfileView @JvmOverloads constructor(
             }
             val yBottom = yForSpeed(r.speedKmh)
 
+            canvas.drawRect(x0, scaleTop, x1, yBottom, restrictionFillPaint)
             drawHatch(canvas, x0, scaleTop, x1 - x0, yBottom - scaleTop, reverse = false)
             canvas.drawRect(x0, scaleTop, x1, yBottom, hatchBorderPaint)
             drawNumberWithOutline(canvas, r.speedKmh.toString(), (x0 + x1) / 2f, (scaleTop + yBottom) / 2f)
@@ -1017,6 +1029,17 @@ class TrackProfileView @JvmOverloads constructor(
         val tierRightEdge = mutableListOf<Float>()
         val tierGapPx = dp(6f)
 
+        // Два прохода, не один: сначала считаем уровень (tier) каждой таблички обычной
+        // логикой "не помещается рядом — подрастает", а станциям потом поднимаем итоговый
+        // уровень минимум НА ОДИН ВЫШЕ самого высокого уровня светофора/блок-поста в видимом
+        // окне. Машинист: "название станций... должно быть всегда выше... названий
+        // светофоров... а то они порой друг за другом скрываются" — одного прохода мало, т.к.
+        // станция, попавшая по общей коллизии на tier 0, могла оказаться НИЖЕ светофора,
+        // которому из-за соседей пришлось подрасти до tier 1-2.
+        data class PlacedTag(val tag: SignalTag, val x: Float, val text: String, val boxW: Float, val tier: Int)
+
+        val placed = mutableListOf<PlacedTag>()
+        var maxSignalTier = 0
         for (tag in tags) {
             if (tag.chainageM < fromM || tag.chainageM > toM) continue
             val x = xFor(tag.chainageM)
@@ -1030,7 +1053,7 @@ class TrackProfileView @JvmOverloads constructor(
                     val idx = aheadSignalsOnly.indexOf(tag)
                     if (idx <= 0) tag.chainageM - trainPositionM else tag.chainageM - aheadSignalsOnly[idx - 1].chainageM
                 }
-                distanceLabel = " " + Math.round(distance)
+                distanceLabel = "-" + Math.round(distance)
             }
             val text = tag.label + distanceLabel
 
@@ -1039,11 +1062,18 @@ class TrackProfileView @JvmOverloads constructor(
             // (signalTagTextPaint 26dp→16dp) — иначе вокруг мелкого текста осталась бы
             // непропорционально широкая белая рамка.
             val boxW = textW + dp(8f)
-            val boxH = dp(18f)
 
             var tier = 0
             while (tier < tierRightEdge.size && x < tierRightEdge[tier] + tierGapPx) tier++
             if (tier == tierRightEdge.size) tierRightEdge.add(x + boxW) else tierRightEdge[tier] = x + boxW
+
+            if (!tag.isStation && tier > maxSignalTier) maxSignalTier = tier
+            placed.add(PlacedTag(tag, x, text, boxW, tier))
+        }
+
+        val boxH = dp(18f)
+        for ((tag, x, text, boxW, rawTier) in placed) {
+            val tier = if (tag.isStation) maxOf(rawTier, maxSignalTier + 1) else rawTier
 
             val basePoleLen = if (tag.isStation) stationPolePx else signalPolePx
             val poleLen = basePoleLen + tier * (boxH + tierGapPx)
@@ -1149,38 +1179,35 @@ class TrackProfileView @JvmOverloads constructor(
         val hasCoverage = relief.hasCoverage(direction)
         val floorY = top + bandH * RELIEF_FLOOR_FRACTION
         val ceilY = top + dp(6f)
-        // Привязка СРАЗУ к максимуму И минимуму видимого окна, масштаб — заново на каждую
-        // отрисовку, а не фиксированный reliefPxPerPt (машинист про реальный экран, второй
-        // заход: "самая нижняя точка... внизу, чтобы поезд был как можно ниже, не заезжал за
-        // линию сигналов" — пролистывая, он видел низкую точку ВЫСОКО, у самого потолка).
-        // Раньше был фиксированный масштаб (reliefPxPerPt) при привязке только к максимуму —
-        // если видимый перепад высот МАЛЕНЬКИЙ (ровный участок), вся кривая при фиксированном
-        // масштабе сжималась в маленький кусочек у потолка, а не растягивалась до пола, хотя
-        // место в полосе internally пустовало. Пересчитывая масштаб так, чтобы РОВНО весь
-        // видимый перепад (максимум минус минимум) укладывался между потолком и полом, кривая
-        // всегда использует всю высоту полосы целиком — минимум у пола, максимум у потолка,
-        // и то, и другое никогда не вылезает за свои границы (в т.ч. не выше линии сигналов —
-        // именно ради этого в своё время появилась привязка к максимуму, см. README/чат).
-        val maxInView = if (hasCoverage) relief.maxHeightInRange(direction, fromM, toM) else null
-        val minInView = if (hasCoverage) relief.minHeightInRange(direction, fromM, toM) else null
-        val range = if (maxInView != null && minInView != null) maxInView - minInView else null
-        val scale = if (range != null && range > 0.0) (floorY - ceilY) / range else null
+        // Масштаб ФИКСИРОВАННЫЙ, от глобального диапазона высот по всему маршруту (см.
+        // ReliefProfile.globalRange/setRelief), а НЕ пересчитывается от видимого окна на
+        // каждый кадр — машинист поправил предыдущий вариант: "высота профиля меняется...
+        // должно быть пропорционально... горы не должны увеличиваться... нужно, чтобы были
+        // точные данные". При панорамировании кривая просто едет мимо, сохраняя настоящие
+        // пропорции подъёмов/спусков, а не "резинится" от того, что сейчас видно в окне.
+        // Переполнение выше линии сигналов при этом всё равно невозможно: любая высота h всегда
+        // лежит внутри [globalMin, globalMax] (в т.ч. интерполированная — между двумя точками
+        // внутри этого диапазона), а значит reliefY(h) всегда внутри [ceilY, floorY].
+        // globalRange = (минимум, максимум) по всему маршруту этого направления, см.
+        // ReliefProfile.globalRange — именно в этом порядке (lo to hi).
+        val globalRange = reliefGlobalRange[direction]
+        val scale = globalRange?.let { (min, max) -> if (max - min > 0.0) (floorY - ceilY) / (max - min) else null }
 
         fun reliefY(m: Double): Float {
             val h = relief.heightAt(direction, m)
             return when {
-                h == null || maxInView == null -> {
+                h == null || globalRange == null -> {
                     // Вне покрытия (км5930-6604, README шаг 15) — ровная линия у пола полосы, а
                     // не выдуманная синусоида (в отличие от HTML-макета — там это было нужно
                     // для наглядности пропорций, здесь настоящему приложению это не нужно).
                     floorY
                 }
                 scale == null -> {
-                    // Видимый перепад высот ровно 0 (совсем плоский участок) — весь целиком
-                    // внизу, а не у потолка (машинист именно это и просил).
+                    // Весь маршрут этого направления на одной высоте (globalMin==globalMax) —
+                    // вырожденный случай, рисуем у пола, а не у потолка.
                     floorY
                 }
-                else -> ceilY + ((maxInView - h) * scale).toFloat()
+                else -> ceilY + ((globalRange.second - h) * scale).toFloat()
             }
         }
 
@@ -1278,15 +1305,23 @@ class TrackProfileView @JvmOverloads constructor(
     /** Короткая красная стрелка с шариком на конце — шарик касается кривой рельефа, хвостик
      *  стрелки уходит в сторону от неё (вверх, если стрелка "висит сверху", вниз — если
      *  "растёт снизу"), см. doc-комментарий у вызова выше. */
+    // Машинист поправил форму: шарик должен касаться линии профиля своим КРАЕМ, а не проседать
+    // в неё центром (раньше центр шарика стоял ровно на curveY — половина шарика "тонула" в
+    // заливке рельефа под кривой). Плюс настоящие "усы" стрелки по бокам от шарика, сходящиеся
+    // остриём точно на линии профиля — диаметр шарика равен расстоянию между их началами (там,
+    // где усы отходят от шарика в стороны), как машинист и продиктовал.
     private fun drawWashoutGlyph(canvas: Canvas, cx: Float, curveY: Float, pointingDown: Boolean) {
-        val ballR = dp(5f)
-        val shaftLen = dp(16f)
-        if (pointingDown) {
-            canvas.drawLine(cx, curveY - shaftLen, cx, curveY, washoutLinePaint)
-        } else {
-            canvas.drawLine(cx, curveY, cx, curveY + shaftLen, washoutLinePaint)
-        }
-        canvas.drawCircle(cx, curveY, ballR, washoutBallPaint)
+        val ballR = dp(6f)
+        val shaftLen = dp(14f)
+        val dir = if (pointingDown) 1f else -1f
+        val tipY = curveY
+        val ballCy = tipY - dir * ballR
+        val shaftFarY = ballCy - dir * (ballR + shaftLen)
+
+        canvas.drawLine(cx, shaftFarY, cx, ballCy, washoutLinePaint)
+        canvas.drawLine(cx - ballR, ballCy, cx, tipY, washoutLinePaint)
+        canvas.drawLine(cx + ballR, ballCy, cx, tipY, washoutLinePaint)
+        canvas.drawCircle(cx, ballCy, ballR, washoutBallPaint)
     }
 
     private fun drawPictogramGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, kind: PictogramKind) {

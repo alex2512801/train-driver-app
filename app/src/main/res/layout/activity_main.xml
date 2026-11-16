@@ -73,10 +73,17 @@
                 android:gravity="center_vertical"
                 android:paddingEnd="6dp">
 
+                <!-- Ширина ФИКСИРОВАННАЯ (не wrap_content) — машинист: на 10-м пикете (две
+                     цифры вместо одной) текст становился на один символ шире, и из-за этого
+                     вся шапка правее (название станции и дальше) "прыгала"/съезжала при каждом
+                     таком переходе. 130dp с запасом хватает на самую длинную строку формата
+                     ("6604км 10пк"), gravity=start — чтобы текст всегда начинался от левого
+                     края этой фиксированной ширины, а не плясал внутри неё. -->
                 <TextView
                     android:id="@+id/coordinateText"
-                    android:layout_width="wrap_content"
+                    android:layout_width="130dp"
                     android:layout_height="wrap_content"
+                    android:gravity="start"
                     android:text="@string/waiting_for_gps"
                     android:textColor="#FFFFFF"
                     android:textStyle="bold"

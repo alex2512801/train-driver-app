@@ -89,6 +89,28 @@ class ReliefProfile(points: List<ReliefPoint>) {
     }
 
     fun hasCoverage(direction: Direction): Boolean = byDirection[direction]?.isNotEmpty() == true
+
+    /**
+     * Минимум и максимум высоты по ВСЕМУ маршруту этого направления — не по видимому окну (то
+     * был неверный путь, см. doc-комментарий у drawReliefAndTrain в TrackProfileView: машинист
+     * поправил — "высота профиля меняется, хотя должна быть пропорционально... горы не должны
+     * увеличиваться... мне нужно, чтобы были точные данные"). Масштаб рельефа строится ОДИН РАЗ
+     * по этому глобальному диапазону (см. [TrackProfileView.setRelief]) и дальше остаётся
+     * постоянным при любом панорамировании — пропорции реального перепада высот сохраняются
+     * настоящими, а не "резиновыми", как было при пересчёте от видимого окна на каждый кадр.
+     * Null, если для направления вообще нет данных.
+     */
+    fun globalRange(direction: Direction): Pair<Double, Double>? {
+        val pts = byDirection[direction] ?: return null
+        if (pts.isEmpty()) return null
+        var lo = pts[0].heightStitched
+        var hi = lo
+        for (p in pts) {
+            if (p.heightStitched < lo) lo = p.heightStitched
+            if (p.heightStitched > hi) hi = p.heightStitched
+        }
+        return lo to hi
+    }
 }
 
 /** Читает track_relief.json в [ReliefProfile]. */

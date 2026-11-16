@@ -80,4 +80,18 @@ class TrackReliefTest {
         assertTrue(profile.hasCoverage(Direction.EVEN))
         assertTrue(!profile.hasCoverage(Direction.ODD))
     }
+
+    @Test
+    fun `globalRange covers the whole route, not just a window`() {
+        val profile = ReliefProfile(evenPoints)
+        val (min, max) = profile.globalRange(Direction.EVEN)!!
+        assertEquals(10.0, min, 0.0001)
+        assertEquals(20.0, max, 0.0001)
+    }
+
+    @Test
+    fun `globalRange is null for a direction with no data`() {
+        val profile = ReliefProfile(evenPoints)
+        assertNull(profile.globalRange(Direction.ODD))
+    }
 }
