@@ -604,10 +604,11 @@ class MainActivity : AppCompatActivity() {
         val subscriptionManager = getSystemService(SubscriptionManager::class.java)
         val activeSubs = try {
             subscriptionManager?.activeSubscriptionInfoList
-        } catch (e: Exception) {
-            // Не только SecurityException — на некоторых прошивках телефонные API бросают и
-            // другое (замечено на практике у разных производителей). Без этого один такой сбой
-            // уронил бы приложение целиком, т.к. эта функция вызывается из onCreate.
+        } catch (e: Throwable) {
+            // Throwable, не Exception — см. doc-комментарий у pollSimSignal: на некоторых
+            // прошивках телефонные API бросают и NoSuchMethodError (Error, не Exception), не
+            // только SecurityException. Без этого один такой сбой уронил бы приложение
+            // целиком, т.к. эта функция вызывается из onCreate.
             null
         }
 
@@ -633,8 +634,12 @@ class MainActivity : AppCompatActivity() {
     private fun safeBindSimSlot(barsView: SignalBarsView, textView: TextView, manager: TelephonyManager) {
         try {
             bindSimSlot(barsView, textView, manager)
-        } catch (e: Exception) {
-            // см. doc-комментарий у вызова выше.
+        } catch (e: Throwable) {
+            // Throwable, не Exception — см. doc-комментарий у pollSimSignal: на планшете
+            // машиниста (Android 10) реальный Logcat показал NoSuchMethodError (метода из
+            // системного API на этой прошивке физически нет) — а NoSuchMethodError это Error,
+            // не Exception, обычный catch (Exception) его пропускал мимо и ронял всё
+            // приложение прямо при запуске ("тёмный экран и вылет", машинист прислал Logcat).
         }
     }
 
@@ -694,12 +699,18 @@ class MainActivity : AppCompatActivity() {
         // некоторых прошивках бросают не только SecurityException, а что угодно (проверено на
         // практике) — если здесь вылетит необработанное исключение, оно уронит весь таймер
         // обновлений (а с ним — скорость, объявления, график) на главном потоке, не только
-        // столбики сигнала. Поэтому ловим Exception целиком, а не одну SecurityException.
+        // столбики сигнала. Ловим Throwable, а НЕ Exception — машинист прислал реальный Logcat
+        // со своего планшета (Android 10, "тёмный экран и вылет при запуске"): там именно
+        // java.lang.NoSuchMethodError на cellSignalStrength.getCellSignalStrength() — метода
+        // из системного API на этой конкретной прошивке физически нет, хотя версия Android
+        // формально его поддерживает. NoSuchMethodError — это Error, не Exception (они оба
+        // наследуются от Throwable, но НЕ друг от друга), и catch (Exception) пропускал его
+        // мимо — именно поэтому прошлая подстраховка не защитила от этого краха.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val level = try {
                 val cells = manager.allCellInfo
                 (cells?.firstOrNull { it.isRegistered } ?: cells?.firstOrNull())?.cellSignalStrength?.level
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 null
             }
             if (level != null) {
@@ -708,7 +719,7 @@ class MainActivity : AppCompatActivity() {
             }
             try {
                 manager.signalStrength?.let { barsView.level = it.level }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 // см. комментарий выше — та же подстраховка.
             }
         }

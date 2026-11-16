@@ -58,9 +58,12 @@ class GpsLocationProvider(context: Context) {
                 gps,
                 Looper.getMainLooper()
             )
-        } catch (e: Exception) {
-            // Такого провайдера у устройства нет вообще — работаем дальше без GPS (останется
-            // резервный NETWORK_PROVIDER, если он есть).
+        } catch (e: Throwable) {
+            // Throwable, не Exception — реальный Logcat машиниста (другой планшет, см.
+            // MainActivity.pollSimSignal) показал, что телефонные/системные API на отдельных
+            // прошивках бросают и NoSuchMethodError (Error, не Exception) — ловим на всякий
+            // случай и здесь той же защитой. Такого провайдера у устройства нет вообще —
+            // работаем дальше без GPS (останется резервный NETWORK_PROVIDER, если он есть).
         }
 
         // Не у всех устройств/прошивок NETWORK_PROVIDER вообще включён или доступен — это
