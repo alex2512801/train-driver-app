@@ -601,6 +601,24 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission") // проверяется явно в hasPhoneStatePermission()
     private fun startPhoneSignalUpdates() {
         val baseManager = getSystemService(TELEPHONY_SERVICE) as? TelephonyManager ?: return
+
+        // Машинист: на планшете SIM-карты физически нет вообще ("обычный, без симки") — раз
+        // её нет, даже не пытаемся читать сигнал/подписки, просто скрываем оба слота целиком,
+        // а не показываем пустые прочерки. getSimState() без аргумента — состояние SIM в слоте
+        // по умолчанию; для устройства без единой SIM-карты этого достаточно (на дуал-сим
+        // телефоне машиниста, где обе SIM реальные, он как и раньше вернёт SIM_STATE_READY, и
+        // код ниже отработает как обычно).
+        val simState = try {
+            baseManager.simState
+        } catch (e: Throwable) {
+            TelephonyManager.SIM_STATE_UNKNOWN
+        }
+        if (simState != TelephonyManager.SIM_STATE_READY) {
+            simSlot0Group.visibility = View.GONE
+            simSlot1Group.visibility = View.GONE
+            return
+        }
+
         val subscriptionManager = getSystemService(SubscriptionManager::class.java)
         val activeSubs = try {
             subscriptionManager?.activeSubscriptionInfoList
