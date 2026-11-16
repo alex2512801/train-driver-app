@@ -304,13 +304,29 @@ class MainActivity : AppCompatActivity() {
     // Сигнал 25-минутной стоянки (ТЗ раздел 10, "скоро выйдет время на перетормаживание",
     // которое наступает через 30 минут) — машинист проверил: один короткий гудок через
     // STREAM_NOTIFICATION прошёл незамеченным (вообще не прозвучал). Несколько гудков подряд
-    // через STREAM_ALARM — громче, через отдельный, обычно не приглушённый канал, и дольше, его
-    // точно не пропустишь, в отличие от одного короткого "пип".
+    // через STREAM_ALARM — громче, через отдельный, обычно не приглушённый канал.
+    // Машинист уточнил ещё раз: в кабине электровоза шумно, 4 коротких "бип" там легко
+    // потерялись бы в собственном шуме — громкость самого тона (ToneGenerator.MAX_VOLUME) тут
+    // не помогает, это внутренняя "яркость" синтезированного звука, а не фактическая громкость
+    // на динамике — она зависит от того, на какой уровень у телефона выставлена ГРОМКОСТЬ
+    // КАНАЛА будильника в настройках, и эту настройку никто не трогал. Поэтому теперь явно
+    // выставляем её на максимум прямо перед гудком (setStreamVolume), плюс самих гудков больше
+    // и каждый длиннее, и сам тон — TONE_CDMA_ALERT_CALL_GUARD (резкий, предупреждающий, выше
+    // по тону, должен пробиваться через ровный гул двигателя заметнее, чем обычный "пип").
     private fun playStopAlarm() {
-        val beepCount = 4
-        val beepGapMs = 450L
+        val audioManager = getSystemService(AUDIO_SERVICE) as? AudioManager
+        try {
+            val maxVol = audioManager?.getStreamMaxVolume(AudioManager.STREAM_ALARM)
+            if (maxVol != null) audioManager.setStreamVolume(AudioManager.STREAM_ALARM, maxVol, 0)
+        } catch (e: Exception) {
+            // Не критично — если не получилось принудительно поднять громкость, гудок всё
+            // равно сыграет на той громкости, что уже стоит.
+        }
+
+        val beepCount = 6
+        val beepGapMs = 550L
         repeat(beepCount) { i ->
-            val beep = Runnable { toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 400) }
+            val beep = Runnable { toneGenerator.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 500) }
             pendingStopAlarmBeeps.add(beep)
             timeHandler.postDelayed(beep, i * beepGapMs)
         }
