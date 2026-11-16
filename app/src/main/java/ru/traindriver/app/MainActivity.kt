@@ -207,6 +207,12 @@ class MainActivity : AppCompatActivity() {
     private var lastGpsFixAtMs = 0L
     private var hasGpsFix = false
 
+    // Однократный звуковой сигнал при потере/нахождении GPS (машинист, не из ТЗ/макета) — null,
+    // пока не было вообще ни одного колбэка location (самый первый колбэк, каким бы он ни был,
+    // это не "потеря", просто первое чтение — поэтому не сравниваем null ни с чем, только
+    // настоящие переключения между GPS/NETWORK после него). См. startLocationUpdates.
+    private var lastLocationWasGps: Boolean? = null
+
     private fun formatCoordinate(chainageM: Double): String =
         if (showKlubU) ChainageFormatter.formatKlubU(chainageM) else ChainageFormatter.format(chainageM)
 
@@ -329,6 +335,27 @@ class MainActivity : AppCompatActivity() {
             val beep = Runnable { toneGenerator.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 500) }
             pendingStopAlarmBeeps.add(beep)
             timeHandler.postDelayed(beep, i * beepGapMs)
+        }
+    }
+
+    // Однократные (не серия, в отличие от 25-минутного) сигналы потери/нахождения GPS —
+    // машинист попросил дополнительно к сигналу стоянки. Разные тоны специально ("плохой"/
+    // "хороший", TONE_PROP_NACK/ACK — те же стандартные короткие служебные тона, что и
+    // TONE_PROP_BEEP2 выше, той же категории надёжности), чтобы на слух сразу было понятно, в
+    // какую сторону произошла смена, не вслушиваясь в саму координату на экране.
+    private fun playGpsLostBeep() {
+        try {
+            toneGenerator.startTone(ToneGenerator.TONE_PROP_NACK, 350)
+        } catch (e: Throwable) {
+            // см. doc-комментарий у pollSimSignal — та же подстраховка.
+        }
+    }
+
+    private fun playGpsFoundBeep() {
+        try {
+            toneGenerator.startTone(ToneGenerator.TONE_PROP_ACK, 350)
+        } catch (e: Throwable) {
+            // см. doc-комментарий у pollSimSignal — та же подстраховка.
         }
     }
 
@@ -948,6 +975,17 @@ class MainActivity : AppCompatActivity() {
 
         gpsLocationProvider.start { location, source ->
             val chainageM = routeTrack.chainageMetersFor(location.latitude, location.longitude)
+
+            // Однократный сигнал ровно в момент переключения GPS<->резервный источник — не на
+            // каждый колбэк резервного источника подряд (их может быть много, пока GPS не
+            // вернётся), а только один раз на САМ переход, см. doc-комментарий у
+            // lastLocationWasGps.
+            val isGpsNow = source != LocationSource.NETWORK
+            val previouslyWasGps = lastLocationWasGps
+            if (previouslyWasGps != null && previouslyWasGps != isGpsNow) {
+                if (isGpsNow) playGpsFoundBeep() else playGpsLostBeep()
+            }
+            lastLocationWasGps = isGpsNow
 
             if (source == LocationSource.NETWORK) {
                 // Резервный источник (по сотовым вышкам/Wi-Fi) — машинист попросил, чтобы
