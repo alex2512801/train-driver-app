@@ -867,9 +867,11 @@ class TrackProfileView @JvmOverloads constructor(
         drawRestrictionHatching(canvas, fromM, toM, ::xFor, ::yForSpeed)
         val trainStripeHeight = trainStripeHeightPx()
         drawSignalLineTicksAndNumbers(canvas, fromM, toM, ::xFor, lineY, trainStripeHeight)
-        drawTrainSignalStripe(canvas, ::xFor, lineY, trainStripeHeight)
         drawNeutralInsertBar(canvas, fromM, toM, ::xFor, lineY)
         drawSignalTags(canvas, fromM, toM, ::xFor, lineY, trainStripeHeight)
+        // Пояс поезда рисуется ПОСЛЕДНИМ (поверх столбиков сигналов), не раньше — машинист: "я
+        // его вижу, светофоры за ним" (раньше было наоборот: сигналы рисовались поверх пояса).
+        drawTrainSignalStripe(canvas, ::xFor, lineY, trainStripeHeight)
 
         val pictograms = buildPictograms(fromM, toM)
         val (headY, tailY) = drawReliefAndTrain(canvas, fromM, toM, ::xFor, ::mFor, reliefTop, reliefH, pictograms)
@@ -1026,14 +1028,20 @@ class TrackProfileView @JvmOverloads constructor(
         // 4,3мм, то км столбик 3,7мм", т.е. KM_TICK_TO_SIGNAL_HEIGHT_RATIO = 3.7/4.3.
         val signalTotalH = trainStripeHeight * SIGNAL_TO_TRAIN_HEIGHT_RATIO
         val kmTickH = signalTotalH * KM_TICK_TO_SIGNAL_HEIGHT_RATIO
+        // Засечка середины километра (5-й пикет) — машинист: "сделай риски на 1/3 меньше, где
+        // 5-й пикет тоже... просто без подписи, тоже риски, чтобы было видно". Без цифры, выше
+        // обычной пикетной засечки, но на треть ниже километрового столбика.
+        val midKmTickH = kmTickH * (2f / 3f)
         val picketsPerKm = (KM_LINE_LENGTH_M / PICKET_LENGTH_M).toLong()
+        val midKmPicket = picketsPerKm / 2
         val firstPicketIndex = ceil(fromM / PICKET_LENGTH_M).toLong()
         val lastPicketIndex = floor(toM / PICKET_LENGTH_M).toLong()
         for (i in firstPicketIndex..lastPicketIndex) {
             val picketM = i * PICKET_LENGTH_M
             val isKmLine = i % picketsPerKm == 0L
+            val isMidKmLine = !isKmLine && i % picketsPerKm == midKmPicket
             val x = xFor(picketM)
-            val tickH = if (isKmLine) kmTickH else dp(7f)
+            val tickH = if (isKmLine) kmTickH else if (isMidKmLine) midKmTickH else dp(7f)
             canvas.drawLine(x, lineY - tickH, x, lineY, if (isKmLine) kmLinePaint else picketLinePaint)
         }
 
@@ -1082,7 +1090,10 @@ class TrackProfileView @JvmOverloads constructor(
      *  (машинист: "если он меньше будет, высота должна быть такая же"). */
     private fun trainStripeHeightPx(): Float {
         val referenceWidthPx = width.toFloat() * (REFERENCE_TRAIN_LENGTH_M / REFERENCE_SPAN_M).toFloat()
-        return referenceWidthPx * TRAIN_STRIPE_HEIGHT_RATIO.toFloat()
+        // ×2/3 — машинист: "высоту поезда уменьши на 1/3". Светофор и км-столбик при этом сами
+        // пересчитаются пропорционально (они берутся от trainStripeHeight), так что "светофор
+        // ровно в 2 раза выше поезда" остаётся верным автоматически.
+        return referenceWidthPx * TRAIN_STRIPE_HEIGHT_RATIO.toFloat() * (2f / 3f)
     }
 
     /** Серая полоска физической длины поезда НА линии сигналов (ТЗ раздел 7) + белая окантовка.
@@ -1185,27 +1196,18 @@ class TrackProfileView @JvmOverloads constructor(
             .filter { !it.isStation && directionSignM * (it.chainageM - trainPositionM) > 0.0 }
             .sortedBy { directionSignM * (it.chainageM - trainPositionM) }
 
-        // Когда несколько сигналов стоят близко друг к другу, их таблички (рисуются вправо от
-        // своего столбика) налезают друг на друга и становятся нечитаемыми — машинист прислал
-        // скриншот как раз с таким наложением у Читы. Решение как у подписей на картах:
-        // табличка, которая не помещается на базовой высоте рядом с предыдущей, "подрастает"
-        // на уровень выше (столбик удлиняется), пока не перестанет с той пересекаться по
-        // горизонтали. tierRightEdge[i] — правый край последней размещённой на уровне i
-        // таблички; тэги уже отсортированы по км, поэтому одного прохода слева направо хватает.
-        val tierRightEdge = mutableListOf<Float>()
+        // Раньше табличка, которая не помещалась на базовой высоте рядом с предыдущей,
+        // "подрастала" на уровень выше (столбик удлинялся) — машинист прислал скриншот, где
+        // из-за этого ОДИН сигнал (и вслед за ним, через maxSignalTier+1, вообще все станции в
+        // кадре) оказался заметно выше остальных: "один светофор почему-то выше остальных... от
+        // него ещё идёт станция тоже ещё выше... выровняй по одной линии". Пока убрано совсем —
+        // все сигналы на одном уровне (tier 0), все станции на одном фиксированном уровне выше
+        // (tier 1), без динамического роста; "позже скажу, как перерисовать светофоры" —
+        // отдельная будущая задача на саму схему разводки табличек.
         val tierGapPx = dp(6f)
-
-        // Два прохода, не один: сначала считаем уровень (tier) каждой таблички обычной
-        // логикой "не помещается рядом — подрастает", а станциям потом поднимаем итоговый
-        // уровень минимум НА ОДИН ВЫШЕ самого высокого уровня светофора/блок-поста в видимом
-        // окне. Машинист: "название станций... должно быть всегда выше... названий
-        // светофоров... а то они порой друг за другом скрываются" — одного прохода мало, т.к.
-        // станция, попавшая по общей коллизии на tier 0, могла оказаться НИЖЕ светофора,
-        // которому из-за соседей пришлось подрасти до tier 1-2.
         data class PlacedTag(val tag: SignalTag, val x: Float, val text: String, val boxW: Float, val tier: Int)
 
         val placed = mutableListOf<PlacedTag>()
-        var maxSignalTier = 0
         for (tag in tags) {
             if (tag.chainageM < fromM || tag.chainageM > toM) continue
             val x = xFor(tag.chainageM)
@@ -1233,12 +1235,7 @@ class TrackProfileView @JvmOverloads constructor(
             // непропорционально широкая белая рамка.
             val boxW = textW + dp(8f)
 
-            var tier = 0
-            while (tier < tierRightEdge.size && x < tierRightEdge[tier] + tierGapPx) tier++
-            if (tier == tierRightEdge.size) tierRightEdge.add(x + boxW) else tierRightEdge[tier] = x + boxW
-
-            if (!tag.isStation && tier > maxSignalTier) maxSignalTier = tier
-            placed.add(PlacedTag(tag, x, text, boxW, tier))
+            placed.add(PlacedTag(tag, x, text, boxW, if (tag.isStation) 1 else 0))
         }
 
         val boxH = dp(18f)
@@ -1250,8 +1247,7 @@ class TrackProfileView @JvmOverloads constructor(
         // где-то рядом).
         val kmMetrics = kmTextPaint.fontMetrics
         val tagBaseGap = (kmMetrics.descent - kmMetrics.ascent) + 2 * labelLayerGapPx
-        for ((tag, x, text, boxW, rawTier) in placed) {
-            val tier = if (tag.isStation) maxOf(rawTier, maxSignalTier + 1) else rawTier
+        for ((tag, x, text, boxW, tier) in placed) {
 
             val basePoleLen = if (tag.isStation) stationPolePx else signalPolePx
             val poleLen = basePoleLen + tier * (boxH + tierGapPx)
