@@ -923,8 +923,15 @@ class TrackProfileView @JvmOverloads constructor(
         val result = mutableListOf<StepRegionBottom>()
         val scaleTop = yForSpeed(100)
         for (segment in segments) {
-            val x0 = xFor(segment.startM)
-            val x1 = xFor(segment.endM)
+            // startM < endM всегда (реальный пикетаж), но при нечётном направлении xFor
+            // зеркалит экран — xFor(startM) оказывается БОЛЬШЕ xFor(endM), не меньше. Без
+            // min/max получался "перевёрнутый" прямоугольник (left>right) — Android такое не
+            // рисует вообще (или рисует вырожденно), из-за чего и сами ступени пропадали, и
+            // проверка ширины "короткого участка" (minSegmentPxForLabel и т.п. ниже) всегда
+            // ложно срабатывала на отрицательной "ширине", втискивая цифры друг на друга
+            // (машинист прислал скриншот именно такой путаницы в нечётном направлении).
+            val x0 = minOf(xFor(segment.startM), xFor(segment.endM))
+            val x1 = maxOf(xFor(segment.startM), xFor(segment.endM))
             val y = yForSpeed(segment.speedKmh)
             canvas.drawRect(x0, scaleTop, x1, y, stepPaint)
 
@@ -971,8 +978,10 @@ class TrackProfileView @JvmOverloads constructor(
         val scaleTop = yForSpeed(100)
         for (r in restrictions) {
             if (r.endM < fromM || r.startM > toM) continue
-            var x0 = xFor(r.startM.coerceAtLeast(fromM))
-            var x1 = xFor(r.endM.coerceAtMost(toM))
+            // min/max — см. тот же комментарий в drawSpeedSteps: при нечётном направлении
+            // xFor зеркалит экран, и xFor(startM) оказывается больше xFor(endM).
+            var x0 = minOf(xFor(r.startM.coerceAtLeast(fromM)), xFor(r.endM.coerceAtMost(toM)))
+            var x1 = maxOf(xFor(r.startM.coerceAtLeast(fromM)), xFor(r.endM.coerceAtMost(toM)))
             if (x1 - x0 < pictogramMinHatchWidthPx) {
                 val cx = (x0 + x1) / 2f
                 x0 = cx - pictogramMinHatchWidthPx / 2f
@@ -1106,8 +1115,10 @@ class TrackProfileView @JvmOverloads constructor(
         for (n in neutralInserts) {
             if (n.direction != rawDirection) continue
             if (n.chainageM + n.lengthM < fromM || n.chainageM > toM) continue
-            val x0 = xFor(n.chainageM)
-            val x1 = xFor(n.chainageM + n.lengthM)
+            // min/max — см. тот же комментарий в drawSpeedSteps: при нечётном направлении
+            // xFor зеркалит экран.
+            val x0 = minOf(xFor(n.chainageM), xFor(n.chainageM + n.lengthM))
+            val x1 = maxOf(xFor(n.chainageM), xFor(n.chainageM + n.lengthM))
             val w = max(1f, x1 - x0)
             canvas.drawRect(x0, lineY - dp(5f), x0 + w, lineY, neutralBarPaint)
             canvas.drawRect(x0, lineY - dp(5f), x0 + w, lineY, neutralBarBorderPaint)
@@ -1388,12 +1399,14 @@ class TrackProfileView @JvmOverloads constructor(
         // сетка пикетов, клип по поверхности рельефа
         canvas.save()
         canvas.clipRect(0f, top, w, top + bandH)
-        // mFor(0f) == fromM теперь, когда graphLeft=0 (см. doc-комментарий в onDraw) — раньше,
-        // пока график начинался не с самого края канваса, а правее отдельной полосы под шкалу
-        // скорости, здесь было отдельное исправление специально под то устройство координат;
-        // сейчас вызов оставлен для ясности (явно "от самого левого края"), хотя технически уже
-        // совпадает с обычным fromM.
-        val firstPicketIndex = ceil(mFor(0f) / PICKET_LENGTH_M).toLong()
+        // Было "ceil(mFor(0f) / PICKET_LENGTH_M)" — верно, пока mFor(0f) совпадало с fromM
+        // (всегда, до появления зеркалки для нечётного направления). При нечётном xFor/mFor
+        // зеркалятся, и mFor(0f) — это уже toM (экран начинается с БОЛЬШЕГО км, не меньшего),
+        // из-за чего firstPicketIndex получался почти равным lastPicketIndex (оба от toM) —
+        // сетка пикетов на рельефе пропадала почти целиком (машинист: "а где пикетная
+        // сетка?"). Берём fromM/toM напрямую — они всегда реальные min/max, направление тут
+        // ни при чём (см. doc-комментарий у visibleWindow).
+        val firstPicketIndex = ceil(fromM / PICKET_LENGTH_M).toLong()
         val lastPicketIndex = floor(toM / PICKET_LENGTH_M).toLong()
         for (i in firstPicketIndex..lastPicketIndex) {
             val picketM = i * PICKET_LENGTH_M
