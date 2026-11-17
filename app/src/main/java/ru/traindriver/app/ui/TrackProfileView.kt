@@ -218,6 +218,39 @@ class TrackProfileView @JvmOverloads constructor(
     var behindM: Double = 2500.0
     var aheadM: Double = 5500.0
 
+    /** Реальный видимый диапазон пикетажа [fromM, toM] (fromM < toM ВСЕГДА, настоящие км/пк —
+     *  как и везде в этом файле при проверках "chainageM in fromM..toM") плюс признак,
+     *  перевёрнут ли экран. Машинист: "когда я включаю нечётный путь... километры всё равно
+     *  идут на возрастание... как я сейчас поеду?" — раньше график ВСЕГДА считал "вперёд"
+     *  (вправо на экране, где по умолчанию больше места — aheadM > behindM) направлением
+     *  РОСТА реального км, независимо от того, куда машинист реально едет. Для нечётного
+     *  направления движения (rawDirection == ODD) поезд едет в сторону УМЕНЬШЕНИЯ реального
+     *  км (например, из Чернышевска в Хилок) — значит "вперёд" должно соответствовать МЕНЬШЕМУ
+     *  км, а километровые цифры — убывать слева направо, а не расти. panOffsetM (протягивание
+     *  пальцем, см. onTouchEvent) прибавляется к обеим границам ОДИНАКОВО в обоих случаях —
+     *  знак его собственного смещения при протягивании подбирается отдельно в onTouchEvent. */
+    private fun visibleWindow(): Triple<Double, Double, Boolean> {
+        val isReversed = rawDirection == Direction.ODD
+        return if (isReversed) {
+            Triple(trainPositionM - aheadM + panOffsetM, trainPositionM + behindM + panOffsetM, true)
+        } else {
+            Triple(trainPositionM - behindM + panOffsetM, trainPositionM + aheadM + panOffsetM, false)
+        }
+    }
+
+    /** +1 для чётного направления движения, -1 для нечётного — та же логика, что уже
+     *  используется в MainActivity.estimatedChainageM (DirectionSelection.picketsGrowing: "растут
+     *  пикеты или убывают... зависит только от направления"). Хвост поезда всегда "позади"
+     *  головы В СМЫСЛЕ ДВИЖЕНИЯ: для чётного это МЕНЬШИЙ реальный км (как считалось раньше), для
+     *  нечётного — БОЛЬШИЙ (хвост ещё не доехал до того места, откуда уже уехала голова, а
+     *  едут они в сторону УМЕНЬШЕНИЯ км). */
+    private val directionSignM: Double get() = if (rawDirection == Direction.ODD) -1.0 else 1.0
+
+    /** Реальный км хвоста поезда — см. doc-комментарий у [directionSignM]. Используется везде
+     *  в этом файле вместо прежнего "trainPositionM - trainLengthM" (которое подразумевало
+     *  только чётное направление). */
+    private val trainTailM: Double get() = trainPositionM - directionSignM * trainLengthM
+
     // Протягивание графика пальцем вперёд/назад (машинист, не из ТЗ/макета — "как в
     // навигаторах", посмотреть, что там впереди). panOffsetM сдвигает окно обзора целиком
     // (верхнюю часть со ступенями/сигналами и нижний рельеф — ОДНИМ и тем же числом, поэтому
@@ -628,12 +661,15 @@ class TrackProfileView @JvmOverloads constructor(
     }
 
     /** Убирает метки, место которых хвост поезда уже проехал на HEAD_MARKER_CLEAR_M и больше
-     *  (см. doc-комментарий у headMarkers). tailM — та же формула, что везде в этом файле
-     *  (drawTrainSignalStripe/drawPerpendiculars): позиция минус длина поезда. */
+     *  (см. doc-комментарий у headMarkers и у [trainTailM]/[directionSignM]). Сравнение тоже
+     *  направленное: для чётного хвост "проехал" метку, когда его км БОЛЬШЕ метки+запас, для
+     *  нечётного — когда МЕНЬШЕ метки-запас (поезд едет в сторону уменьшения км). Записываем
+     *  это как одно выражение через directionSignM, а не отдельным if — чтобы не дублировать
+     *  формулу условия для обоих направлений. */
     private fun pruneExpiredHeadMarkers() {
         if (headMarkers.isEmpty()) return
-        val tailM = trainPositionM - trainLengthM
-        headMarkers.removeAll { tailM >= it.positionM + HEAD_MARKER_CLEAR_M }
+        val tailM = trainTailM
+        headMarkers.removeAll { directionSignM * (tailM - it.positionM) >= HEAD_MARKER_CLEAR_M }
     }
 
     /** Vф — крупная цифра факт. скорости в углу графика (см. doc-комментарий у [actualSpeedKmh]). */
@@ -650,9 +686,13 @@ class TrackProfileView @JvmOverloads constructor(
         invalidate()
     }
 
-    /** Протягивание графика пальцем вперёд/назад — см. doc-комментарий у panOffsetM. Палец
-     *  двигается вправо → открываем то, что было СЗАДИ (меньше км), поэтому окно обзора
-     *  сдвигается НАЗАД — тот же принцип, что в любой карте/навигаторе ("тащишь карту"). */
+    /** Протягивание графика пальцем вперёд/назад — см. doc-комментарий у panOffsetM/
+     *  visibleWindow. Палец двигается вправо → открываем то, что было СЗАДИ, поэтому окно
+     *  обзора сдвигается НАЗАД — тот же принцип, что в любой карте/навигаторе ("тащишь
+     *  карту"). "Сзади" — это МЕНЬШИЙ реальный км при чётном направлении движения, но БОЛЬШИЙ
+     *  при нечётном (см. visibleWindow) — поэтому знак сдвига panOffsetM переключается по
+     *  rawDirection, а не всегда "меньше км", как было раньше (из-за этого при нечётном
+     *  протягивание пальцем двигало бы график в обратную, неожиданную сторону). */
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
@@ -675,7 +715,8 @@ class TrackProfileView @JvmOverloads constructor(
                 val graphWidth = width.toFloat()
                 if (graphWidth > 0f) {
                     val spanM = behindM + aheadM
-                    panOffsetM -= dxPx * (spanM / graphWidth)
+                    val sign = if (rawDirection == Direction.ODD) 1.0 else -1.0
+                    panOffsetM += sign * dxPx * (spanM / graphWidth)
                     invalidate()
                 }
                 return true
@@ -702,9 +743,10 @@ class TrackProfileView @JvmOverloads constructor(
         if (graphWidth <= 0f) return
         val stepsH = height * (STEPS_TO_RELIEF_RATIO / (STEPS_TO_RELIEF_RATIO + 1f))
         if (y > stepsH) return
-        val spanM = behindM + aheadM
-        val fromM = trainPositionM - behindM + panOffsetM
-        val headX = ((trainPositionM - fromM) / spanM * graphWidth).toFloat()
+        val (fromM, toM, isReversed) = visibleWindow()
+        val spanM = toM - fromM
+        val t = (trainPositionM - fromM) / spanM
+        val headX = ((if (isReversed) 1.0 - t else t) * graphWidth).toFloat()
         if (abs(x - headX) > headMarkerTapTolerancePx) return
         headMarkers.add(HeadMarker(trainPositionM))
         invalidate()
@@ -781,8 +823,7 @@ class TrackProfileView @JvmOverloads constructor(
 
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
 
-        val fromM = trainPositionM - behindM + panOffsetM
-        val toM = trainPositionM + aheadM + panOffsetM
+        val (fromM, toM, isReversed) = visibleWindow()
         val spanM = toM - fromM
         // graphLeft=0, graphWidth=вся ширина канваса — машинист поправил: 2,5 км позади головы
         // должны считаться от САМОГО левого края экрана, а не от правого края отдельной полосы
@@ -798,11 +839,20 @@ class TrackProfileView @JvmOverloads constructor(
         val reliefH = height - stepsH
         val scaleBottomY = stepsH * SCALE_BOTTOM_FRACTION
 
-        fun xFor(meters: Double): Float = graphLeft + ((meters - fromM) / spanM * graphWidth).toFloat()
+        // isReversed (нечётное направление движения, см. visibleWindow) — "вперёд" (вправо на
+        // экране) соответствует МЕНЬШЕМУ реальному км, поэтому и xFor, и обратная к ней mFor
+        // зеркалятся: доля t от fromM к toM откладывается от ПРАВОГО края, а не от левого.
+        fun xFor(meters: Double): Float {
+            val t = (meters - fromM) / spanM
+            return graphLeft + ((if (isReversed) 1.0 - t else t) * graphWidth).toFloat()
+        }
         // Обратное к xFor (x→m) — ОБЯЗАТЕЛЬНО со сдвигом на graphLeft, иначе рельеф/сетка/
         // зелёная полоса съезжают относительно ступеней и линии сигналов (та же ошибка уже
         // была в HTML-макете и там же исправлена, см. drawGridAndRelief/README).
-        fun mFor(x: Float): Double = fromM + ((x - graphLeft) / graphWidth) * spanM
+        fun mFor(x: Float): Double {
+            val t = (x - graphLeft) / graphWidth
+            return fromM + (if (isReversed) 1.0 - t else t) * spanM
+        }
         fun yForSpeed(speedKmh: Int): Float =
             scaleBottomY * (1f - speedKmh.coerceIn(0, 100) / MAX_SPEED_KMH)
 
@@ -1030,7 +1080,7 @@ class TrackProfileView @JvmOverloads constructor(
      *  градусов, как будто бы там кабина"). */
     private fun drawTrainSignalStripe(canvas: Canvas, xFor: (Double) -> Float, lineY: Float, h: Float) {
         if (trainLengthM <= 0.0) return
-        val x0 = xFor(trainPositionM - trainLengthM)
+        val x0 = xFor(trainTailM)
         val x1 = xFor(trainPositionM)
         val w = max(1f, x1 - x0)
         val top = lineY - h
@@ -1103,9 +1153,23 @@ class TrackProfileView @JvmOverloads constructor(
             }
             for (b in blockPosts) if (b.direction == direction) add(SignalTag(b.chainageM, b.label, false))
             for (st in stations) if (st.direction == direction) add(SignalTag(st.chainageM, st.name, true))
-        }.sortedBy { it.chainageM }
+        }
+        // Порядок — ПО ЭКРАНУ слева направо, не всегда по возрастанию реального км: ниже по
+        // коду цикл коллизий табличек (tierRightEdge) идёт одним проходом слева направо и
+        // предполагает, что x у каждого следующего тега не меньше, чем у предыдущего — при
+        // нечётном направлении (см. directionSignM/xFor) экран зеркалится, и порядок по
+        // экрану — это УБЫВАНИЕ реального км, а не возрастание.
+        .sortedBy { directionSignM * it.chainageM }
 
-        val aheadSignalsOnly = tags.filter { !it.isStation && it.chainageM > trainPositionM }.sortedBy { it.chainageM }
+        // "Впереди"/"проехали" — направленные понятия (см. doc-комментарий у [directionSignM]):
+        // для чётного впереди значит БОЛЬШИЙ реальный км, для нечётного — МЕНЬШИЙ. Раньше тут
+        // было жёстко "chainageM > trainPositionM", что для нечётного направления было прямо
+        // противоположно реальности (машинист: "включаю нечётный путь... как я сейчас поеду?").
+        // Сортировка — по расстоянию ОТ поезда В СТОРОНУ движения, по возрастанию (ближайший
+        // впереди первый), а не просто по km — для нечётного это убывающий км.
+        val aheadSignalsOnly = tags
+            .filter { !it.isStation && directionSignM * (it.chainageM - trainPositionM) > 0.0 }
+            .sortedBy { directionSignM * (it.chainageM - trainPositionM) }
 
         // Когда несколько сигналов стоят близко друг к другу, их таблички (рисуются вправо от
         // своего столбика) налезают друг на друга и становятся нечитаемыми — машинист прислал
@@ -1132,14 +1196,18 @@ class TrackProfileView @JvmOverloads constructor(
             if (tag.chainageM < fromM || tag.chainageM > toM) continue
             val x = xFor(tag.chainageM)
 
-            val passed = tag.chainageM <= trainPositionM
+            val passed = directionSignM * (tag.chainageM - trainPositionM) <= 0.0
             var distanceLabel = ""
             if (!passed) {
                 val distance = if (tag.isStation) {
-                    tag.chainageM - trainPositionM
+                    directionSignM * (tag.chainageM - trainPositionM)
                 } else {
                     val idx = aheadSignalsOnly.indexOf(tag)
-                    if (idx <= 0) tag.chainageM - trainPositionM else tag.chainageM - aheadSignalsOnly[idx - 1].chainageM
+                    if (idx <= 0) {
+                        directionSignM * (tag.chainageM - trainPositionM)
+                    } else {
+                        directionSignM * (tag.chainageM - aheadSignalsOnly[idx - 1].chainageM)
+                    }
                 }
                 distanceLabel = "-" + Math.round(distance)
             }
@@ -1337,14 +1405,19 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.restore()
 
         // зелёная полоса поезда вдоль рельефа — от хвоста до головы, нижний край полосы = кривая.
-        val headX0M = trainPositionM - trainLengthM
+        // tailM может быть и МЕНЬШЕ, и БОЛЬШЕ trainPositionM в зависимости от направления (см.
+        // trainTailM) — границы диапазона строим через min/max, иначе при нечётном направлении
+        // получился бы пустой (невалидный, start>end) диапазон и полоса вообще не рисовалась бы.
+        val tailM = trainTailM
+        val trainRangeLowM = minOf(trainPositionM, tailM)
+        val trainRangeHighM = maxOf(trainPositionM, tailM)
         fun traceTrainPath(strokeW: Float): Path {
             val path = Path()
             var started = false
             var px = 0f
             while (px <= w) {
                 val m = mFor(px)
-                if (m in headX0M..trainPositionM) {
+                if (m in trainRangeLowM..trainRangeHighM) {
                     val y = reliefY(m) - strokeW / 2f
                     if (!started) {
                         path.moveTo(px, y)
@@ -1387,7 +1460,7 @@ class TrackProfileView @JvmOverloads constructor(
             drawWashoutGlyph(canvas, px, curveY, pointingDown = curveY > midY)
         }
 
-        return reliefY(trainPositionM) to reliefY(headX0M)
+        return reliefY(trainPositionM) to reliefY(tailM)
     }
 
     /** Короткая красная стрелка с шариком на хвосте — остриё стрелки касается кривой рельефа,
@@ -1679,7 +1752,7 @@ class TrackProfileView @JvmOverloads constructor(
             canvas.drawLine(xFor(boundaryM), topY, xFor(boundaryM), h, thinPerpendicularPaint)
         }
 
-        val tailM = trainPositionM - trainLengthM
+        val tailM = trainTailM
         val headX = xFor(trainPositionM)
         val tailX = xFor(tailM)
         canvas.drawLine(headX, regionBottomAt(trainPositionM), headX, headY, thickPerpendicularPaint)
