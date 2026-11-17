@@ -141,13 +141,14 @@ class TrackProfileView @JvmOverloads constructor(
         private const val TRAIN_STRIPE_HEIGHT_RATIO = 4.0 / 25.0
 
         // Светофор должен быть ровно в 2 раза выше пояса поезда (машинист по скриншоту:
-        // "светофор должен быть ровно в 2 раза выше этого поезда"). Километровый столбик —
-        // заметно НИЖЕ светофора (машинист поправил: "столбик не той же высоты, что светофор,
-        // он чуть ниже"), см. kmTickH в drawSignalLineTicksAndNumbers. См. использование
+        // "светофор должен быть ровно в 2 раза выше этого поезда"). См. использование
         // trainStripeHeight в drawSignalTags — внутренние пропорции самого значка сигнала
         // (rx:ry:столбик и станция:сигнал) при этом остаются теми же, что заданы
         // SIGNAL_*_DP/STATION_*_DP выше, просто масштабируются целиком под новую полную высоту.
         private const val SIGNAL_TO_TRAIN_HEIGHT_RATIO = 2f
+        // Километровый столбик НИЖЕ светофора — машинист дал точную пропорцию: "если светофор
+        // 4,3мм, то км столбик 3,7мм" (см. kmTickH в drawSignalLineTicksAndNumbers).
+        private const val KM_TICK_TO_SIGNAL_HEIGHT_RATIO = 3.7f / 4.3f
     }
 
     private data class Segment(val startM: Double, val endM: Double, val speedKmh: Int)
@@ -959,13 +960,9 @@ class TrackProfileView @JvmOverloads constructor(
         lineY: Float,
         trainStripeHeight: Float
     ) {
-        // Километровый столбик НИЖЕ светофора, не той же высоты — машинист поправил: "столбик
-        // не той же высоты, что светофор, он чуть ниже". Доходит примерно до середины капсулы
-        // сигнала (столбик+ry от полной высоты сигнала), а не до самого её верха — заметно
-        // короче, но не так резко, как если бы обрывался у самого низа капсулы. При уточнении,
-        // насколько именно ниже, сам машинист сказал "без разницы" — выбрано по фото на глаз.
-        val kmTickH = trainStripeHeight * SIGNAL_TO_TRAIN_HEIGHT_RATIO *
-            ((SIGNAL_POLE_DP + SIGNAL_RY_DP) / SIGNAL_TOTAL_H_DP)
+        // Километровый столбик НИЖЕ светофора — машинист дал точную пропорцию: "если светофор
+        // 4,3мм, то км столбик 3,7мм", т.е. KM_TICK_TO_SIGNAL_HEIGHT_RATIO = 3.7/4.3.
+        val kmTickH = trainStripeHeight * SIGNAL_TO_TRAIN_HEIGHT_RATIO * KM_TICK_TO_SIGNAL_HEIGHT_RATIO
         val picketsPerKm = (KM_LINE_LENGTH_M / PICKET_LENGTH_M).toLong()
         val firstPicketIndex = ceil(fromM / PICKET_LENGTH_M).toLong()
         val lastPicketIndex = floor(toM / PICKET_LENGTH_M).toLong()
