@@ -877,7 +877,10 @@ class MainActivity : AppCompatActivity() {
             }
             is ArrivalDepartureState.JustDeparted -> {
                 arrivalTimeText.text = "Приб.: ${arrivalWallFormat.format(Date(s.arrivalTime))}"
-                arrivalMidText.text = "${formatDuration(s.stopDurationMs)} → итог"
+                // Раньше было "${...} → итог" — машинист: "убери эту надпись 'Итог'... она
+                // там вообще не нужна, стрелка и 'Итог'. И она увеличивает только окошко, я и
+                // так знаю, что это значит".
+                arrivalMidText.text = formatDuration(s.stopDurationMs)
                 arrivalDepartureText.text = "Отпр.: ${arrivalWallFormat.format(Date(s.departureTime))}"
             }
             is ArrivalDepartureState.Hidden -> Unit
