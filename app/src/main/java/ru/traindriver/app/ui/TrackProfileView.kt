@@ -850,7 +850,10 @@ class TrackProfileView @JvmOverloads constructor(
         // зелёная полоса съезжают относительно ступеней и линии сигналов (та же ошибка уже
         // была в HTML-макете и там же исправлена, см. drawGridAndRelief/README).
         fun mFor(x: Float): Double {
-            val t = (x - graphLeft) / graphWidth
+            // .toDouble() обязателен: без него t — Float, а "1.0 - t" — Double, и ветки if
+            // получаются разных числовых типов (не собиралось на CI: "Unresolved reference"
+            // на операторе * чуть ниже, компилятор не смог вывести общий тип веток if).
+            val t = ((x - graphLeft) / graphWidth).toDouble()
             return fromM + (if (isReversed) 1.0 - t else t) * spanM
         }
         fun yForSpeed(speedKmh: Int): Float =
