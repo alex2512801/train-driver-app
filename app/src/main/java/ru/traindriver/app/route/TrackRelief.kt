@@ -90,51 +90,89 @@ class ReliefProfile(points: List<ReliefPoint>) {
 
     fun hasCoverage(direction: Direction): Boolean = byDirection[direction]?.isNotEmpty() == true
 
-    // Масштаб рельефа — БЛОК 15 км (BLOCK_SIZE_M), не весь маршрут и не видимое окно. Машинист
-    // дважды поправлял эту логику в разные стороны:
-    //  1) сначала масштаб пересчитывался от видимого окна на каждый кадр панорамирования — та же
-    //     гора от этого меняла нарисованную высоту просто от того, что проехали мимо ("высота
-    //     профиля меняется... горы не должны увеличиваться... нужно, чтобы были точные данные");
-    //  2) затем масштаб стал глобальным (один на весь маршрут, [globalRange] ниже, теперь не
-    //     используется) — пропорции перестали "резиниться", но почти весь рельеф стал казаться
-    //     прямой линией: единственный по-настоящему огромный перепад высоты на всём маршруте
-    //     (Яблоновый перевал, км6106, против глубокой впадины у км6524 — перепад ~900 "pt", тогда
-    //     как типичный локальный перепад на 15-20 км — всего ~50-60 "pt", см. git history) занял
-    //     всю шкалу, и все остальные, обычные подъёмы/спуски сжались почти до нуля ("ни бугров не
-    //     видно... сделай в соответствии с режимными картами").
-    // БЛОК — компромисс: ФИКСИРОВАННЫЙ по самой точке (floor(chainageM / BLOCK_SIZE_M)), а не по
-    // текущему окну — значит высота любой точки НЕ меняется при панорамировании (требование №1
-    // по-прежнему выполняется). Но диапазон min/max считается не по всему маршруту, а только по
-    // 15-километровому блоку, где физически лежит точка — ровно того же размера, что и одна
-    // страница исходных PDF-карт (см. track_relief.json, поле "page" — у каждой страницы там
-    // ИМЕННО такой свой масштаб на бумаге, не общий на весь маршрут). На границе блока масштаб
-    // меняется СКАЧКОМ (как при перелистывании бумажного листа режимной карты) — это не "резина"
-    // в смысле машиниста: скачок привязан к фиксированной точке на карте, а не к тому, что сейчас
-    // видно на экране.
-    private val blockRanges: Map<Direction, Map<Double, Pair<Double, Double>>> =
-        byDirection.mapValues { (_, pts) ->
-            pts.groupBy { kotlin.math.floor(it.chainageM / BLOCK_SIZE_M) * BLOCK_SIZE_M }
-                .mapValues { (_, blockPts) ->
-                    var lo = blockPts[0].heightStitched
-                    var hi = lo
-                    for (p in blockPts) {
-                        if (p.heightStitched < lo) lo = p.heightStitched
-                        if (p.heightStitched > hi) hi = p.heightStitched
-                    }
-                    lo to hi
-                }
-        }
+    // Масштаб рельефа — СКОЛЬЗЯЩЕЕ окно ±WINDOW_RADIUS_M вокруг конкретной точки, а не видимое
+    // окно экрана и не весь маршрут целиком, и не фиксированный блок 15км (три предыдущих
+    // варианта, каждый поправлен машинистом по своей причине):
+    //  1) окно просмотра — та же гора меняла нарисованную высоту просто от панорамирования
+    //     ("высота профиля меняется... горы не должны увеличиваться... нужны точные данные");
+    //  2) весь маршрут сразу — единственный по-настоящему огромный перепад высоты на маршруте
+    //     (Яблоновый перевал км6106 против впадины у км6524, ~900 "pt") занял всю шкалу, и обычные
+    //     подъёмы/спуски (типично ~50-60 "pt" на 15-20км) сжались почти до прямой линии ("ни
+    //     бугров не видно");
+    //  3) фиксированный 15-километровый блок — пропорции перестали "резиниться" и бугры снова
+    //     стали видны, но на границе блока (раз в 15км) масштаб скачком менялся, и кривая рельефа
+    //     рисовалась ЛОМАНОЙ ("он идёт ступенями, и он не двигается вверх-вниз... нужно, чтобы он
+    //     не был ступенями, а весь полностью, который поднимался или опускался").
+    // Скользящее окно даёт ПЛАВНЫЙ (непрерывный) масштаб, который при этом зависит ТОЛЬКО от
+    // собственного км+пк точки (а не от текущего окна просмотра) — высота конкретной точки по-
+    // прежнему не меняется при панорамировании, но min/max в соседних точках отличаются совсем
+    // чуть-чуть (а не скачком), поэтому сама кривая остаётся гладкой. Диапазон окна — тот же
+    // порядок величины (15км), что и у страницы исходных PDF-карт, так что бугры видны так же
+    // чётко, как на бумажных режимных картах.
+    private data class LocalRangeArrays(val localMin: DoubleArray, val localMax: DoubleArray)
 
-    /** Диапазон высот 15-километрового блока, которому принадлежит точка [meters] (по самой
-     *  точке, не по видимому окну — см. doc-комментарий у [blockRanges]). Null, если для
-     *  направления вообще нет данных. */
-    fun blockRangeAt(direction: Direction, meters: Double): Pair<Double, Double>? {
-        val blockStart = kotlin.math.floor(meters / BLOCK_SIZE_M) * BLOCK_SIZE_M
-        return blockRanges[direction]?.get(blockStart)
+    private val localRanges: Map<Direction, LocalRangeArrays> = byDirection.mapValues { (_, pts) ->
+        val (lo, hi) = slidingMinMax(pts, WINDOW_RADIUS_M)
+        LocalRangeArrays(lo, hi)
+    }
+
+    private fun slidingMinMax(pts: List<ReliefPoint>, radiusM: Double): Pair<DoubleArray, DoubleArray> {
+        val n = pts.size
+        val localMin = DoubleArray(n)
+        val localMax = DoubleArray(n)
+        // Два монотонных дека (классический "sliding window minimum/maximum") — каждая точка
+        // входит и выходит из окна не больше одного раза, итого O(n) на весь проход.
+        val minDeque = ArrayDeque<Int>()
+        val maxDeque = ArrayDeque<Int>()
+        var left = 0
+        var right = 0
+        for (i in 0 until n) {
+            val windowHi = pts[i].chainageM + radiusM
+            while (right < n && pts[right].chainageM <= windowHi) {
+                while (minDeque.isNotEmpty() && pts[minDeque.last()].heightStitched >= pts[right].heightStitched) {
+                    minDeque.removeLast()
+                }
+                minDeque.addLast(right)
+                while (maxDeque.isNotEmpty() && pts[maxDeque.last()].heightStitched <= pts[right].heightStitched) {
+                    maxDeque.removeLast()
+                }
+                maxDeque.addLast(right)
+                right++
+            }
+            val windowLo = pts[i].chainageM - radiusM
+            while (left < right && pts[left].chainageM < windowLo) {
+                if (minDeque.isNotEmpty() && minDeque.first() == left) minDeque.removeFirst()
+                if (maxDeque.isNotEmpty() && maxDeque.first() == left) maxDeque.removeFirst()
+                left++
+            }
+            localMin[i] = pts[minDeque.first()].heightStitched
+            localMax[i] = pts[maxDeque.first()].heightStitched
+        }
+        return localMin to localMax
+    }
+
+    /** Плавный локальный диапазон высот вокруг точки [meters] (скользящее окно, см. выше),
+     *  линейно интерполированный между соседними точками — так же, как [heightAt] саму высоту.
+     *  Null, если для направления вообще нет данных или [meters] вне покрытия. */
+    fun localRangeAt(direction: Direction, meters: Double): Pair<Double, Double>? {
+        val pts = byDirection[direction] ?: return null
+        if (pts.isEmpty() || meters < pts.first().chainageM || meters > pts.last().chainageM) return null
+        val arrays = localRanges[direction] ?: return null
+        var lo = 0
+        var hi = pts.size - 1
+        while (lo < hi - 1) {
+            val mid = (lo + hi) / 2
+            if (pts[mid].chainageM <= meters) lo = mid else hi = mid
+        }
+        if (pts[hi].chainageM == pts[lo].chainageM) return arrays.localMin[lo] to arrays.localMax[lo]
+        val t = (meters - pts[lo].chainageM) / (pts[hi].chainageM - pts[lo].chainageM)
+        val minV = arrays.localMin[lo] + (arrays.localMin[hi] - arrays.localMin[lo]) * t
+        val maxV = arrays.localMax[lo] + (arrays.localMax[hi] - arrays.localMax[lo]) * t
+        return minV to maxV
     }
 
     companion object {
-        private const val BLOCK_SIZE_M = 15000.0
+        private const val WINDOW_RADIUS_M = 7500.0
     }
 }
 

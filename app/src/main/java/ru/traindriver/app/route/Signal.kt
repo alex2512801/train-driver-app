@@ -81,7 +81,6 @@ fun Signal.isVisibleFor(effectiveDataset: Direction, actualDirection: Direction)
 object SignalAssetLoader {
 
     fun loadSignals(context: Context, assetFileName: String = "track_signals.json"): List<Signal> {
-        val conditional = ConditionalSignalAssetLoader.loadConditionalChainages(context)
         val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
         val array = JSONArray(json)
         val raw = buildList(array.length()) {
@@ -90,20 +89,63 @@ object SignalAssetLoader {
                 val direction = if (obj.getString("direction") == "чётное") Direction.EVEN else Direction.ODD
                 val chainageM = ChainageFormatter.toMeters(obj.getInt("km"), obj.getInt("pk"))
                 val track = if (obj.isNull("track")) null else obj.getString("track")
-                val name = obj.getString("name")
-                val conditionallyPermissive = (name to chainageM) in conditional
-                add(Signal(name, direction, chainageM, track, conditionallyPermissive))
+                add(Signal(obj.getString("name"), direction, chainageM, track))
             }
         }
-        // Одна и та же запись (та же литера на том же км+пк) часто встречается в ОБОИХ
-        // исходных PDF-документах перегона под разными "сырыми" тегами direction — то же самое,
-        // из-за чего понадобился effectiveDirection (см. его doc-комментарий). После того как
-        // фильтрация по направлению стала смотреть на effectiveDirection, а не на сырой тег,
-        // такие записи с ОДИНАКОВЫМ именем и км+пк стали бы проходить фильтр ДВАЖДЫ и рисовались
-        // бы на графике как два полностью совпадающих значка в одной точке — схлопываем их в
-        // один (сырой direction при этом больше ни на что не влияет, т.к. effectiveDirection его
-        // не использует для букв/голых номеров — см. выше).
-        return raw.distinctBy { Triple(it.name, it.chainageM, it.track) }
+        // Одна и та же запись (та же литера на том же км+пк, БИТ В БИТ) часто встречается в
+        // ОБОИХ исходных PDF-документах перегона под разными "сырыми" тегами direction —
+        // схлопываем точные совпадения в один (сырой direction сам по себе больше ни на что не
+        // влияет, т.к. effectiveDirection его не использует для букв/голых номеров — см. выше).
+        val exactDeduped = raw.distinctBy { Triple(it.name, it.chainageM, it.track) }
+        // Машинист прислал скриншот: "сигнал, который есть ещё рядом через 100 метров — такого
+        // на самом деле быть не может". Причина — те же два исходных PDF почти всегда, но НЕ
+        // БИТ В БИТ: один и тот же физический сигнал измерен в них с разницей в 1-5 пк (100-
+        // 500м), поэтому exactDeduped выше их не ловит, и на графике рисовались два отдельных
+        // значка рядом. Проверено по самим данным: 181 из 185 таких "сближенных" пар (≤500м) —
+        // именно это (у двух записей РАЗНЫЙ сырой тег direction, т.е. они из разных файлов); 4
+        // оставшиеся — на перегоне Тургутуй — Яблоновая, где у среднего пути действительно свои,
+        // физически другие сигналы с теми же номерами (см. doc-комментарий у [Signal.track]) — у
+        // этих четырёх сырой тег ОДИНАКОВЫЙ (обе записи из одного и того же файла), поэтому
+        // схлопывать их нельзя: это не дубль измерения, а два разных столба.
+        val merged = mergeCrossPdfDuplicates(exactDeduped)
+
+        val conditional = ConditionalSignalAssetLoader.loadConditionalChainages(context)
+        return merged.map { s ->
+            val isConditional = conditional.any { (name, m) ->
+                name == s.name && kotlin.math.abs(m - s.chainageM) <= 300.0
+            }
+            if (isConditional) s.copy(conditionallyPermissive = true) else s
+        }
+    }
+
+    /** Схлопывает "почти-дубли" — см. doc-комментарий у вызова в [loadSignals]. Группируем по
+     *  (номер/литера, [effectiveDirection], путь), а не по сырому direction — ровно тот же
+     *  критерий "один и тот же физический сигнал", что и везде в этом файле. Внутри группы
+     *  соседние (по км+пк) записи с РАЗНЫМ сырым тегом direction и расстоянием между ними не
+     *  больше 500м считаем одной и той же точкой, измеренной дважды, и усредняем км+пк. */
+    private fun mergeCrossPdfDuplicates(signals: List<Signal>): List<Signal> {
+        val merged = mutableListOf<Signal>()
+        val byIdentity = signals.groupBy { Triple(it.name, it.effectiveDirection, it.track) }
+        for ((_, group) in byIdentity) {
+            val sorted = group.sortedBy { it.chainageM }
+            var i = 0
+            while (i < sorted.size) {
+                var j = i
+                while (j + 1 < sorted.size &&
+                    sorted[j + 1].chainageM - sorted[j].chainageM <= 500.0 &&
+                    sorted[j + 1].direction != sorted[j].direction
+                ) {
+                    j++
+                }
+                val cluster = sorted.subList(i, j + 1)
+                merged.add(
+                    if (cluster.size == 1) cluster[0]
+                    else cluster[0].copy(chainageM = cluster.sumOf { it.chainageM } / cluster.size)
+                )
+                i = j + 1
+            }
+        }
+        return merged
     }
 
     /** Сигналы главного пути (без среднего пути Тургутуй — Яблоновая, см. [Signal.track]). */
