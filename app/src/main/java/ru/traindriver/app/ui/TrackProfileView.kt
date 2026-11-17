@@ -126,6 +126,28 @@ class TrackProfileView @JvmOverloads constructor(
         private const val STATION_R_OUTER_DP = STATION_TOTAL_H_DP / (2f + 50f / 45f)
         private const val STATION_R_INNER_DP = STATION_R_OUTER_DP * 0.65f
         private const val STATION_POLE_DP = STATION_R_OUTER_DP * (50f / 45f)
+
+        // Пропорции пояса поезда (см. trainStripeHeightPx/drawTrainSignalStripe) — машинист
+        // продиктовал по эталонному поезду: электровоз "Ермак" 3ЭС5К + состав 71 условная
+        // единица (условная единица пути — стандартная ж/д величина, 14м/единица) ≈ 994м. При
+        // таком поезде, на БАЗОВОМ (не текущем) масштабе экрана (behindM+aheadM по умолчанию,
+        // см. REFERENCE_SPAN_M), высота пояса должна относиться к его длине как 4:25 (машинист
+        // замерил на глаз: "если 25мм, то высота 4"). Чтобы высота не "гуляла" вместе с текущим
+        // зумом/длиной состава ("если он меньше будет, высота должна быть такая же"), она
+        // пересчитывается ОДИН раз от эталонного поезда на БАЗОВОМ масштабе, а не от фактической
+        // ширины полоски на экране.
+        private const val REFERENCE_TRAIN_LENGTH_M = 994.0 // 71 × 14м
+        private const val REFERENCE_SPAN_M = 2500.0 + 5500.0 // поумолчанию behindM+aheadM
+        private const val TRAIN_STRIPE_HEIGHT_RATIO = 4.0 / 25.0
+
+        // Светофор должен быть ровно в 2 раза выше пояса поезда, а километровый столбик — той
+        // же высоты, что светофор (машинист, по присланному скриншоту): "светофор должен быть
+        // ровно в 2 раза выше этого поезда. А километровые столбики... на таком же расстоянии,
+        // как светофор". См. использование trainStripeHeight в drawSignalTags/
+        // drawSignalLineTicksAndNumbers — внутренние пропорции самого значка (rx:ry:столбик и
+        // станция:сигнал) при этом остаются теми же, что заданы SIGNAL_*_DP/STATION_*_DP выше,
+        // просто масштабируются целиком под новую полную высоту.
+        private const val SIGNAL_TO_TRAIN_HEIGHT_RATIO = 2f
     }
 
     private data class Segment(val startM: Double, val endM: Double, val speedKmh: Int)
@@ -226,12 +248,6 @@ class TrackProfileView @JvmOverloads constructor(
     private val pictogramMinHatchWidthPx = dp(PICTOGRAM_MIN_HATCH_WIDTH_DP)
     private val iconHalfPx = dp(ICON_HALF_DP)
     private val iconGapPx = dp(ICON_GAP_DP)
-    private val signalRyPx = dp(SIGNAL_RY_DP)
-    private val signalRxPx = dp(SIGNAL_RX_DP)
-    private val signalPolePx = dp(SIGNAL_POLE_DP)
-    private val stationROuterPx = dp(STATION_R_OUTER_DP)
-    private val stationRInnerPx = dp(STATION_R_INNER_DP)
-    private val stationPolePx = dp(STATION_POLE_DP)
 
     private val stepPaint = Paint().apply { color = Color.rgb(160, 159, 164) }
     // Тёмное "поле" от низа шкалы скорости до линии сигналов — визуально одна сплошная зона
@@ -795,10 +811,11 @@ class TrackProfileView @JvmOverloads constructor(
         val segments = computeSegments(fromM, toM)
         val stepRegionBottoms = drawSpeedSteps(canvas, segments, ::xFor, ::yForSpeed)
         drawRestrictionHatching(canvas, fromM, toM, ::xFor, ::yForSpeed)
-        drawSignalLineTicksAndNumbers(canvas, fromM, toM, ::xFor, lineY)
-        drawTrainSignalStripe(canvas, ::xFor, lineY)
+        val trainStripeHeight = trainStripeHeightPx()
+        drawSignalLineTicksAndNumbers(canvas, fromM, toM, ::xFor, lineY, trainStripeHeight)
+        drawTrainSignalStripe(canvas, ::xFor, lineY, trainStripeHeight)
         drawNeutralInsertBar(canvas, fromM, toM, ::xFor, lineY)
-        drawSignalTags(canvas, fromM, toM, ::xFor, lineY)
+        drawSignalTags(canvas, fromM, toM, ::xFor, lineY, trainStripeHeight)
 
         val pictograms = buildPictograms(fromM, toM)
         val (headY, tailY) = drawReliefAndTrain(canvas, fromM, toM, ::xFor, ::mFor, reliefTop, reliefH, pictograms)
@@ -939,8 +956,14 @@ class TrackProfileView @JvmOverloads constructor(
         fromM: Double,
         toM: Double,
         xFor: (Double) -> Float,
-        lineY: Float
+        lineY: Float,
+        trainStripeHeight: Float
     ) {
+        // Километровый столбик — той же высоты, что светофор (машинист по скриншоту: "а
+        // километровые столбики... на таком же расстоянии, как светофор, в такой же
+        // пропорции") — т.е. тоже SIGNAL_TO_TRAIN_HEIGHT_RATIO (2x) от пояса поезда. Пикетная
+        // засечка (не км) высоту не меняла — машинист её не упоминал.
+        val kmTickH = trainStripeHeight * SIGNAL_TO_TRAIN_HEIGHT_RATIO
         val picketsPerKm = (KM_LINE_LENGTH_M / PICKET_LENGTH_M).toLong()
         val firstPicketIndex = ceil(fromM / PICKET_LENGTH_M).toLong()
         val lastPicketIndex = floor(toM / PICKET_LENGTH_M).toLong()
@@ -948,7 +971,7 @@ class TrackProfileView @JvmOverloads constructor(
             val picketM = i * PICKET_LENGTH_M
             val isKmLine = i % picketsPerKm == 0L
             val x = xFor(picketM)
-            val tickH = if (isKmLine) dp(14f) else dp(7f)
+            val tickH = if (isKmLine) kmTickH else dp(7f)
             canvas.drawLine(x, lineY - tickH, x, lineY, if (isKmLine) kmLinePaint else picketLinePaint)
         }
 
@@ -963,23 +986,48 @@ class TrackProfileView @JvmOverloads constructor(
         for (kmIndex in firstKmIndex..lastKmIndex) {
             val kmM = kmIndex * KM_LINE_LENGTH_M
             if (kmM in fromM..toM) {
-                // lineY - dp(8f) (раньше) был НИЖЕ верхнего конца самой засечки км-столбика
-                // (та поднимается на 14dp, см. tickH выше) — низ цифр попадал прямо на
-                // засечку, "столбик как бы пронзает эти числа" (машинист). Подняли выше
-                // засечки с запасом, чтобы между цифрами и столбиком был зазор.
-                canvas.drawText(kmIndex.toString(), xFor(kmM), lineY - dp(20f), kmTextPaint)
+                // Раньше было lineY - dp(8f), потом фиксированный lineY - dp(20f) — оба были
+                // НИЖЕ или слишком близко к верхнему концу самой засечки, "столбик как бы
+                // пронзает эти числа" (машинист). Теперь высота засечки сама зависит от
+                // trainStripeHeight (kmTickH выше, может быть больше 20dp) — отсчитываем
+                // зазор от её РЕАЛЬНОГО верха, а не от фиксированной величины.
+                canvas.drawText(kmIndex.toString(), xFor(kmM), lineY - kmTickH - dp(6f), kmTextPaint)
             }
         }
     }
 
-    /** Серая полоска физической длины поезда НА линии сигналов (ТЗ раздел 7) + белая окантовка. */
-    private fun drawTrainSignalStripe(canvas: Canvas, xFor: (Double) -> Float, lineY: Float) {
+    /** Высота пояса поезда на линии сигналов, px — см. doc-комментарий у REFERENCE_TRAIN_LENGTH_M.
+     *  ФИКСИРОВАННАЯ: считается один раз от эталонного поезда (Ермак 3ЭС5К + 71 условная
+     *  единица) на БАЗОВОМ масштабе экрана (REFERENCE_SPAN_M), а не от фактической ширины
+     *  полоски — поэтому не меняется ни от текущего зума, ни от реальной длины состава
+     *  (машинист: "если он меньше будет, высота должна быть такая же"). */
+    private fun trainStripeHeightPx(): Float {
+        val referenceWidthPx = width.toFloat() * (REFERENCE_TRAIN_LENGTH_M / REFERENCE_SPAN_M).toFloat()
+        return referenceWidthPx * TRAIN_STRIPE_HEIGHT_RATIO.toFloat()
+    }
+
+    /** Серая полоска физической длины поезда НА линии сигналов (ТЗ раздел 7) + белая окантовка.
+     *  С головной стороны (x1, куда едет поезд) — не прямой угол, а скос под 45° от середины
+     *  боковой грани вверх до верхнего края, как кабина локомотива (машинист: "с правой
+     *  стороны, где голова поезда... с середины боковой стороны вверх идёт скос под углом 45
+     *  градусов, как будто бы там кабина"). */
+    private fun drawTrainSignalStripe(canvas: Canvas, xFor: (Double) -> Float, lineY: Float, h: Float) {
         if (trainLengthM <= 0.0) return
         val x0 = xFor(trainPositionM - trainLengthM)
         val x1 = xFor(trainPositionM)
         val w = max(1f, x1 - x0)
-        canvas.drawRect(x0, lineY - dp(6f), x0 + w, lineY, trainSignalStripePaint)
-        canvas.drawRect(x0, lineY - dp(6f), x0 + w, lineY, trainSignalStripeBorderPaint)
+        val top = lineY - h
+        val cabCut = h / 2f
+        val path = Path().apply {
+            moveTo(x0, lineY)
+            lineTo(x0, top)
+            lineTo(x0 + w - cabCut, top)
+            lineTo(x0 + w, top + cabCut)
+            lineTo(x0 + w, lineY)
+            close()
+        }
+        canvas.drawPath(path, trainSignalStripePaint)
+        canvas.drawPath(path, trainSignalStripeBorderPaint)
     }
 
     /** Нейтральная вставка — синяя полоса НА линии сигналов, от km+пк начала на реальную
@@ -1006,7 +1054,29 @@ class TrackProfileView @JvmOverloads constructor(
      *  ЧД/НД — особый случай внутри isVisibleFor: показываются только на неправильном пути
      *  (машинист поправил отдельно — "ЧД и НД должны показываться только по неправильному
      *  пути", у него на правильном пути всё равно показывался ЧД). */
-    private fun drawSignalTags(canvas: Canvas, fromM: Double, toM: Double, xFor: (Double) -> Float, lineY: Float) {
+    private fun drawSignalTags(
+        canvas: Canvas,
+        fromM: Double,
+        toM: Double,
+        xFor: (Double) -> Float,
+        lineY: Float,
+        trainStripeHeight: Float
+    ) {
+        // Полная высота значка сигнала (от линии сигналов до верха капсулы, столбик+2×ry) —
+        // РОВНО в 2 раза выше пояса поезда (машинист по скриншоту: "светофор должен быть ровно
+        // в 2 раза выше этого поезда"). Внутренние пропорции самого значка (rx:ry:столбик,
+        // станция:сигнал) берутся из констант SIGNAL_*_DP/STATION_*_DP как ШАБЛОН формы и
+        // масштабируются ЦЕЛИКОМ одним коэффициентом под эту новую полную высоту — так станция
+        // остаётся в 7/6 раза крупнее сигнала, а не только сигнал подрос.
+        val signalTotalH = trainStripeHeight * SIGNAL_TO_TRAIN_HEIGHT_RATIO
+        val signalScale = signalTotalH / dp(SIGNAL_TOTAL_H_DP)
+        val signalRyPx = dp(SIGNAL_RY_DP) * signalScale
+        val signalRxPx = dp(SIGNAL_RX_DP) * signalScale
+        val signalPolePx = dp(SIGNAL_POLE_DP) * signalScale
+        val stationROuterPx = dp(STATION_R_OUTER_DP) * signalScale
+        val stationRInnerPx = dp(STATION_R_INNER_DP) * signalScale
+        val stationPolePx = dp(STATION_POLE_DP) * signalScale
+
         val tags = buildList {
             for (s in signals) if (s.isVisibleFor(direction, rawDirection)) {
                 // Условно разрешающий сигнал — буква "Т" сразу после номера, перед тире и
