@@ -140,6 +140,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var historyRowsContainer: LinearLayout
     private lateinit var historyToggleButton: Button
     private lateinit var toneGenerator: ToneGenerator
+    // Отдельный генератор для сигнала потери/нахождения GPS — НЕ на потоке STREAM_ALARM (тот
+    // выше нарочно форсируется на максимум ради сигнала стоянки в шумной кабине), а на
+    // STREAM_NOTIFICATION — машинист попросил, чтобы этот сигнал регулировался обычной
+    // громкостью уведомлений телефона, а не всегда звучал на полную. См. doc-комментарий у
+    // playGpsTransitionBeep.
+    private lateinit var gpsBeepToneGenerator: ToneGenerator
     // Отложенные гудки 25-минутного сигнала стоянки (см. playStopAlarm) — отменяются в
     // onDestroy, чтобы не дёргать toneGenerator после его release(), если активность закрылась
     // ровно посреди серии гудков.
@@ -362,22 +368,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Однократные (не серия, в отличие от 25-минутного) сигналы потери/нахождения GPS —
-    // машинист попросил дополнительно к сигналу стоянки. Разные тоны специально ("плохой"/
-    // "хороший", TONE_PROP_NACK/ACK — те же стандартные короткие служебные тона, что и
-    // TONE_PROP_BEEP2 выше, той же категории надёжности), чтобы на слух сразу было понятно, в
-    // какую сторону произошла смена, не вслушиваясь в саму координату на экране.
-    private fun playGpsLostBeep() {
+    // Однократный (не серия, в отличие от 25-минутного) сигнал потери/нахождения GPS —
+    // машинист попросил дополнительно к сигналу стоянки. Раньше были два РАЗНЫХ тона
+    // (TONE_PROP_NACK/ACK — "плохой"/"хороший"), чтобы на слух отличать потерю от нахождения;
+    // машинист поправил — один и тот же одиночный гудок на оба события, и звучать он должен
+    // не на принудительно максимальной громкости потока будильника (как сигнал стоянки выше,
+    // там это нарочно), а на обычном потоке уведомлений — то есть регулируется громкостью
+    // уведомлений телефона, как любой другой звук уведомления.
+    private fun playGpsTransitionBeep() {
         try {
-            toneGenerator.startTone(ToneGenerator.TONE_PROP_NACK, 350)
-        } catch (e: Throwable) {
-            // см. doc-комментарий у pollSimSignal — та же подстраховка.
-        }
-    }
-
-    private fun playGpsFoundBeep() {
-        try {
-            toneGenerator.startTone(ToneGenerator.TONE_PROP_ACK, 350)
+            gpsBeepToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 350)
         } catch (e: Throwable) {
             // см. doc-комментарий у pollSimSignal — та же подстраховка.
         }
@@ -566,6 +566,7 @@ class MainActivity : AppCompatActivity() {
         // громкости будильника/звонка). Громкость будильника — отдельный канал, обычно всегда
         // слышимый и не затронутый тихим режимом/режимом "Не беспокоить".
         toneGenerator = ToneGenerator(AudioManager.STREAM_ALARM, ToneGenerator.MAX_VOLUME)
+        gpsBeepToneGenerator = ToneGenerator(AudioManager.STREAM_NOTIFICATION, ToneGenerator.MAX_VOLUME)
 
         // "Координата (км+пк, по тапу переключается в формат КЛУБ-У)" — ТЗ раздел 7.
         coordinateText.setOnClickListener {
@@ -866,6 +867,7 @@ class MainActivity : AppCompatActivity() {
         voiceAnnouncer.release()
         for (beep in pendingStopAlarmBeeps) timeHandler.removeCallbacks(beep)
         toneGenerator.release()
+        gpsBeepToneGenerator.release()
         @Suppress("DEPRECATION")
         for ((manager, listener) in activeSimListeners) {
             manager.listen(listener, PhoneStateListener.LISTEN_NONE)
@@ -1037,7 +1039,7 @@ class MainActivity : AppCompatActivity() {
             val isGpsNow = source != LocationSource.NETWORK
             val previouslyWasGps = lastLocationWasGps
             if (previouslyWasGps != null && previouslyWasGps != isGpsNow) {
-                if (isGpsNow) playGpsFoundBeep() else playGpsLostBeep()
+                playGpsTransitionBeep()
             }
             lastLocationWasGps = isGpsNow
 
