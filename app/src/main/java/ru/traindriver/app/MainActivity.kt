@@ -47,6 +47,8 @@ import ru.traindriver.app.route.ArrivalDepartureTracker
 import ru.traindriver.app.route.BlockPostAssetLoader
 import ru.traindriver.app.route.BrakeTest
 import ru.traindriver.app.route.BrakeTestAssetLoader
+import ru.traindriver.app.route.Ktsm
+import ru.traindriver.app.route.KtsmAssetLoader
 import ru.traindriver.app.route.ChainageFormatter
 import ru.traindriver.app.route.Crossing
 import ru.traindriver.app.route.CrossingAssetLoader
@@ -246,6 +248,12 @@ class MainActivity : AppCompatActivity() {
     private val voiceAnnouncer by lazy { VoiceAnnouncer(this) }
     private val brakeTests by lazy { BrakeTestAssetLoader.loadBrakeTests(this) }
     private var brakeTestScheduler = PointAnnouncementScheduler<BrakeTest>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
+
+    // КТСМ (ТЗ, голос Announcement.KTSM) — тот же статичный asset-список, что и проба тормозов/
+    // обрывные места, тот же порог 2000м (отдельного порога машинист не продиктовал — взял по
+    // аналогии с остальными точечными оповещениями). Пересобирается в updateDirectionUi.
+    private val ktsmPoints by lazy { KtsmAssetLoader.loadKtsm(this) }
+    private var ktsmScheduler = PointAnnouncementScheduler<Ktsm>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
     private val stationAnnouncements by lazy { StationAnnouncementAssetLoader.loadStationAnnouncements(this) }
     private var stationScheduler =
         PointAnnouncementScheduler<StationAnnouncement>(emptyList(), { it.chainageM }, thresholdOf = { it.thresholdM })
@@ -409,6 +417,7 @@ class MainActivity : AppCompatActivity() {
         if (crossingNear300Scheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.CROSSING_NEAR)
         if (tempLimitScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.TEMP_LIMIT)
         if (washoutScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.WASHOUT)
+        if (ktsmScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.KTSM)
 
         if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
             voiceAnnouncer.play(Announcement.STATION)
@@ -572,6 +581,7 @@ class MainActivity : AppCompatActivity() {
         trackProfileView.setNeutralInserts(neutralInserts)
         trackProfileView.setWashouts(washouts)
         trackProfileView.setBrakeTests(brakeTests)
+        trackProfileView.setKtsm(ktsmPoints)
         timeHandler.post(timeUpdater)
 
         directionButton.setOnClickListener {
@@ -936,6 +946,9 @@ class MainActivity : AppCompatActivity() {
         // при старом направлении, ошибочно считались бы объявленными и при новом.
         val relevantBrakeTests = brakeTests.filter { it.direction == s.effectiveDataset }
         brakeTestScheduler = PointAnnouncementScheduler(relevantBrakeTests, { it.chainageM }, thresholdOf = { 2000.0 })
+
+        val relevantKtsm = ktsmPoints.filter { it.direction == s.effectiveDataset }
+        ktsmScheduler = PointAnnouncementScheduler(relevantKtsm, { it.chainageM }, thresholdOf = { 2000.0 })
 
         val relevantStations = stationAnnouncements.filter { it.direction == s.effectiveDataset }
         stationScheduler = PointAnnouncementScheduler(relevantStations, { it.chainageM }, thresholdOf = { it.thresholdM })

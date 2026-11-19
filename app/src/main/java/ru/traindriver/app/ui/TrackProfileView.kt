@@ -32,6 +32,7 @@ import ru.traindriver.app.route.SpeedLimit
 import ru.traindriver.app.route.SpeedLimitResolver
 import ru.traindriver.app.route.Station
 import ru.traindriver.app.route.BrakeTest
+import ru.traindriver.app.route.Ktsm
 import ru.traindriver.app.route.Washout
 
 /**
@@ -165,7 +166,7 @@ class TrackProfileView @JvmOverloads constructor(
 
     private enum class PictogramKind {
         OPASNOE_START, OPASNOE_END, YELLOW_SHIELD, GREEN_SHIELD, AIR_GAP, NEUTRAL,
-        CROSSING_GUARDED, CROSSING_UNGUARDED, BRAKE_TEST
+        CROSSING_GUARDED, CROSSING_UNGUARDED, BRAKE_TEST, KTSM
     }
 
     private var speedLimits: List<SpeedLimit> = emptyList()
@@ -200,6 +201,7 @@ class TrackProfileView @JvmOverloads constructor(
     private var neutralInserts: List<NeutralInsert> = emptyList()
     private var washouts: List<Washout> = emptyList()
     private var brakeTests: List<BrakeTest> = emptyList()
+    private var ktsmPoints: List<Ktsm> = emptyList()
 
     // Метки места (машинист, не из ТЗ/макета): тап около головы поезда в верхней зоне (где
     // сигналы) ставит метку ровно на ТЕКУЩЕМ месте головы — например, прямо на стрелке, когда
@@ -541,6 +543,19 @@ class TrackProfileView @JvmOverloads constructor(
         isAntiAlias = true
     }
 
+    // КТСМ (комплекс контроля букс) — точного чертежа с размерами машинист не присылал ("у нас
+    // пиктограмма есть", имея в виду сам слот в ТЗ, а не готовый рисунок) — тот же приём, что и
+    // у пробы тормозов выше: синий квадрат, белая окантовка, буква "К" внутри — пока заметно
+    // отличается от красной пробы тормозов цветом, этого достаточно, чтобы не путать на
+    // графике. Если нужен другой рисунок — машинист поправит.
+    private val ktsmBluePaint = Paint().apply { color = Color.rgb(30, 90, 200); isAntiAlias = true }
+    private val ktsmTextPaint = Paint().apply {
+        color = Color.rgb(30, 90, 200)
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.DEFAULT_BOLD
+        isAntiAlias = true
+    }
+
     // Переезд (знак 1.1 ГОСТ Р 52290) — красный треугольник с белой каймой и чёрной решёткой-
     // шлагбаумом внутри, образец прислал машинист (см. doc-комментарий у drawCrossingGlyph).
     private val crossingWhitePaint = Paint().apply { color = Color.WHITE; isAntiAlias = true }
@@ -814,6 +829,11 @@ class TrackProfileView @JvmOverloads constructor(
 
     fun setBrakeTests(list: List<BrakeTest>) {
         brakeTests = list
+        invalidate()
+    }
+
+    fun setKtsm(list: List<Ktsm>) {
+        ktsmPoints = list
         invalidate()
     }
 
@@ -1317,6 +1337,9 @@ class TrackProfileView @JvmOverloads constructor(
         for (a in airGaps) if (a.direction == direction && a.chainageM in fromM..toM) {
             result.add(Pictogram(a.chainageM, PictogramKind.AIR_GAP))
         }
+        for (k in ktsmPoints) if (k.direction == direction && k.chainageM in fromM..toM) {
+            result.add(Pictogram(k.chainageM, PictogramKind.KTSM))
+        }
         for (b in brakeTests) if (b.direction == direction && b.chainageM in fromM..toM) {
             result.add(Pictogram(b.chainageM, PictogramKind.BRAKE_TEST))
         }
@@ -1511,6 +1534,7 @@ class TrackProfileView @JvmOverloads constructor(
             PictogramKind.CROSSING_GUARDED -> drawCrossingGlyph(canvas, cx, cy, s, guarded = true)
             PictogramKind.CROSSING_UNGUARDED -> drawCrossingGlyph(canvas, cx, cy, s, guarded = false)
             PictogramKind.BRAKE_TEST -> drawBrakeTestGlyph(canvas, cx, cy, s)
+            PictogramKind.KTSM -> drawKtsmGlyph(canvas, cx, cy, s)
         }
     }
 
@@ -1558,6 +1582,17 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.drawRect(cx - s + inset, cy - s + inset, cx + s - inset, cy + s - inset, shieldWhitePaint)
         brakeTestTextPaint.textSize = s * 0.95f
         canvas.drawText("НТ", cx, cy + brakeTestTextPaint.textSize * 0.35f, brakeTestTextPaint)
+    }
+
+    /** КТСМ — белый квадрат с синей окантовкой и буквой "К" внутри, см. doc-комментарий у
+     *  ktsmBluePaint (та же форма, что у пробы тормозов, другой цвет — точного рисунка не
+     *  присылали). */
+    private fun drawKtsmGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
+        val inset = s * 0.16f
+        canvas.drawRect(cx - s, cy - s, cx + s, cy + s, ktsmBluePaint)
+        canvas.drawRect(cx - s + inset, cy - s + inset, cx + s - inset, cy + s - inset, shieldWhitePaint)
+        ktsmTextPaint.textSize = s * 0.95f
+        canvas.drawText("К", cx, cy + ktsmTextPaint.textSize * 0.35f, ktsmTextPaint)
     }
 
     /** 3×7 клеток, строки 1/3/5/7 (индексы 0,2,4,6) чёрные во всю ширину + сплошная чёрная
