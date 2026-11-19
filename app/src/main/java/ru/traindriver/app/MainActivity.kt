@@ -54,6 +54,7 @@ import ru.traindriver.app.route.Crossing
 import ru.traindriver.app.route.CrossingAssetLoader
 import ru.traindriver.app.route.Direction
 import ru.traindriver.app.route.DirectionSelection
+import ru.traindriver.app.route.NeutralInsert
 import ru.traindriver.app.route.NeutralInsertAssetLoader
 import ru.traindriver.app.route.PointAnnouncementScheduler
 import ru.traindriver.app.route.ReliefAssetLoader
@@ -267,6 +268,13 @@ class MainActivity : AppCompatActivity() {
     private var crossingNear800Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 800.0 })
     private var crossingNear300Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 300.0 })
 
+    // Нейтральная вставка (ТЗ раздел 8) — "Впереди нейтральная вставка!" за 600 м (голос
+    // появился только сейчас — см. doc-комментарий у Announcement.NEUTRAL). Направление — КАК
+    // ЕСТЬ (s.direction), а не effectiveDataset, см. doc-комментарий у NeutralInsert/
+    // TrackProfileView.setRawDirection — та же причина, по которой рисование уже фильтрует по
+    // rawDirection, а не по эффективному датасету.
+    private var neutralInsertScheduler = PointAnnouncementScheduler<NeutralInsert>(emptyList(), { it.chainageM }, thresholdOf = { 600.0 })
+
     // Временное ограничение (ТЗ раздел 6/11) — "Внимание! Впереди временное ограничение
     // скорости!" за 2000 м до НАЧАЛА ограничения ([Restriction.startM]). В отличие от
     // переездов/проб тормозов список точек не статичный asset, а меняется в любой момент
@@ -418,6 +426,7 @@ class MainActivity : AppCompatActivity() {
         if (tempLimitScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.TEMP_LIMIT)
         if (washoutScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.WASHOUT)
         if (ktsmScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.KTSM)
+        if (neutralInsertScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.NEUTRAL)
 
         if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
             voiceAnnouncer.play(Announcement.STATION)
@@ -949,6 +958,10 @@ class MainActivity : AppCompatActivity() {
 
         val relevantKtsm = ktsmPoints.filter { it.direction == s.effectiveDataset }
         ktsmScheduler = PointAnnouncementScheduler(relevantKtsm, { it.chainageM }, thresholdOf = { 2000.0 })
+
+        // Направление КАК ЕСТЬ (s.direction), не effectiveDataset — см. doc-комментарий у поля.
+        val relevantNeutralInserts = neutralInserts.filter { it.direction == s.direction }
+        neutralInsertScheduler = PointAnnouncementScheduler(relevantNeutralInserts, { it.chainageM }, thresholdOf = { 600.0 })
 
         val relevantStations = stationAnnouncements.filter { it.direction == s.effectiveDataset }
         stationScheduler = PointAnnouncementScheduler(relevantStations, { it.chainageM }, thresholdOf = { it.thresholdM })
