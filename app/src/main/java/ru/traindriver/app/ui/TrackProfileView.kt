@@ -165,7 +165,7 @@ class TrackProfileView @JvmOverloads constructor(
     private data class Pictogram(val chainageM: Double, val kind: PictogramKind)
 
     private enum class PictogramKind {
-        OPASNOE_START, OPASNOE_END, YELLOW_SHIELD, GREEN_SHIELD, AIR_GAP, NEUTRAL,
+        OPASNOE_START, YELLOW_SHIELD, GREEN_SHIELD, AIR_GAP, NEUTRAL,
         CROSSING_GUARDED, CROSSING_UNGUARDED, BRAKE_TEST, KTSM
     }
 
@@ -1362,10 +1362,13 @@ class TrackProfileView @JvmOverloads constructor(
             result.add(Pictogram(signChainageM, PictogramKind.NEUTRAL))
         }
         for (r in restrictions) {
+            // Знак "конец опасного места" убран совсем (машинист: при коротких ограничениях
+            // он вставал почти вплотную к "началу" и перекрывал его — проще не показывать
+            // "конец" вообще, чем городить порог "насколько коротко уже нельзя". Жёлтый и
+            // зелёный щиты остаются на тех же местах — за км до начала и через км после конца.
             val yellowM = r.startM - SHIELD_OFFSET_M
             val greenM = r.endM + SHIELD_OFFSET_M
             if (r.startM in fromM..toM) result.add(Pictogram(r.startM, PictogramKind.OPASNOE_START))
-            if (r.endM in fromM..toM) result.add(Pictogram(r.endM, PictogramKind.OPASNOE_END))
             if (yellowM in fromM..toM) result.add(Pictogram(yellowM, PictogramKind.YELLOW_SHIELD))
             if (greenM in fromM..toM) result.add(Pictogram(greenM, PictogramKind.GREEN_SHIELD))
         }
@@ -1540,8 +1543,7 @@ class TrackProfileView @JvmOverloads constructor(
 
     private fun drawPictogramGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, kind: PictogramKind) {
         when (kind) {
-            PictogramKind.OPASNOE_START -> drawOpasnoeGlyph(canvas, cx, cy, s, rotated = false)
-            PictogramKind.OPASNOE_END -> drawOpasnoeGlyph(canvas, cx, cy, s, rotated = true)
+            PictogramKind.OPASNOE_START -> drawOpasnoeGlyph(canvas, cx, cy, s)
             PictogramKind.YELLOW_SHIELD -> drawShieldGlyph(canvas, cx, cy, s, yellowShieldColor)
             PictogramKind.GREEN_SHIELD -> drawShieldGlyph(canvas, cx, cy, s, greenShieldColor)
             PictogramKind.AIR_GAP -> drawAirGapGlyph(canvas, cx, cy, s)
@@ -1553,12 +1555,11 @@ class TrackProfileView @JvmOverloads constructor(
         }
     }
 
-    private fun drawOpasnoeGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, rotated: Boolean) {
+    private fun drawOpasnoeGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
         val ringW = s * (100f / 275f)
         val r = s - ringW / 2f
         canvas.save()
         canvas.translate(cx, cy)
-        if (rotated) canvas.rotate(90f)
 
         canvas.drawCircle(0f, 0f, s, opasnoeWhitePaint)
         opasnoeRingPaint.strokeWidth = ringW
