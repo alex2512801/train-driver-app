@@ -2,6 +2,8 @@ package ru.traindriver.app.route
 
 import android.content.Context
 import org.json.JSONArray
+import org.json.JSONObject
+import org.json.JSONTokener
 import java.io.File
 
 /**
@@ -25,6 +27,7 @@ object DataOverrideStore {
         AIR_GAPS("Воздушные промежутки", "air_gaps.json"),
         CROSSINGS("Переезды", "crossings.json"),
         WASHOUTS("Обрывные места", "washouts.json"),
+        NEUTRAL_INSERTS("Нейтральные вставки", "neutral_inserts.json"),
     }
 
     private fun overrideFile(context: Context, assetFileName: String): File =
@@ -53,7 +56,10 @@ object DataOverrideStore {
      * при следующем запуске всего приложения.
      */
     fun applyOverride(context: Context, assetFileName: String, content: String) {
-        JSONArray(content)
+        // Большинство категорий — JSON-массив, но "Нейтральные вставки" хранятся как объект
+        // {"even": [...], "odd": [...]} — принимаем оба вида, лишь бы это был валидный JSON.
+        val parsed = JSONTokener(content).nextValue()
+        require(parsed is JSONArray || parsed is JSONObject) { "не JSON-массив и не JSON-объект" }
         overrideFile(context, assetFileName).writeText(content, Charsets.UTF_8)
     }
 

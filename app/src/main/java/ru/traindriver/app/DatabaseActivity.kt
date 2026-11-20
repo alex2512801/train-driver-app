@@ -74,6 +74,12 @@ class DatabaseActivity : AppCompatActivity() {
                 findViewById(R.id.washoutStatusText),
                 findViewById(R.id.washoutUpdateButton),
                 findViewById(R.id.washoutResetButton)
+            ),
+            Row(
+                DataOverrideStore.Category.NEUTRAL_INSERTS,
+                findViewById(R.id.neutralStatusText),
+                findViewById(R.id.neutralUpdateButton),
+                findViewById(R.id.neutralResetButton)
             )
         )
 

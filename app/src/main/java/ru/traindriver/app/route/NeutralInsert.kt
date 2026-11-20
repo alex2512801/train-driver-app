@@ -22,7 +22,7 @@ data class NeutralInsert(
 object NeutralInsertAssetLoader {
 
     fun loadNeutralInserts(context: Context, assetFileName: String = "neutral_inserts.json"): List<NeutralInsert> {
-        val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
+        val json = DataOverrideStore.readJson(context, assetFileName)
         val root = JSONObject(json)
         val result = mutableListOf<NeutralInsert>()
         for ((key, direction) in listOf("even" to Direction.EVEN, "odd" to Direction.ODD)) {

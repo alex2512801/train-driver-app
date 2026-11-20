@@ -80,6 +80,14 @@
                 <Button android:id="@+id/washoutResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
             </LinearLayout>
 
+            <!-- Нейтральные вставки -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Нейтральные вставки" />
+                <TextView android:id="@+id/neutralStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/neutralUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/neutralResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
         </LinearLayout>
     </ScrollView>
 
