@@ -1866,9 +1866,30 @@ class TrackProfileView @JvmOverloads constructor(
     // верхнем правом углу той же стороны (activity_main.xml, stopwatchWindow, gravity=top|end,
     // высота ≈ отступы 16dp + время 22sp + отступ 6dp + кнопка "Сброс" 40dp ≈ 90dp) — иначе
     // открытый секундомер накрывал бы собой окошко Vф.
+    private fun speedAtPoint(m: Double): Int? {
+        val activeRestriction = restrictions.firstOrNull { m in it.startM..it.endM }
+        return activeRestriction?.speedKmh ?: resolver.speedAt(direction, m)?.speedKmh
+    }
+
+    /** "V=" у Vф должно показывать не скорость в точке головы, а МИНИМАЛЬНУЮ из действующих
+     *  на всей длине состава (от хвоста до головы) — машинист: "пока не выедем на 45, у нас
+     *  должно показываться 45, как только выехали на 70 — уже 70" (состав реально растянут по
+     *  нескольким ступеням скорости одновременно, и должна побеждать самая строгая). */
+    private fun minSpeedOverTrainLength(): Int? {
+        val lowM = minOf(trainPositionM, trainTailM)
+        val highM = maxOf(trainPositionM, trainTailM)
+        var min: Int? = null
+        var m = lowM
+        while (m < highM) {
+            speedAtPoint(m)?.let { min = if (min == null) it else minOf(min!!, it) }
+            m += SAMPLE_STEP_M
+        }
+        speedAtPoint(highM)?.let { min = if (min == null) it else minOf(min!!, it) }
+        return min
+    }
+
     private fun drawCurrentSpeedLabel(canvas: Canvas) {
-        val activeRestriction = restrictions.firstOrNull { trainPositionM in it.startM..it.endM }
-        val speedKmh = activeRestriction?.speedKmh ?: resolver.speedAt(direction, trainPositionM)?.speedKmh
+        val speedKmh = minSpeedOverTrainLength()
         val limitText = if (speedKmh != null) "V=$speedKmh км/ч" else "V=?"
         val actualText = actualSpeedKmh?.let { "Vф=${it.toInt()}" } ?: "Vф=?"
 
