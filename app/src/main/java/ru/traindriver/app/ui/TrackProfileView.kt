@@ -1068,9 +1068,16 @@ class TrackProfileView @JvmOverloads constructor(
         canvas.drawLine(0f, lineY, width.toFloat(), lineY, signalLinePaint)
 
         // Номер км — ПРЯМО над своим километровым столбиком (засечка выше остальных, см. цикл
-        // пикетов выше), а не между столбиками (машинист: "цифра должна быть прямо над ним...
-        // голова поезда, над ним 0, следующий километр 1, 2, 3"). Km-столбик стоит на отметке
-        // kmIndex * KM_LINE_LENGTH_M — туда же, а не в середину интервала, пишем и номер.
+        // пикетов выше), а не между столбиками. Km-столбик стоит на отметке
+        // kmIndex * KM_LINE_LENGTH_M — туда же, в пространстве, пишем и номер, но САМА ЦИФРА —
+        // kmIndex-1, а не kmIndex. Машинист поправил: "когда едем по 6438 километру, впереди
+        // должен быть столбик 6438 — а не 6439, как сейчас". Пока едем по пикетам километра N
+        // (реальный пикетаж в [N·1000, (N+1)·1000) — то же самое N, что показывает крупная
+        // координата вверху), столбик ВПЕРЕДИ физически стоит на отметке (N+1)·1000, и раньше
+        // получал номер kmIndex=N+1 (следующий реальный км) — машинисту нужно, чтобы на этом же
+        // физическом столбике был подписан N (номер км, по которому едем СЕЙЧАС), а не N+1.
+        // Сам столбик (засечка) и его физическое место не трогаем — только номер, который на
+        // нём подписан, сдвинут на единицу вниз.
         val firstKmIndex = floor(fromM / KM_LINE_LENGTH_M).toLong()
         val lastKmIndex = floor(toM / KM_LINE_LENGTH_M).toLong()
         for (kmIndex in firstKmIndex..lastKmIndex) {
@@ -1084,7 +1091,7 @@ class TrackProfileView @JvmOverloads constructor(
                 // светофора) используется и в drawSignalTags, чтобы подпись сигнала
                 // гарантированно легла ещё чуть выше этого номера, а не просто выше своего
                 // столбика.
-                canvas.drawText(kmIndex.toString(), xFor(kmM), kmNumberBaselineY(lineY, signalTotalH), kmTextPaint)
+                canvas.drawText((kmIndex - 1).toString(), xFor(kmM), kmNumberBaselineY(lineY, signalTotalH), kmTextPaint)
             }
         }
     }
@@ -1344,7 +1351,15 @@ class TrackProfileView @JvmOverloads constructor(
             result.add(Pictogram(b.chainageM, PictogramKind.BRAKE_TEST))
         }
         for (n in neutralInserts) if (n.direction == rawDirection && n.chainageM in fromM..toM) {
-            result.add(Pictogram(n.chainageM, PictogramKind.NEUTRAL))
+            // Знак "Нейтральная вставка" должен стоять в НАЧАЛЕ вставки — там, где её встречают
+            // первой, едучи вперёд (машинист: "знак стоит в начале... в нечётном направлении у
+            // тебя сначала полоска, потом знак — поменяй"). Синяя полоска (drawNeutralInsertBar)
+            // всегда рисуется по реальному пикетажу [n.chainageM, n.chainageM+n.lengthM] — для
+            // чётного (едем в сторону роста км) первым встречается МЕНЬШИЙ край (n.chainageM —
+            // уже было верно), а для нечётного (едем в сторону убывания км, см.
+            // directionSignM/visibleWindow) первым встречается БОЛЬШИЙ край.
+            val signChainageM = if (n.direction == Direction.ODD) n.chainageM + n.lengthM else n.chainageM
+            result.add(Pictogram(signChainageM, PictogramKind.NEUTRAL))
         }
         for (r in restrictions) {
             val yellowM = r.startM - SHIELD_OFFSET_M
