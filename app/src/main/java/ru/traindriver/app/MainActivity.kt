@@ -12,6 +12,8 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationManager
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.BatteryManager
@@ -39,7 +41,8 @@ import java.util.Locale
 import java.util.TimeZone
 import ru.traindriver.app.audio.Announcement
 import ru.traindriver.app.audio.VoiceAnnouncer
-import ru.traindriver.app.location.GpsLocationProvider
+import ru.traindriver.app.location.BatteryOptimizationHelper
+import ru.traindriver.app.location.GpsForegroundService
 import ru.traindriver.app.location.LocationSource
 import ru.traindriver.app.route.AirGapAssetLoader
 import ru.traindriver.app.route.ArrivalDepartureState
@@ -128,7 +131,6 @@ class MainActivity : AppCompatActivity() {
 
     private var isDayMode = false
     private lateinit var trackProfileView: TrackProfileView
-    private lateinit var gpsLocationProvider: GpsLocationProvider
 
     // Окошко прибытия/отправления + история остановок (ТЗ раздел 10).
     private lateinit var arrivalWindow: View
@@ -215,6 +217,30 @@ class MainActivity : AppCompatActivity() {
     private var lastSpeedKmh = 0.0
     private var lastGpsFixAtMs = 0L
     private var hasGpsFix = false
+
+    // Защита от скачков (машинист прислал разбор "Блокнота машиниста" — у того своей защиты
+    // по accuracy тоже нет, но зато есть "привязка к пути" через проекцию на линию, которая у
+    // нас уже есть, см. routeTrack/RouteTrack.chainageMetersFor; добавляем то, чего не было ни
+    // там, ни тут). Два независимых фильтра:
+    //  - MAX_GPS_ACCURACY_M: обычный шум — отбрасываем фиксы с совсем плохой точностью;
+    //  - MAX_PLAUSIBLE_SPEED_KMH: защита от неправильной проекции на линию пути (например, у
+    //    станции, где несколько путей проходят рядом) — скачок пикетажа, которого состав не
+    //    мог бы пройти за прошедшее время даже на нереально большой скорости, значит,
+    //    проекция ошиблась, а не поезд телепортировался.
+    // В обоих случаях фикс просто игнорируется — "от головы поезда" (estimatedChainageM)
+    // продолжает считать по инерции, ровно как при обычной кратковременной потере GPS.
+    private val maxGpsAccuracyM = 50f
+    private val maxPlausibleSpeedKmh = 160.0
+
+    private fun isPlausibleGpsFix(location: Location, candidateChainageM: Double): Boolean {
+        if (location.hasAccuracy() && location.accuracy > maxGpsAccuracyM) return false
+        if (!hasGpsFix) return true
+        val elapsedS = (System.currentTimeMillis() - lastGpsFixAtMs) / 1000.0
+        if (elapsedS <= 0.0) return true
+        val jumpM = kotlin.math.abs(candidateChainageM - lastChainageM)
+        val maxPlausibleM = (maxPlausibleSpeedKmh / 3.6) * elapsedS + 100.0 // запас на точность/пикетаж
+        return jumpM <= maxPlausibleM
+    }
 
     // Ручная поправка GPS по кнопке "Сигнал" (машинист проверил в реальной поездке: "врёт
     // систематически, метров на 200-300... чтобы GPS воспринимало, что это правильный вариант,
@@ -482,8 +508,31 @@ class MainActivity : AppCompatActivity() {
             } else {
                 coordinateText.text = getString(R.string.location_permission_denied)
             }
+            requestNotificationPermissionIfNeeded()
+        }
+
+    // Без POST_NOTIFICATIONS (API 33+) постоянное уведомление GpsForegroundService не
+    // показывается вообще — сам GPS-сервис при этом всё равно продолжает работать, уведомление
+    // просто невидимо, поэтому результат этого запроса ни на что не влияет, кроме перехода
+    // дальше по цепочке разрешений (см. doc-комментарий у requestPermissionLauncher про то,
+    // почему диалоги идут строго по одному, а не все разом).
+    private val requestNotificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
             requestPhoneStatePermissionIfNeeded()
         }
+
+    private fun requestNotificationPermissionIfNeeded() {
+        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        if (granted) {
+            requestPhoneStatePermissionIfNeeded()
+        } else {
+            requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     // Разрешение на уровень сигнала SIM (ТЗ раздел 7, шапка) — отдельное от геолокации,
     // поэтому отдельный launcher; если машинист откажет — просто остаётся "—" в шапке,
@@ -491,11 +540,15 @@ class MainActivity : AppCompatActivity() {
     private val requestPhoneStatePermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) startPhoneSignalUpdates()
+            // Подсказка про батарею/автозапуск — показываем в самом конце цепочки разрешений
+            // (см. doc-комментарий у requestPermissionLauncher), чтобы не перекрыться с ними.
+            BatteryOptimizationHelper.maybeAsk(this)
         }
 
     private fun requestPhoneStatePermissionIfNeeded() {
         if (hasPhoneStatePermission()) {
             startPhoneSignalUpdates()
+            BatteryOptimizationHelper.maybeAsk(this)
         } else {
             requestPhoneStatePermissionLauncher.launch(Manifest.permission.READ_PHONE_STATE)
         }
@@ -551,7 +604,6 @@ class MainActivity : AppCompatActivity() {
         batteryIcon = findViewById(R.id.batteryIcon)
         batteryText = findViewById(R.id.batteryText)
         trackProfileView = findViewById(R.id.trackProfileView)
-        gpsLocationProvider = GpsLocationProvider(this)
         arrivalWindow = findViewById(R.id.arrivalWindow)
         arrivalTimeText = findViewById(R.id.arrivalTimeText)
         arrivalMidText = findViewById(R.id.arrivalMidText)
@@ -631,9 +683,9 @@ class MainActivity : AppCompatActivity() {
         if (hasLocationPermission()) {
             startLocationUpdates()
             // Геолокация уже разрешена раньше — её диалог сейчас не покажется, значит можно
-            // сразу просить второе разрешение, гонки нет (см. doc-комментарий у
+            // сразу просить следующее разрешение по цепочке, гонки нет (см. doc-комментарий у
             // requestPermissionLauncher выше).
-            requestPhoneStatePermissionIfNeeded()
+            requestNotificationPermissionIfNeeded()
         } else {
             requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
             // Разрешение на состояние телефона запросится ПОСЛЕ того, как машинист ответит на
@@ -862,7 +914,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        gpsLocationProvider.stop()
+        GpsForegroundService.listener = null
+        stopService(Intent(this, GpsForegroundService::class.java))
         timeHandler.removeCallbacks(timeUpdater)
         voiceAnnouncer.release()
         for (beep in pendingStopAlarmBeeps) timeHandler.removeCallbacks(beep)
@@ -1018,13 +1071,19 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission") // проверяется явно в hasLocationPermission()
     private fun startLocationUpdates() {
-        if (!gpsLocationProvider.isGpsProviderEnabled) {
+        val locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+        if (!locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
             coordinateText.text = getString(R.string.gps_provider_disabled)
         }
 
         if (!hasLocationPermission()) return
 
-        gpsLocationProvider.start { location, source ->
+        // Сама подписка на LocationManager теперь живёт в GpsForegroundService (foreground-
+        // сервис с постоянным уведомлением + wake lock), а не прямо в Activity — см.
+        // doc-комментарий в GpsForegroundService.kt про то, почему. Слушатель подставляется
+        // СЮДА же, до запуска сервиса — тело колбэка не изменилось, кроме новой защиты от
+        // скачков/плохой точности (isPlausibleGpsFix).
+        GpsForegroundService.listener = { location, source ->
             // + chainageOffsetM — ручная поправка по кнопке "Сигнал" (машинист: GPS на этом
             // участке врёт СИСТЕМАТИЧЕСКИ, метров на 200-300, не случайным шумом — значит,
             // поправку надо прибавлять к КАЖДОЙ дальнейшей координате, а не один раз подставить
@@ -1056,7 +1115,7 @@ class MainActivity : AppCompatActivity() {
                 coordinateText.text = formatCoordinate(chainageM)
                 val accuracyM = if (location.hasAccuracy()) " ±${location.accuracy.toInt()}м" else ""
                 gpsStatusText.text = "нет GPS$accuracyM"
-            } else {
+            } else if (isPlausibleGpsFix(location, chainageM)) {
                 // Только запоминаем настоящую GPS-точку — график/объявления/статусную строку
                 // отсюда больше не трогаем, они теперь считаются "от головы поезда" раз в
                 // секунду из timeUpdater (см. estimatedChainageM/updateTrainPositionDerivedState
@@ -1069,7 +1128,10 @@ class MainActivity : AppCompatActivity() {
                 coordinateText.text = formatCoordinate(chainageM)
                 gpsStatusText.text = ""
             }
+            // else: плохая точность или неправдоподобный скачок пикетажа — фикс просто
+            // игнорируется, см. doc-комментарий у isPlausibleGpsFix.
         }
+        ContextCompat.startForegroundService(this, Intent(this, GpsForegroundService::class.java))
     }
 
     /** Ближайший ещё не пройденный сигнал в направлении движения от точки [fromM] — для "Голова"

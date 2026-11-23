@@ -7,6 +7,17 @@
          Android не отдаёт настоящую силу сигнала/тип сети. -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
 
+    <!-- GpsForegroundService (машинист: взять из "Блокнота машиниста" foreground-сервис +
+         постоянное уведомление + wake lock, чтобы GPS не останавливался в фоне). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Без этого разрешения (API 33+) постоянное уведомление сервиса не показывается вообще —
+         запрашивается в MainActivity вместе с остальными (см. requestNotificationPermissionIfNeeded). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Диалог-подсказка про отключение батарейной оптимизации (BatteryOptimizationHelper). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
     <application
         android:allowBackup="true"
         android:label="@string/app_name"
@@ -58,6 +69,12 @@
             android:exported="false"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout" />
+
+        <!-- GpsForegroundService — см. doc-комментарий в GpsForegroundService.kt. -->
+        <service
+            android:name=".location.GpsForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
     </application>
 
 </manifest>
