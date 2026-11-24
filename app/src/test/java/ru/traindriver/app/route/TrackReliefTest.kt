@@ -129,4 +129,35 @@ class TrackReliefTest {
         val profile = ReliefProfile(evenPoints)
         assertNull(profile.localRangeAt(Direction.ODD, 150.0))
     }
+
+    @Test
+    fun `slopeAt interpolates linearly and keeps the sign for even direction`() {
+        val points = listOf(
+            ReliefPoint(Direction.EVEN, 100.0, 10.0, slopePermille = 5.0),
+            ReliefPoint(Direction.EVEN, 200.0, 20.0, slopePermille = -3.0)
+        )
+        val profile = ReliefProfile(points)
+        assertEquals(1.0, profile.slopeAt(Direction.EVEN, 150.0)!!, 0.0001)
+    }
+
+    @Test
+    fun `slopeAt flips the sign for odd direction`() {
+        // Уклон в данных посчитан по направлению роста пикетажа (чётное) — для нечётного
+        // (едем в сторону убывания) подъём/спуск физически меняются местами.
+        val points = listOf(
+            ReliefPoint(Direction.EVEN, 100.0, 10.0, slopePermille = 5.0),
+            ReliefPoint(Direction.EVEN, 200.0, 20.0, slopePermille = 5.0),
+            ReliefPoint(Direction.ODD, 100.0, 10.0, slopePermille = 5.0),
+            ReliefPoint(Direction.ODD, 200.0, 20.0, slopePermille = 5.0)
+        )
+        val profile = ReliefProfile(points)
+        assertEquals(5.0, profile.slopeAt(Direction.EVEN, 150.0)!!, 0.0001)
+        assertEquals(-5.0, profile.slopeAt(Direction.ODD, 150.0)!!, 0.0001)
+    }
+
+    @Test
+    fun `slopeAt is null outside coverage`() {
+        val profile = ReliefProfile(evenPoints)
+        assertNull(profile.slopeAt(Direction.EVEN, 1000.0))
+    }
 }

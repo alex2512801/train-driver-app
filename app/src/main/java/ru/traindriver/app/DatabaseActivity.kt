@@ -134,6 +134,12 @@ class DatabaseActivity : AppCompatActivity() {
                 findViewById(R.id.routeStatusText),
                 findViewById(R.id.routeUpdateButton),
                 findViewById(R.id.routeResetButton)
+            ),
+            Row(
+                DataOverrideStore.Category.ROUTE_ANCHORS,
+                findViewById(R.id.routeAnchorsStatusText),
+                findViewById(R.id.routeAnchorsUpdateButton),
+                findViewById(R.id.routeAnchorsResetButton)
             )
         )
 

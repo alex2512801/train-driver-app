@@ -20,3 +20,19 @@ object RouteAssetLoader {
         }
     }
 }
+
+/** Читает опорные точки калибровки маршрута (см. doc-комментарий RouteTrack) — массив
+ *  {"lat":.., "lon":.., "real_m":..}. */
+object RouteAnchorAssetLoader {
+
+    fun loadAnchors(context: Context, assetFileName: String): List<RouteTrack.RouteAnchor> {
+        val json = DataOverrideStore.readJson(context, assetFileName)
+        val array = JSONArray(json)
+        return buildList(array.length()) {
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                add(RouteTrack.RouteAnchor(obj.getDouble("lat"), obj.getDouble("lon"), obj.getDouble("real_m")))
+            }
+        }
+    }
+}

@@ -160,6 +160,14 @@
                 <Button android:id="@+id/routeResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
             </LinearLayout>
 
+            <!-- Опорные точки калибровки маршрута -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Опорные точки калибровки маршрута" />
+                <TextView android:id="@+id/routeAnchorsStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/routeAnchorsUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/routeAnchorsResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
         </LinearLayout>
     </ScrollView>
 

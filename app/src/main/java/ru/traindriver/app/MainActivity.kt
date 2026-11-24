@@ -67,6 +67,7 @@ import ru.traindriver.app.route.ReliefProfile
 import ru.traindriver.app.route.Restriction
 import ru.traindriver.app.route.RestrictionAwareSpeedResolver
 import ru.traindriver.app.route.RestrictionsStore
+import ru.traindriver.app.route.RouteAnchorAssetLoader
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
 import ru.traindriver.app.route.Signal
@@ -280,6 +281,15 @@ class MainActivity : AppCompatActivity() {
 
     private fun formatCoordinate(chainageM: Double): String =
         if (showKlubU) ChainageFormatter.formatKlubU(chainageM) else ChainageFormatter.format(chainageM)
+
+    // "Уклон=-99,9" — знак + число с одной десятичной, запятая вместо точки (как и везде в
+    // статусной строке, ТЗ раздел 7). "+" у положительных показываем явно, у отрицательных
+    // знак "-" уже даёт сам toString/format.
+    private fun formatSlope(permille: Double): String {
+        val rounded = Math.round(permille * 10) / 10.0
+        val sign = if (rounded > 0) "+" else ""
+        return sign + "%.1f".format(Locale.US, rounded).replace('.', ',')
+    }
 
     // Калибровка (см. RouteTrack.Companion) приблизительная — см. README. Пересобирается в
     // reloadRouteData() — см. doc-комментарий там же про то, почему это уже не "by lazy".
@@ -1054,13 +1064,13 @@ class MainActivity : AppCompatActivity() {
         stationAnnouncements = StationAnnouncementAssetLoader.loadStationAnnouncements(this)
         trainInspectionPoints = TrainInspectionAssetLoader.loadTrainInspectionPoints(this)
 
-        // ВАЖНО: калибровочные константы RouteTrack.HILOK_START_KM/
-        // HILOK_CHERNYSHEVSK_LENGTH_CORRECTION при обновлении линии маршрута НЕ пересчитываются
-        // автоматически — см. doc-комментарий у RouteTrack.HILOK_CHERNYSHEVSK_ASSET.
+        // Калибровка — кусочно-линейная по опорным точкам (см. doc-комментарий класса
+        // RouteTrack) — оба файла (линия маршрута и опорные точки) пересчитываются друг
+        // относительно друга заново при каждой загрузке, так что обновление ЛЮБОГО из них
+        // через "База данных" остаётся согласованным само по себе.
         routeTrack = RouteTrack(
-            rawPoints = RouteAssetLoader.loadLatLonList(this, RouteTrack.HILOK_CHERNYSHEVSK_ASSET),
-            startChainageM = RouteTrack.HILOK_START_KM * 1000.0,
-            lengthCorrectionFactor = RouteTrack.HILOK_CHERNYSHEVSK_LENGTH_CORRECTION
+            rawPoints = RouteAssetLoader.loadLatLonList(this, RouteTrack.MAIN_ROUTE_ASSET),
+            anchors = RouteAnchorAssetLoader.loadAnchors(this, RouteTrack.MAIN_ANCHORS_ASSET)
         )
 
         speedLimits = SpeedLimitAssetLoader.loadSpeedLimits(this)
@@ -1294,9 +1304,11 @@ class MainActivity : AppCompatActivity() {
     // по-настоящему: "Голова" — сколько осталось голове до сигнала, к которому она идёт; "Хвост" —
     // сколько осталось хвосту до сигнала, который он ещё не прошёл (если состав длинный и сигналы
     // частые, это может быть сигнал, который голова уже проехала — то есть хвост ещё не до конца
-    // его освободил). Уклон пока "—" — нужны данные о профиле пути, которых ещё нет.
+    // его освободил). Уклон — из relief (машинист прислал данные с настоящим уклоном в
+    // промилле, см. TrackRelief.ReliefProfile.slopeAt) — "—" только вне покрытия профиля.
     private fun refreshStatusBar(chainageM: Double) {
-        statusUklonText.text = "Уклон=—"
+        val slope = relief.slopeAt(directionSelection.effectiveDataset, chainageM)
+        statusUklonText.text = "Уклон=" + if (slope != null) formatSlope(slope) else "—"
 
         // V=/S= должны учитывать и постоянные ограничения (speedLimitResolver), и введённые
         // машинистом временные (restrictions, ТЗ раздел 11) — иначе строка врала бы, если

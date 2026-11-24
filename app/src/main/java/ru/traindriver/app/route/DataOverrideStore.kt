@@ -43,7 +43,8 @@ object DataOverrideStore {
         BRAKE_TESTS("Пробы тормозов", "brake_tests.json"),
         KTSM("КТСМ", "ktsm.json"),
         TRAIN_INSPECTION("Осмотр поезда бригадой", "train_inspection.json"),
-        ROUTE("Линия маршрута (GPS)", "route_hilok_chernyshevsk.json"),
+        ROUTE("Линия маршрута (GPS)", RouteTrack.MAIN_ROUTE_ASSET),
+        ROUTE_ANCHORS("Опорные точки калибровки маршрута", RouteTrack.MAIN_ANCHORS_ASSET),
     }
 
     private fun overrideFile(context: Context, assetFileName: String): File =

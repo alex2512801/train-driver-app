@@ -6,26 +6,35 @@ import kotlin.math.sqrt
 /**
  * Полилиния железнодорожного пути с накопленным километражем (пикетажем) вдоль неё.
  *
- * Линия строится из точек, выгруженных из OpenStreetMap (см. ТЗ, раздел 1). Для реального
- * маршрута перегона Хилок — Карымская — Чернышевск-Забайкальский точки загружаются из
- * assets через [RouteAssetLoader], а константы калибровки лежат в [RouteTrack.Companion].
+ * Линия строится из точек, выгруженных из OpenStreetMap/GPS-трека (см. ТЗ, раздел 1), для
+ * реального маршрута. Калибровка в "настоящий" км РЖД — КУСОЧНО-ЛИНЕЙНАЯ по [anchors]
+ * (физическая точка lat/lon + её настоящий км), а не единый коэффициент растяжения на весь
+ * маршрут (как было раньше, см. ниже) — машинист прислал набор данных с опорными точками через
+ * каждые ~15км вместо прежних трёх на весь маршрут; с единым коэффициентом на всю длину
+ * (~650км) остаточная ошибка доходила до 400+ м на некоторых перегонах (неравномерное
+ * упрощение линии разными источниками/инструментами на разных участках), тогда как кусочно-
+ * линейная интерполяция между близко расположенными опорными точками даёт точное совпадение
+ * ровно в них и пренебрежимо малую ошибку между ними.
+ *
+ * [anchors] хранят СОБСТВЕННУЮ физическую позицию (lat/lon), а не заранее посчитанный пикетаж
+ * по этой линии — раз опорная точка проецируется на [rawPoints] заново при каждой пересборке
+ * (см. [RouteTrack] init), обновление ОДНОГО ТОЛЬКО файла точек маршрута или ОДНОГО ТОЛЬКО
+ * файла опорных точек через "База данных" не рассинхронизирует калибровку: оба пересчитываются
+ * друг относительно друга заново при каждой загрузке (см. MainActivity.reloadRouteData).
  *
  * @param rawPoints точки пути по порядку, от начала маршрута к концу.
- * @param startChainageM пикетаж первой точки маршрута (в метрах). Для реального маршрута
- *   это абсолютный км по нумерации РЖД (например, ~5 930 000 м = км 5930), а не 0 —
- *   именно так получаются "настоящие" номера км, а не "км 1" от произвольного начала.
- * @param lengthCorrectionFactor поправочный коэффициент на длину, которым компенсируется
- *   систематическое укорочение линии при её упрощении в OSM (сглаженные кривые короче
- *   реальных). Подобран по разнице между длиной этой полилинии и разницей реальных
- *   км в начале и конце маршрута (см. профиль пути) — грубая оценка, а не точная калибровка.
+ * @param anchors опорные точки калибровки (минимум 2) — реальная физическая точка (lat/lon) и
+ *   её настоящий пикетаж (в метрах от начала нумерации РЖД, НЕ от начала этого файла).
  */
 class RouteTrack(
     rawPoints: List<LatLon>,
-    startChainageM: Double = 0.0,
-    private val lengthCorrectionFactor: Double = 1.0
+    anchors: List<RouteAnchor>
 ) {
 
-    private class Node(val lat: Double, val lon: Double, val chainageM: Double)
+    /** Опорная точка калибровки — см. doc-комментарий класса. */
+    data class RouteAnchor(val lat: Double, val lon: Double, val realChainageM: Double)
+
+    private class Node(val lat: Double, val lon: Double, val rawChainageM: Double)
 
     private val refLat = rawPoints.first().lat
     private val refLon = rawPoints.first().lon
@@ -34,29 +43,42 @@ class RouteTrack(
 
     private val nodes: List<Node>
 
+    // (сырой пикетаж по этой линии, настоящий пикетаж) — отсортировано по сырому, см.
+    // doc-комментарий класса про кусочно-линейную калибровку.
+    private val calibration: List<Pair<Double, Double>>
+
     init {
         require(rawPoints.size >= 2) { "Маршрут должен содержать минимум 2 точки" }
-        var chainage = startChainageM
+        require(anchors.size >= 2) { "Нужно минимум 2 опорные точки калибровки" }
+
+        var chainage = 0.0
         val built = mutableListOf(Node(rawPoints[0].lat, rawPoints[0].lon, chainage))
         for (i in 1 until rawPoints.size) {
             val prev = toXY(rawPoints[i - 1].lat, rawPoints[i - 1].lon)
             val cur = toXY(rawPoints[i].lat, rawPoints[i].lon)
-            chainage += distance(prev, cur) * lengthCorrectionFactor
+            chainage += distance(prev, cur)
             built.add(Node(rawPoints[i].lat, rawPoints[i].lon, chainage))
         }
         nodes = built
+
+        calibration = anchors
+            .map { rawChainageFor(it.lat, it.lon) to it.realChainageM }
+            .sortedBy { it.first }
     }
 
-    /** Пикетаж последней точки маршрута (в метрах, с учётом [startChainageM]). */
-    val endChainageM: Double get() = nodes.last().chainageM
+    /** Пикетаж последней точки маршрута (в метрах, настоящий — после калибровки). */
+    val endChainageM: Double get() = toReal(nodes.last().rawChainageM)
 
     /**
      * Проецирует точку [lat]/[lon] на ближайший отрезок пути и возвращает
-     * пикетаж (в метрах от начала маршрута) этой проекции.
+     * настоящий пикетаж (в метрах РЖД) этой проекции.
      */
-    fun chainageMetersFor(lat: Double, lon: Double): Double {
+    fun chainageMetersFor(lat: Double, lon: Double): Double = toReal(rawChainageFor(lat, lon))
+
+    /** Сырой (некалиброванный, от начала [rawPoints]) пикетаж ближайшей проекции точки на линию. */
+    private fun rawChainageFor(lat: Double, lon: Double): Double {
         val p = toXY(lat, lon)
-        var best = nodes.first().chainageM
+        var best = nodes.first().rawChainageM
         var bestDistSq = Double.MAX_VALUE
 
         for (i in 0 until nodes.size - 1) {
@@ -84,11 +106,46 @@ class RouteTrack(
 
             if (distSq < bestDistSq) {
                 bestDistSq = distSq
-                best = a.chainageM + t * (b.chainageM - a.chainageM)
+                best = a.rawChainageM + t * (b.rawChainageM - a.rawChainageM)
             }
         }
         return best
     }
+
+    /** Кусочно-линейная интерполяция/экстраполяция сырого пикетажа в настоящий — см.
+     *  doc-комментарий класса. За пределами первой/последней опорной точки — линейная
+     *  экстраполяция по наклону крайнего отрезка (лучше, чем обрыв: такие точки по курсу
+     *  обычно рядом с самым первым/последним якорем, не за десятки км от него). */
+    private fun toReal(raw: Double): Double {
+        val (r0, v0, r1, v1) = when {
+            raw <= calibration.first().first -> {
+                val a = calibration[0]
+                val b = calibration[1]
+                Quad(a.first, a.second, b.first, b.second)
+            }
+            raw >= calibration.last().first -> {
+                val a = calibration[calibration.size - 2]
+                val b = calibration[calibration.size - 1]
+                Quad(a.first, a.second, b.first, b.second)
+            }
+            else -> {
+                var lo = 0
+                var hi = calibration.size - 1
+                while (lo < hi - 1) {
+                    val mid = (lo + hi) / 2
+                    if (calibration[mid].first <= raw) lo = mid else hi = mid
+                }
+                val a = calibration[lo]
+                val b = calibration[hi]
+                Quad(a.first, a.second, b.first, b.second)
+            }
+        }
+        if (r1 == r0) return v0
+        val t = (raw - r0) / (r1 - r0)
+        return v0 + (v1 - v0) * t
+    }
+
+    private data class Quad(val r0: Double, val v0: Double, val r1: Double, val v1: Double)
 
     private fun toXY(lat: Double, lon: Double): Pair<Double, Double> {
         val x = (lon - refLon) * metersPerDegLon
@@ -103,34 +160,12 @@ class RouteTrack(
     }
 
     companion object {
-        /**
-         * Точка отсчёта реального маршрута: откалибровано методом наименьших квадратов по
-         * трём GPS-якорям машиниста (GPS + реальный км+пк в одной точке) на пересобранной
-         * линии (после исправления бага с концом маршрута — см. build_route_asset.py):
-         *   - 51.359412, 110.462016 → 5934км 7пк (156 м от линии, пикетаж по линии 0.0 км)
-         *   - 51.940295, 113.619818 → 6213км 5пк (6.8 м от линии, пикетаж 279.7 км)
-         *   - 52.501740, 117.004039 → 6585км 3пк (2.3 м от линии, пикетаж 653.3 км)
-         * Невязки МНК по всем трём точкам — от 65 до 151 м на участке ~650 км, то есть в
-         * пределах одного пикета.
-         */
-        const val HILOK_START_KM = 5934.7364187739195
+        /** Имя файла в assets/ с точками главного маршрута Хилок — Чернышевск-Забайкальский
+         *  (через Читу/Карымскую). */
+        const val MAIN_ROUTE_ASSET = "route_main.json"
 
-        /**
-         * Коэффициент растяжения линии, откалиброван МНК по тем же трём якорям (см.
-         * [HILOK_START_KM]). Раньше здесь было 659/642.8 ≈ 1.025 (грубая оценка по разнице
-         * длин полилинии и профиля пути) — новое значение точнее и подтверждено по всей
-         * длине маршрута, а не только у одного конца.
-         */
-        const val HILOK_CHERNYSHEVSK_LENGTH_CORRECTION = 0.995847167879799
-
-        /** Имя файла в assets/ с точками реального маршрута Хилок — Чернышевск-Забайкальский.
-         *  ВАЖНО: эту линию можно обновить с устройства через "База данных" (как и остальные
-         *  данные, см. DataOverrideStore.Category.ROUTE), но [HILOK_START_KM] и
-         *  [HILOK_CHERNYSHEVSK_LENGTH_CORRECTION] выше — это ОТДЕЛЬНЫЕ, зашитые в код константы,
-         *  откалиброванные именно под ЗАВОДСКУЮ линию. Если подменить файл маршрута на другую
-         *  полилинию, не пересчитав эти две константы заново (нужны новые GPS-якоря и МНК, см.
-         *  doc-комментарий у [HILOK_START_KM]) — км/пк по всему приложению станут неверными
-         *  молча, без предупреждения на экране. */
-        const val HILOK_CHERNYSHEVSK_ASSET = "route_hilok_chernyshevsk.json"
+        /** Имя файла в assets/ с опорными точками калибровки главного маршрута (см.
+         *  doc-комментарий класса) — [RouteAnchorAssetLoader]. */
+        const val MAIN_ANCHORS_ASSET = "route_main_anchors.json"
     }
 }
