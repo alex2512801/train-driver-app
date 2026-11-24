@@ -119,19 +119,26 @@ class TrackProfileView @JvmOverloads constructor(
         private const val ICON_HALF_DP = 16f
         private const val ICON_GAP_DP = 6f
 
-        // Геометрия значка станции (кольцо) и высоты столбика сигнала — те же пропорции, что в
-        // HTML-макете, но крупнее в dp; станция крупнее сигнала в 7/6 раза по полной высоте,
-        // ножка:радиус = 50:45 — оба выводятся из этого отношения, а не масштабируются от
-        // сигнала по отдельности (см. HTML-макет). Ширина самого значка сигнала (было rx=7 у
-        // рисованной капсулы) больше не задаётся отдельной константой — у присланной картинки
-        // сигнала своя собственная пропорция, см. drawBitmapCentered.
+        // Геометрия значка станции (цветная полоска, см. drawStationStripe — машинист: "убери
+        // эти кружки... ставишь вот такую полоску") и высоты столбика сигнала — те же пропорции,
+        // что в HTML-макете, но крупнее в dp; станция крупнее сигнала в 7/6 раза по полной
+        // высоте, ножка:радиус = 50:45 — оба выводятся из этого отношения, а не масштабируются от
+        // сигнала по отдельности (см. HTML-макет). STATION_R_OUTER_DP теперь задаёт только
+        // ПОЛОВИНУ ШИРИНЫ полоски (раньше — радиус кольца), её высоту см. у
+        // STATION_STRIPE_HEIGHT_RATIO. Ширина самого значка сигнала (было rx=7 у рисованной
+        // капсулы) больше не задаётся отдельной константой — у присланной картинки сигнала своя
+        // собственная пропорция, см. drawBitmapCentered.
         private const val SIGNAL_RY_DP = 10f
         private const val SIGNAL_POLE_DP = 12f
         private const val SIGNAL_TOTAL_H_DP = SIGNAL_RY_DP * 2f + SIGNAL_POLE_DP
         private const val STATION_TOTAL_H_DP = SIGNAL_TOTAL_H_DP * 7f / 6f
         private const val STATION_R_OUTER_DP = STATION_TOTAL_H_DP / (2f + 50f / 45f)
-        private const val STATION_R_INNER_DP = STATION_R_OUTER_DP * 0.65f
         private const val STATION_POLE_DP = STATION_R_OUTER_DP * (50f / 45f)
+        // Полоска станции — плоский прямоугольник, а не круг: высота — доля от её ширины
+        // (2×STATION_R_OUTER_DP), подобрана просто "на глаз" под присланный образец (длинная
+        // тонкая полоска), а не точная пропорция самой картинки-образца (та была 261×27px —
+        // в масштабе значка на графике это было бы почти незаметной линией).
+        private const val STATION_STRIPE_HEIGHT_RATIO = 0.4f
 
         // Пропорции пояса поезда (см. trainStripeHeightPx/drawTrainSignalStripe) — машинист
         // продиктовал по эталонному поезду: электровоз "Ермак" 3ЭС5К + состав 71 условная
@@ -396,7 +403,7 @@ class TrackProfileView @JvmOverloads constructor(
     // ниже кривой (нижний край полосы = кривая, см. [drawTrainReliefStripe]), плюс тонкая
     // белая окантовка по контуру со всех сторон.
     private val trainReliefGreenPaint = Paint().apply {
-        color = Color.rgb(44, 255, 39)
+        color = Color.rgb(31, 220, 11)
         style = Paint.Style.STROKE
         strokeWidth = dp(5f)
     }
@@ -499,27 +506,14 @@ class TrackProfileView @JvmOverloads constructor(
         style = Paint.Style.STROKE
         isAntiAlias = true
     }
-    private val signalIconPaint = Paint().apply { color = Color.WHITE; isAntiAlias = true }
-    private val stationRingOuterPaint = Paint().apply {
+    // Значок станции — цветная полоска (машинист прислал цвет отдельно, вместо прежних колец),
+    // см. drawStationStripe. Фиксированный цвет — не входит в applyPalette (как и нейтральная
+    // вставка/пояс поезда, см. комментарий у isDayMode про "чертёжные цвета").
+    private val stationStripePaint = Paint().apply { color = Color.rgb(15, 103, 255) }
+    private val stationStripeBorderPaint = Paint().apply {
         color = Color.WHITE
         style = Paint.Style.STROKE
-        strokeWidth = dp(1.5f)
-        isAntiAlias = true
-    }
-    // Значок станции — вторая (тёмная) половина круга + внутренние кольца противоположных
-    // цветов на каждой половине, см. drawStationIcon.
-    private val stationHalfDarkPaint = Paint().apply { color = Color.BLACK; isAntiAlias = true }
-    private val stationInnerRingDarkPaint = Paint().apply {
-        color = Color.BLACK
-        style = Paint.Style.STROKE
-        strokeWidth = dp(1.5f)
-        isAntiAlias = true
-    }
-    private val stationInnerRingLightPaint = Paint().apply {
-        color = Color.WHITE
-        style = Paint.Style.STROKE
-        strokeWidth = dp(1.5f)
-        isAntiAlias = true
+        strokeWidth = dp(1f)
     }
     // Табличка сигнала/станции — БЕЛАЯ с ЧЁРНЫМ текстом фиксированно, несмотря на день/ночь
     // (сверено с реальным скриншотом ТЗ раздел 14) — не входит в applyPalette.
@@ -542,7 +536,7 @@ class TrackProfileView @JvmOverloads constructor(
 
     // Нейтральная вставка — синяя полоса НА линии сигналов, от начала на реальную протяжённость
     // (ТЗ раздел 8), чуть ниже серой полосы поезда по высоте; белая окантовка по контуру.
-    private val neutralBarPaint = Paint().apply { color = Color.rgb(40, 80, 200) }
+    private val neutralBarPaint = Paint().apply { color = Color.rgb(0, 0, 255) }
     private val neutralBarBorderPaint = Paint().apply {
         color = Color.WHITE
         style = Paint.Style.STROKE
@@ -596,16 +590,12 @@ class TrackProfileView @JvmOverloads constructor(
         restrictionNumberPaint.color = c(Color.WHITE)
         signalLinePaint.color = c(Color.WHITE)
         signalPolePaint.color = c(Color.WHITE)
-        signalIconPaint.color = c(Color.WHITE)
-        stationRingOuterPaint.color = c(Color.WHITE)
-        stationHalfDarkPaint.color = c(Color.BLACK)
-        stationInnerRingDarkPaint.color = c(Color.BLACK)
-        stationInnerRingLightPaint.color = c(Color.WHITE)
         thinPerpendicularPaint.color = if (isDayMode) Color.argb(128, 55, 55, 55) else Color.argb(128, 200, 200, 200)
         thickPerpendicularPaint.color = c(Color.rgb(160, 159, 164))
         trainMarkerPaint.color = c(Color.rgb(160, 159, 164))
-        // trainSignalStripePaint/trainReliefGreenPaint/trainReliefOutlinePaint, пиктограммы
-        // (теперь присланные PNG — их палитра дня/ночи вообще не касается, см.
+        // trainSignalStripePaint/trainReliefGreenPaint/trainReliefOutlinePaint,
+        // neutralBarPaint/neutralBarBorderPaint, stationStripePaint/stationStripeBorderPaint,
+        // пиктограммы (теперь присланные PNG — их палитра дня/ночи вообще не касается, см.
         // drawBitmapCentered) и signalTagBg/Border/Text — сознательно НЕ входят сюда, см.
         // комментарий у isDayMode выше. trainMarkerPaint раньше тоже не
         // входил (был зелёным, фиксированным цветом) — после того как машинист попросил
@@ -1144,7 +1134,8 @@ class TrackProfileView @JvmOverloads constructor(
         }
     }
 
-    /** Значки сигналов (капсула) и станций (кольцо) + таблички с расстоянием — настоящие
+    /** Значки сигналов (картинка) и станций (цветная полоска, см. drawStationStripe) + таблички
+     *  с расстоянием — настоящие
      *  данные ([signals] главного пути + [stations] + [blockPosts] как доп. сигналы).
      *  [Signal.isVisibleFor] ([direction] — effectiveDataset, [rawDirection] — реальное
      *  направление движения), а не "сырой" [Signal.direction] — см. doc-комментарий у
@@ -1175,7 +1166,6 @@ class TrackProfileView @JvmOverloads constructor(
         val signalRyPx = dp(SIGNAL_RY_DP) * signalScale
         val signalPolePx = dp(SIGNAL_POLE_DP) * signalScale
         val stationROuterPx = dp(STATION_R_OUTER_DP) * signalScale
-        val stationRInnerPx = dp(STATION_R_INNER_DP) * signalScale
         val stationPolePx = dp(STATION_POLE_DP) * signalScale
 
         val tags = buildList {
@@ -1268,7 +1258,7 @@ class TrackProfileView @JvmOverloads constructor(
             canvas.drawLine(x, lineY, x, poleTop, signalPolePaint)
 
             if (tag.isStation) {
-                drawStationIcon(canvas, x, iconCy, stationROuterPx, stationRInnerPx)
+                drawStationStripe(canvas, x, iconCy, stationROuterPx)
             } else {
                 // Машинист прислал настоящую картинку сигнала (три огня + "лепесток" снизу) —
                 // заменяет прежнюю рисованную капсулу-"стадион" целиком (машинист подтвердил:
@@ -1290,28 +1280,16 @@ class TrackProfileView @JvmOverloads constructor(
     }
 
 
-    /** Два концентрических кольца, разделённых пополам (ТЗ раздел 7): одна половина светлая
-     *  с тёмным внутренним кольцом, другая — тёмная со светлым внутренним кольцом, плюс
-     *  светлый внешний контур. "Светлый"/"тёмный" — через applyPalette (день/ночь), как и у
-     *  остальной линии сигналов. */
-    private fun drawStationIcon(canvas: Canvas, cx: Float, cy: Float, rOuter: Float, rInner: Float) {
-        val bounds = RectF(cx - rOuter, cy - rOuter, cx + rOuter, cy + rOuter)
-
-        canvas.save()
-        val rightHalf = Path().apply { arcTo(bounds, -90f, 180f); close() }
-        canvas.clipPath(rightHalf)
-        canvas.drawRect(bounds, signalIconPaint)
-        canvas.drawCircle(cx, cy, rInner, stationInnerRingDarkPaint)
-        canvas.restore()
-
-        canvas.save()
-        val leftHalf = Path().apply { arcTo(bounds, 90f, 180f); close() }
-        canvas.clipPath(leftHalf)
-        canvas.drawRect(bounds, stationHalfDarkPaint)
-        canvas.drawCircle(cx, cy, rInner, stationInnerRingLightPaint)
-        canvas.restore()
-
-        canvas.drawCircle(cx, cy, rOuter, stationRingOuterPaint)
+    /** Станция — цветная полоска вместо прежних колец (машинист: "убери эти кружки... ставишь
+     *  вот такую полоску такого цвета"), по центру столбика, той же шириной (2×[rOuter]), что
+     *  раньше занимало кольцо — указательная линия к табличке расстояния по-прежнему идёт от
+     *  её середины вверх (см. вызов drawLine в drawSignalTags, он не изменился). Фиксированный
+     *  цвет — не зависит от дня/ночи (см. stationStripePaint). */
+    private fun drawStationStripe(canvas: Canvas, cx: Float, cy: Float, rOuter: Float) {
+        val h = 2f * rOuter * STATION_STRIPE_HEIGHT_RATIO
+        val bounds = RectF(cx - rOuter, cy - h / 2f, cx + rOuter, cy + h / 2f)
+        canvas.drawRect(bounds, stationStripePaint)
+        canvas.drawRect(bounds, stationStripeBorderPaint)
     }
 
     /** Все пиктограммы в видимом окне, отсортированные по м — настоящие (переезды/возд.
