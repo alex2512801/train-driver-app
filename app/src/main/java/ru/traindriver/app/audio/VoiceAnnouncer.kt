@@ -70,6 +70,13 @@ enum class Announcement(val rawResId: Int) {
 
     /** «Впереди нейтральная вставка!» — 600 м. */
     NEUTRAL(R.raw.announce_neutral),
+
+    /** «Осмотр поезда машинистом» — ровно в точке начала осмотра (не заранее, см.
+     *  doc-комментарий у TrainInspectionScheduler в MainActivity). */
+    TRAIN_INSPECTION_MACHINIST(R.raw.announce_train_inspection_machinist),
+
+    /** «Осмотр поезда помощником машиниста» — ровно в точке начала осмотра. */
+    TRAIN_INSPECTION_ASSISTANT(R.raw.announce_train_inspection_assistant),
 }
 
 // Машинист прислал заодно ещё несколько клипов "на будущее" (сам сказал: "внедрять будем

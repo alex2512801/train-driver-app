@@ -73,6 +73,9 @@ import ru.traindriver.app.route.SpeedLimitResolver
 import ru.traindriver.app.route.StationAnnouncement
 import ru.traindriver.app.route.StationAnnouncementAssetLoader
 import ru.traindriver.app.route.StationAssetLoader
+import ru.traindriver.app.route.InspectorRole
+import ru.traindriver.app.route.TrainInspectionPoint
+import ru.traindriver.app.route.TrainInspectionAssetLoader
 import ru.traindriver.app.route.TrainParams
 import ru.traindriver.app.route.TrainParamsStore
 import ru.traindriver.app.route.Washout
@@ -318,6 +321,23 @@ class MainActivity : AppCompatActivity() {
     // статичный asset-список, что и переезды — пересобирается в updateDirectionUi.
     private var washoutScheduler = PointAnnouncementScheduler<Washout>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
 
+    // Осмотр поезда бригадой — в отличие от ВСЕХ остальных оповещений выше, это НЕ заблаговременное
+    // предупреждение (машинист: "голосовое срабатывает в момент начала этого осмотра", а не за
+    // 600-2000 м до него). Порог поэтому не "расстояние для предупреждения заранее", а просто
+    // запас, достаточный, чтобы точка не проскочила МЕЖДУ двумя соседними тиками позиции (раз в
+    // секунду, см. timeUpdater/estimatedChainageM) даже на максимально реалистичной скорости —
+    // 160 км/ч (тот же ориентир, что и у maxPlausibleSpeedKmh) это ~44 м/с, 50 м с запасом
+    // покрывает один тик. Два отдельных планировщика (не один общий) — машинист/помощник
+    // объявляются РАЗНЫМИ голосами, и PointAnnouncementScheduler разовый per-point, поэтому
+    // список каждой роли должен быть отдельным, иначе точка одной роли считалась бы объявленной
+    // и для другой.
+    private val trainInspectionThresholdM = 50.0
+    private val trainInspectionPoints by lazy { TrainInspectionAssetLoader.loadTrainInspectionPoints(this) }
+    private var trainInspectionMachinistScheduler =
+        PointAnnouncementScheduler<TrainInspectionPoint>(emptyList(), { it.chainageM }, thresholdOf = { trainInspectionThresholdM })
+    private var trainInspectionAssistantScheduler =
+        PointAnnouncementScheduler<TrainInspectionPoint>(emptyList(), { it.chainageM }, thresholdOf = { trainInspectionThresholdM })
+
     // "Параметры" (ТЗ раздел 5 / раздел 12.2) — отдельный полноэкранный экран
     // (TrainParamsActivity, кнопка paramsButton запускает его через Intent), не отдельный
     // подэкран меню, самого меню в реальном приложении ещё нет. Значения сохраняются между
@@ -456,6 +476,13 @@ class MainActivity : AppCompatActivity() {
 
         if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
             voiceAnnouncer.play(Announcement.STATION)
+        }
+
+        if (trainInspectionMachinistScheduler.update(chainageM, forward) != null) {
+            voiceAnnouncer.play(Announcement.TRAIN_INSPECTION_MACHINIST)
+        }
+        if (trainInspectionAssistantScheduler.update(chainageM, forward) != null) {
+            voiceAnnouncer.play(Announcement.TRAIN_INSPECTION_ASSISTANT)
         }
     }
 
@@ -1028,6 +1055,18 @@ class MainActivity : AppCompatActivity() {
 
         val relevantWashouts = washouts.filter { it.direction == s.effectiveDataset }
         washoutScheduler = PointAnnouncementScheduler(relevantWashouts, { it.chainageM }, thresholdOf = { 2000.0 })
+
+        val relevantInspectionPoints = trainInspectionPoints.filter { it.direction == s.effectiveDataset }
+        trainInspectionMachinistScheduler = PointAnnouncementScheduler(
+            relevantInspectionPoints.filter { it.inspector == InspectorRole.MACHINIST },
+            { it.chainageM },
+            thresholdOf = { trainInspectionThresholdM }
+        )
+        trainInspectionAssistantScheduler = PointAnnouncementScheduler(
+            relevantInspectionPoints.filter { it.inspector == InspectorRole.ASSISTANT },
+            { it.chainageM },
+            thresholdOf = { trainInspectionThresholdM }
+        )
 
         refreshTrackProfileRestrictions()
     }
