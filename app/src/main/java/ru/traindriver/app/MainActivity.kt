@@ -59,6 +59,7 @@ import ru.traindriver.app.route.Crossing
 import ru.traindriver.app.route.CrossingAssetLoader
 import ru.traindriver.app.route.Direction
 import ru.traindriver.app.route.DirectionSelection
+import ru.traindriver.app.route.PathStatus
 import ru.traindriver.app.route.NeutralInsert
 import ru.traindriver.app.route.NeutralInsertAssetLoader
 import ru.traindriver.app.route.PointAnnouncementScheduler
@@ -334,9 +335,9 @@ class MainActivity : AppCompatActivity() {
     // rawDirection, а не по эффективному датасету.
     private val neutralInsertScheduler = PointAnnouncementScheduler<NeutralInsert>(emptyList(), { it.chainageM }, thresholdOf = { 600.0 })
 
-    // Воздушный промежуток (ТЗ раздел 8) — "Впереди воздушный промежуток!" за 600 м, тот же
+    // Воздушный промежуток (ТЗ раздел 8) — "Впереди воздушный промежуток!" за 1000 м, тот же
     // статичный asset-список, что и переезды/КТСМ — пересобирается в updateDirectionUi.
-    private val airGapScheduler = PointAnnouncementScheduler<AirGap>(emptyList(), { it.chainageM }, thresholdOf = { 600.0 })
+    private val airGapScheduler = PointAnnouncementScheduler<AirGap>(emptyList(), { it.chainageM }, thresholdOf = { 1000.0 })
 
     // Временное ограничение (ТЗ раздел 6/11) — "Внимание! Впереди временное ограничение
     // скорости!" за 2000 м до НАЧАЛА ограничения ([Restriction.startM]). В отличие от
@@ -1110,6 +1111,9 @@ class MainActivity : AppCompatActivity() {
         // Нейтральная вставка — по направлению движения как есть, без поправки на
         // неправильный путь (см. doc-комментарий NeutralInsert/TrackProfileView.setRawDirection).
         trackProfileView.setRawDirection(s.direction)
+        // Римский номер физического пути в табличке сигнала — только на неправильном пути
+        // (машинист: "13 (I) - 200"), см. doc-комментарий у TrackProfileView.isWrongPath.
+        trackProfileView.setPathStatus(s.pathStatus == PathStatus.WRONG, s.physicalPath)
 
         // Смена направления/пути меняет, какой датасет действует (effectiveDataset) — значит
         // и какие именно точки впереди по пути вообще относятся к делу; данные тоже могли

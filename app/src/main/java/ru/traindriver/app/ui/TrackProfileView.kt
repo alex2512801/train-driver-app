@@ -186,6 +186,13 @@ class TrackProfileView @JvmOverloads constructor(
     // (см. NeutralInsert).
     private var direction: Direction = Direction.EVEN
     private var rawDirection: Direction = Direction.EVEN
+    // Табличка сигнала на НЕПРАВИЛЬНОМ пути — машинист: "по неправильному пути... сигналы
+    // обозначаются: например в чётном направлении по непр пути 13 (I) - 200" — римскими
+    // цифрами ФИЗИЧЕСКИЙ путь (не "правильный" путь направления, а именно physicalPath, тот,
+    // на котором машинист реально сейчас едет), в скобках сразу после номера/литеры сигнала,
+    // перед тире и расстоянием. См. setPathStatus/romanPathSuffix.
+    private var isWrongPath: Boolean = false
+    private var physicalPath: Int = 1
     private var trainPositionM: Double = 0.0
     // Факт. скорость (Vф, с GPS/одометра) — крупно в левом верхнем углу графика, на месте
     // бывшей шкалы-линейки (машинист: "эта линейка нам зачем, если скорости на графике и так
@@ -631,6 +638,17 @@ class TrackProfileView @JvmOverloads constructor(
         rawDirection = newDirection
         invalidate()
     }
+
+    /** DirectionSelection.pathStatus/physicalPath — см. doc-комментарий у [isWrongPath]. */
+    fun setPathStatus(wrongPath: Boolean, path: Int) {
+        isWrongPath = wrongPath
+        physicalPath = path
+        invalidate()
+    }
+
+    /** " (I)"/" (II)" на неправильном пути, иначе пусто — см. doc-комментарий у [isWrongPath]. */
+    private fun romanPathSuffix(): String =
+        if (isWrongPath) " (${if (physicalPath == 1) "I" else "II"})" else ""
 
     fun setTrainPositionM(meters: Double) {
         trainPositionM = meters
@@ -1163,11 +1181,12 @@ class TrackProfileView @JvmOverloads constructor(
         val tags = buildList {
             for (s in signals) if (s.isVisibleFor(direction, rawDirection)) {
                 // Условно разрешающий сигнал — буква "Т" сразу после номера, перед тире и
-                // расстоянием (машинист: "пишем 12 и букву Т, тире и расстояние").
-                val label = if (s.conditionallyPermissive) s.name + "Т" else s.name
+                // расстоянием (машинист: "пишем 12 и букву Т, тире и расстояние"). Римский
+                // номер пути — сразу за этим, см. doc-комментарий у [isWrongPath].
+                val label = (if (s.conditionallyPermissive) s.name + "Т" else s.name) + romanPathSuffix()
                 add(SignalTag(s.chainageM, label, false))
             }
-            for (b in blockPosts) if (b.direction == direction) add(SignalTag(b.chainageM, b.label, false))
+            for (b in blockPosts) if (b.direction == direction) add(SignalTag(b.chainageM, b.label + romanPathSuffix(), false))
             for (st in stations) if (st.direction == direction) add(SignalTag(st.chainageM, st.name, true))
         }
         // Порядок — ПО ЭКРАНУ слева направо, не всегда по возрастанию реального км: ниже по
