@@ -70,6 +70,14 @@
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout" />
 
+        <!-- Меню из главного экрана (кнопка "Меню" в статусной строке MainActivity, на месте
+             бывшей прямой кнопки "Параметры") — см. doc-комментарий в AppMenuActivity.kt. -->
+        <activity
+            android:name=".AppMenuActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout" />
+
         <!-- GpsForegroundService — см. doc-комментарий в GpsForegroundService.kt. -->
         <service
             android:name=".location.GpsForegroundService"

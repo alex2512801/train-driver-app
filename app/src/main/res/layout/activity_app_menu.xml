@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Меню из главного экрана (кнопка "Меню" в статусной строке, на месте бывшей прямой кнопки
+    "Параметры") — машинист: "первым пунктом это Параметры, а последним пунктом это База
+    данных... у нас пока там 2 пункта, дальше ещё будем добавлять". Это ОТДЕЛЬНЫЙ экран от
+    стартового меню (MenuActivity/activity_menu.xml, которое открывается до MainActivity и ведёт
+    туда же, плюс "Запустить приложение") — список и порядок пунктов здесь свои, под другую
+    задачу (быстрый доступ из уже открытого главного экрана).
+
+    "База данных" машинист попросил со временем закрыть паролем — пока явно сказал пароль НЕ
+    делать ("пароль не делай, это потом сделаем"), пункт пока открыт как есть.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000"
+    android:orientation="vertical"
+    android:gravity="center">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Меню"
+        android:textColor="#FFFFFF"
+        android:textStyle="bold"
+        android:fontFamily="monospace"
+        android:textSize="32sp"
+        android:layout_marginBottom="40dp" />
+
+    <Button
+        android:id="@+id/appMenuParamsButton"
+        style="@style/MenuButton"
+        android:text="Параметры"
+        android:layout_marginBottom="20dp" />
+
+    <Button
+        android:id="@+id/appMenuDatabaseButton"
+        style="@style/MenuButton"
+        android:text="База данных"
+        android:layout_marginBottom="40dp" />
+
+    <Button
+        android:id="@+id/appMenuCloseButton"
+        style="@style/HeaderToggleButton"
+        android:text="ЗАКРЫТЬ" />
+
+</LinearLayout>

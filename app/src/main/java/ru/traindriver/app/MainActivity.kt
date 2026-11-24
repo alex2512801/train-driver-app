@@ -104,7 +104,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var directionButton: Button
     private lateinit var pathButton: Button
     private lateinit var k1Button: Button
-    private lateinit var paramsButton: Button
+    // Кнопка "Меню" в статусной строке (раньше была прямая кнопка "Параметры") — открывает
+    // AppMenuActivity: первый пункт "Параметры" (TrainParamsActivity), последний — "База данных"
+    // (DatabaseActivity), машинист: "у нас пока там 2 пункта, дальше ещё будем добавлять".
+    private lateinit var menuButton: Button
     private lateinit var recenterButton: RecenterIconView
     private lateinit var restrictionsButton: OpasnoeIconView
     private lateinit var dayNightButton: Button
@@ -338,9 +341,9 @@ class MainActivity : AppCompatActivity() {
     private var trainInspectionAssistantScheduler =
         PointAnnouncementScheduler<TrainInspectionPoint>(emptyList(), { it.chainageM }, thresholdOf = { trainInspectionThresholdM })
 
-    // "Параметры" (ТЗ раздел 5 / раздел 12.2) — отдельный полноэкранный экран
-    // (TrainParamsActivity, кнопка paramsButton запускает его через Intent), не отдельный
-    // подэкран меню, самого меню в реальном приложении ещё нет. Значения сохраняются между
+    // "Параметры" (ТЗ раздел 5 / раздел 12.2) — отдельный полноэкранный экран (TrainParamsActivity),
+    // теперь открывается через кнопку "Меню" (AppMenuActivity — первый пункт), не напрямую из
+    // статусной строки (см. doc-комментарий у menuButton ниже). Значения сохраняются между
     // запусками (TrainParamsStore) — до первого сохранения используются те же дефолты, что и
     // в HTML-макете.
     private val trainParamsStore by lazy { TrainParamsStore(this) }
@@ -618,7 +621,7 @@ class MainActivity : AppCompatActivity() {
         directionButton = findViewById(R.id.directionButton)
         pathButton = findViewById(R.id.pathButton)
         k1Button = findViewById(R.id.k1Button)
-        paramsButton = findViewById(R.id.paramsButton)
+        menuButton = findViewById(R.id.menuButton)
         recenterButton = findViewById(R.id.recenterButton)
         restrictionsButton = findViewById(R.id.restrictionsButton)
         dayNightButton = findViewById(R.id.dayNightButton)
@@ -689,7 +692,7 @@ class MainActivity : AppCompatActivity() {
         k1Button.setOnClickListener {
             Toast.makeText(this, "К1: логика переключения путей ещё не готова", Toast.LENGTH_SHORT).show()
         }
-        paramsButton.setOnClickListener { startActivity(Intent(this, TrainParamsActivity::class.java)) }
+        menuButton.setOnClickListener { startActivity(Intent(this, AppMenuActivity::class.java)) }
         recenterButton.setOnClickListener { trackProfileView.recenter() }
         restrictionsButton.setOnClickListener { openRestrictionsScreen() }
         dayNightButton.setOnClickListener {

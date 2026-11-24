@@ -506,7 +506,7 @@
 
         <!-- Место под будущие кнопки (машинист: "чтобы мы понимали, какие ещё кнопки туда
              можно затолкать") — пустой растягивающийся промежуток между секторами и кнопками
-             справа (recenterButton/paramsButton), а не секторы впритык к ним. -->
+             справа (recenterButton/menuButton), а не секторы впритык к ним. -->
         <View
             android:layout_width="0dp"
             android:layout_height="1dp"
@@ -521,13 +521,13 @@
             android:layout_height="wrap_content"
             android:layout_marginEnd="6dp" />
 
-        <!-- Параметры состава (ТЗ раздел 12.2) — временно прямой кнопкой, см. doc-комментарий
-             класса выше про "Меню". -->
+        <!-- Меню из главного экрана (машинист: вместо прямой кнопки "Параметры" — кнопка "Меню"
+             с подменю, см. AppMenuActivity.kt). -->
         <Button
-            android:id="@+id/paramsButton"
+            android:id="@+id/menuButton"
             style="@style/HeaderToggleButton"
             android:layout_marginEnd="8dp"
-            android:text="Параметры" />
+            android:text="Меню" />
 
     </LinearLayout>
 
