@@ -55,9 +55,10 @@ import ru.traindriver.app.route.Washout
  * [ShortSegmentSpeedResolver] (уже было), здесь дорисована зеркальная штриховка "\".
  *
  * Пиктограммы (переезды/воздушные промежутки/нейтральные вставки/опасное место/щиты) сидят
- * прямо на графике рельефа — два ФИКСИРОВАННЫХ места: низ полосы рельефа (обычно, когда
- * рельеф высокий и заливка доходит до низа), или верх полосы (когда рельеф опускается
- * настолько, что иконка на нижнем месте повисла бы в пустом поле).
+ * прямо на графике рельефа, привязаны к самой КРИВОЙ в своей точке (не к фиксированной высоте
+ * полосы): обычно чуть НИЖЕ кривой (минимальный зазор, см. drawReliefAndTrain), а если снизу не
+ * остаётся места до низа полосы — чуть ВЫШЕ кривой, с запасом над зелёной полосой поезда, чтобы
+ * та не закрывала значок, если поезд окажется в этой точке.
  *
  * Все пиктограммы (опасное место начало/конец, жёлтый/зелёный щит, КТСМ, проба тормозов,
  * нейтральная вставка, воздушный промежуток, переезд охраняемый/неохраняемый) и значок сигнала
@@ -115,7 +116,7 @@ class TrackProfileView @JvmOverloads constructor(
         // maybeAddHeadMarker) — тесно было именно по горизонтали, вокруг тонкой линии головы.
         private const val HEAD_MARKER_TAP_TOLERANCE_DP = 90f
 
-        // Пиктограммы на рельефе — два фиксированных места (см. doc-комментарий класса).
+        // Пиктограммы на рельефе — место у кривой, ниже или выше (см. doc-комментарий класса).
         private const val ICON_HALF_DP = 16f
         private const val ICON_GAP_DP = 6f
 
@@ -1201,11 +1202,10 @@ class TrackProfileView @JvmOverloads constructor(
         // из-за этого ОДИН сигнал (и вслед за ним, через maxSignalTier+1, вообще все станции в
         // кадре) оказался заметно выше остальных: "один светофор почему-то выше остальных... от
         // него ещё идёт станция тоже ещё выше... выровняй по одной линии". Пока убрано совсем —
-        // все сигналы на одном уровне (tier 0), все станции на одном фиксированном уровне выше
-        // (tier 1), без динамического роста; "позже скажу, как перерисовать светофоры" —
-        // отдельная будущая задача на саму схему разводки табличек.
-        val tierGapPx = dp(6f)
-        data class PlacedTag(val tag: SignalTag, val x: Float, val text: String, val boxW: Float, val tier: Int)
+        // все сигналы на одном уровне, все станции на одном фиксированном уровне выше, без
+        // динамического роста; "позже скажу, как перерисовать светофоры" — отдельная будущая
+        // задача на саму схему разводки табличек.
+        data class PlacedTag(val tag: SignalTag, val x: Float, val text: String, val boxW: Float)
 
         val placed = mutableListOf<PlacedTag>()
         for (tag in tags) {
@@ -1235,7 +1235,7 @@ class TrackProfileView @JvmOverloads constructor(
             // непропорционально широкая белая рамка.
             val boxW = textW + dp(8f)
 
-            placed.add(PlacedTag(tag, x, text, boxW, if (tag.isStation) 1 else 0))
+            placed.add(PlacedTag(tag, x, text, boxW))
         }
 
         val boxH = dp(18f)
@@ -1247,10 +1247,16 @@ class TrackProfileView @JvmOverloads constructor(
         // где-то рядом).
         val kmMetrics = kmTextPaint.fontMetrics
         val tagBaseGap = (kmMetrics.descent - kmMetrics.ascent) + 2 * labelLayerGapPx
-        for ((tag, x, text, boxW, tier) in placed) {
+        // Верх таблички сигнала — ОДНА и та же высота у ВСЕХ сигналов/блок-постов (signalTotalH,
+        // tagBaseGap и boxH тут не зависят от конкретного тега), поэтому считаем один раз и
+        // используем как опорную точку для станции ниже (машинист: "название станции... на
+        // минимальном расстоянии выше подписи сигналов" — именно над табличкой сигнала, а не
+        // над собственным столбиком станции, который сам по себе выше и крупнее, см.
+        // STATION_TOTAL_H_DP).
+        val signalTagTop = (lineY - signalTotalH) - tagBaseGap - boxH
+        for ((tag, x, text, boxW) in placed) {
 
-            val basePoleLen = if (tag.isStation) stationPolePx else signalPolePx
-            val poleLen = basePoleLen + tier * (boxH + tierGapPx)
+            val poleLen = if (tag.isStation) stationPolePx else signalPolePx
             val rOuter = if (tag.isStation) stationROuterPx else signalRyPx
             val poleTop = lineY - poleLen
             val iconCy = lineY - poleLen - rOuter
@@ -1268,8 +1274,12 @@ class TrackProfileView @JvmOverloads constructor(
                 drawBitmapCentered(canvas, signalBitmap, x, iconCy, signalRyPx)
             }
 
-            val extraGap = if (tag.isStation) dp(7f) else 0f
-            val tagBottom = iconCy - rOuter - tagBaseGap - extraGap
+            // Станция — минимальный зазор [labelLayerGapPx] НАД табличкой сигнала (а не над
+            // собственным значком станции, который выше и может даже перекрываться с табличкой
+            // сигнала по высоте, если сигнал и станция окажутся рядом по x — это не страшно,
+            // т.к. табличка станции всё равно гарантированно выше табличку сигнала). Сигнал —
+            // как и раньше, минимальный зазор (после номера км) над СВОИМ собственным значком.
+            val tagBottom = if (tag.isStation) signalTagTop - labelLayerGapPx else (iconCy - rOuter) - tagBaseGap
             val tagTop = tagBottom - boxH
 
             canvas.drawLine(x, tagBottom, x, iconCy - rOuter, signalPolePaint)
@@ -1457,8 +1467,16 @@ class TrackProfileView @JvmOverloads constructor(
             canvas.drawPath(traceTrainPath(trainReliefGreenPaint.strokeWidth), trainReliefGreenPaint)
         }
 
-        // пиктограммы — низ полосы (обычно) либо верх (если рельеф там слишком низкий). Если
-        // два значка из РАЗНЫХ источников (например, постоянная проба тормозов и временное
+        // пиктограммы — машинист: "если позволяет место снизу профиля, но не на нижней линии, а
+        // на минимальном расстоянии от самой линии профиля [curveY, не от низа полосы]. а если
+        // снизу не помещаются, то выше линии профиля, но на расстоянии чуть выше, чем линия
+        // поезда, чтоб поезд не закрывал пиктограмму" — т.е. место привязано к КРИВОЙ рельефа в
+        // своей точке, а не к фиксированной высоте полосы, как было раньше. aboveTrainClearancePx —
+        // запас над зелёной полосой поезда (которая сама рисуется вплотную к кривой сверху, см.
+        // traceTrainPath/trainReliefOutlinePaint), чтобы полоса, если поезд окажется в этой
+        // точке, не закрашивала значок сверху.
+        //
+        // Если два значка из РАЗНЫХ источников (например, постоянная проба тормозов и временное
         // ограничение) легли бы ближе minPictogramGapPx друг к другу на экране, более поздний
         // при рисовании просто закрашивал бы более ранний своей непрозрачной заливкой — у
         // Canvas нет "расступись сам" (машинист нашёл это на реальном тесте: "была проба
@@ -1469,15 +1487,15 @@ class TrackProfileView @JvmOverloads constructor(
         // пробуем противоположное; если и там тесно — остаёмся на предпочтительном (частичное
         // наложение лучше полной потери значка, и это редкий край случая — три и более значка
         // ровно в одной точке).
-        val bottomY = top + bandH - iconGapPx - iconHalfPx
-        val topY = top + iconGapPx + iconHalfPx
+        val aboveTrainClearancePx = trainReliefOutlinePaint.strokeWidth + iconGapPx
         val pictogramsByScreenX = pictograms
             .map { Triple(it.chainageM, xFor(it.chainageM), it.kind) }
             .sortedBy { it.second }
         var lastBottomPx = Float.NEGATIVE_INFINITY
         var lastTopPx = Float.NEGATIVE_INFINITY
         for ((chainageM, px, kind) in pictogramsByScreenX) {
-            var useBottom = reliefY(chainageM) <= bottomY - iconHalfPx
+            val curveY = reliefY(chainageM)
+            var useBottom = curveY + iconGapPx + 2f * iconHalfPx <= top + bandH
             val collidesPreferred =
                 if (useBottom) px - lastBottomPx < minPictogramGapPx else px - lastTopPx < minPictogramGapPx
             if (collidesPreferred) {
@@ -1486,7 +1504,8 @@ class TrackProfileView @JvmOverloads constructor(
                 if (!collidesOther) useBottom = !useBottom
             }
             if (useBottom) lastBottomPx = px else lastTopPx = px
-            drawPictogramGlyph(canvas, px, if (useBottom) bottomY else topY, iconHalfPx, kind)
+            val cy = if (useBottom) curveY + iconGapPx + iconHalfPx else curveY - aboveTrainClearancePx - iconHalfPx
+            drawPictogramGlyph(canvas, px, cy, iconHalfPx, kind)
         }
 
         // Обрывное место — в отличие от обычных пиктограмм выше (фиксированное место внизу
