@@ -30,7 +30,7 @@ data class BlockPost(
 object BlockPostAssetLoader {
 
     fun loadBlockPosts(context: Context, assetFileName: String = "block_posts.json"): List<BlockPost> {
-        val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
+        val json = DataOverrideStore.readJson(context, assetFileName)
         val root = JSONObject(json)
         val result = mutableListOf<BlockPost>()
         for ((key, direction) in listOf("even" to Direction.EVEN, "odd" to Direction.ODD)) {

@@ -15,7 +15,7 @@ data class Station(
 object StationAssetLoader {
 
     fun loadStations(context: Context, assetFileName: String = "track_stations.json"): List<Station> {
-        val json = context.assets.open(assetFileName).use { it.reader(Charsets.UTF_8).readText() }
+        val json = DataOverrideStore.readJson(context, assetFileName)
         val array = JSONArray(json)
         val raw = buildList(array.length()) {
             for (i in 0 until array.length()) {

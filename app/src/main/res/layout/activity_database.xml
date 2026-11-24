@@ -88,6 +88,78 @@
                 <Button android:id="@+id/neutralResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
             </LinearLayout>
 
+            <!-- Сигналы (светофоры) -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Сигналы (светофоры)" />
+                <TextView android:id="@+id/trackSignalsStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/trackSignalsUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/trackSignalsResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- Условно разрешающие сигналы -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Условно разрешающие сигналы" />
+                <TextView android:id="@+id/conditionalSignalsStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/conditionalSignalsUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/conditionalSignalsResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- Блок-посты -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Блок-посты" />
+                <TextView android:id="@+id/blockPostsStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/blockPostsUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/blockPostsResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- Станции -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Станции" />
+                <TextView android:id="@+id/stationsStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/stationsUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/stationsResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- Оповещения о станциях (голос) -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Оповещения о станциях (голос)" />
+                <TextView android:id="@+id/stationAnnouncementsStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/stationAnnouncementsUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/stationAnnouncementsResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- Пробы тормозов -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Пробы тормозов" />
+                <TextView android:id="@+id/brakeTestsStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/brakeTestsUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/brakeTestsResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- КТСМ -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="КТСМ" />
+                <TextView android:id="@+id/ktsmStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/ktsmUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/ktsmResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- Осмотр поезда бригадой -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Осмотр поезда бригадой" />
+                <TextView android:id="@+id/trainInspectionStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/trainInspectionUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/trainInspectionResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
+            <!-- Линия маршрута (GPS) -->
+            <LinearLayout style="@style/DatabaseRow">
+                <TextView style="@style/DatabaseRowLabel" android:text="Линия маршрута (GPS)" />
+                <TextView android:id="@+id/routeStatusText" style="@style/DatabaseRowStatus" />
+                <Button android:id="@+id/routeUpdateButton" style="@style/MenuButtonSmall" android:text="Обновить" />
+                <Button android:id="@+id/routeResetButton" style="@style/MenuButtonSmall" android:text="Сбросить" android:layout_marginStart="6dp" />
+            </LinearLayout>
+
         </LinearLayout>
     </ScrollView>
 

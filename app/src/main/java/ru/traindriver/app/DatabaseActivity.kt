@@ -80,6 +80,60 @@ class DatabaseActivity : AppCompatActivity() {
                 findViewById(R.id.neutralStatusText),
                 findViewById(R.id.neutralUpdateButton),
                 findViewById(R.id.neutralResetButton)
+            ),
+            Row(
+                DataOverrideStore.Category.SIGNALS,
+                findViewById(R.id.trackSignalsStatusText),
+                findViewById(R.id.trackSignalsUpdateButton),
+                findViewById(R.id.trackSignalsResetButton)
+            ),
+            Row(
+                DataOverrideStore.Category.CONDITIONAL_SIGNALS,
+                findViewById(R.id.conditionalSignalsStatusText),
+                findViewById(R.id.conditionalSignalsUpdateButton),
+                findViewById(R.id.conditionalSignalsResetButton)
+            ),
+            Row(
+                DataOverrideStore.Category.BLOCK_POSTS,
+                findViewById(R.id.blockPostsStatusText),
+                findViewById(R.id.blockPostsUpdateButton),
+                findViewById(R.id.blockPostsResetButton)
+            ),
+            Row(
+                DataOverrideStore.Category.STATIONS,
+                findViewById(R.id.stationsStatusText),
+                findViewById(R.id.stationsUpdateButton),
+                findViewById(R.id.stationsResetButton)
+            ),
+            Row(
+                DataOverrideStore.Category.STATION_ANNOUNCEMENTS,
+                findViewById(R.id.stationAnnouncementsStatusText),
+                findViewById(R.id.stationAnnouncementsUpdateButton),
+                findViewById(R.id.stationAnnouncementsResetButton)
+            ),
+            Row(
+                DataOverrideStore.Category.BRAKE_TESTS,
+                findViewById(R.id.brakeTestsStatusText),
+                findViewById(R.id.brakeTestsUpdateButton),
+                findViewById(R.id.brakeTestsResetButton)
+            ),
+            Row(
+                DataOverrideStore.Category.KTSM,
+                findViewById(R.id.ktsmStatusText),
+                findViewById(R.id.ktsmUpdateButton),
+                findViewById(R.id.ktsmResetButton)
+            ),
+            Row(
+                DataOverrideStore.Category.TRAIN_INSPECTION,
+                findViewById(R.id.trainInspectionStatusText),
+                findViewById(R.id.trainInspectionUpdateButton),
+                findViewById(R.id.trainInspectionResetButton)
+            ),
+            Row(
+                DataOverrideStore.Category.ROUTE,
+                findViewById(R.id.routeStatusText),
+                findViewById(R.id.routeUpdateButton),
+                findViewById(R.id.routeResetButton)
             )
         )
 

@@ -44,9 +44,11 @@ import ru.traindriver.app.audio.VoiceAnnouncer
 import ru.traindriver.app.location.BatteryOptimizationHelper
 import ru.traindriver.app.location.GpsForegroundService
 import ru.traindriver.app.location.LocationSource
+import ru.traindriver.app.route.AirGap
 import ru.traindriver.app.route.AirGapAssetLoader
 import ru.traindriver.app.route.ArrivalDepartureState
 import ru.traindriver.app.route.ArrivalDepartureTracker
+import ru.traindriver.app.route.BlockPost
 import ru.traindriver.app.route.BlockPostAssetLoader
 import ru.traindriver.app.route.BrakeTest
 import ru.traindriver.app.route.BrakeTestAssetLoader
@@ -61,15 +63,19 @@ import ru.traindriver.app.route.NeutralInsert
 import ru.traindriver.app.route.NeutralInsertAssetLoader
 import ru.traindriver.app.route.PointAnnouncementScheduler
 import ru.traindriver.app.route.ReliefAssetLoader
+import ru.traindriver.app.route.ReliefProfile
 import ru.traindriver.app.route.Restriction
 import ru.traindriver.app.route.RestrictionAwareSpeedResolver
 import ru.traindriver.app.route.RestrictionsStore
 import ru.traindriver.app.route.RouteAssetLoader
 import ru.traindriver.app.route.RouteTrack
+import ru.traindriver.app.route.Signal
 import ru.traindriver.app.route.SignalAssetLoader
 import ru.traindriver.app.route.isVisibleFor
+import ru.traindriver.app.route.SpeedLimit
 import ru.traindriver.app.route.SpeedLimitAssetLoader
 import ru.traindriver.app.route.SpeedLimitResolver
+import ru.traindriver.app.route.Station
 import ru.traindriver.app.route.StationAnnouncement
 import ru.traindriver.app.route.StationAnnouncementAssetLoader
 import ru.traindriver.app.route.StationAssetLoader
@@ -171,18 +177,26 @@ class MainActivity : AppCompatActivity() {
     // "Место стоянки" в истории (ТЗ раздел 10) — станция, если остановка в её пределах, иначе
     // км+пк (см. Station.kt, nearestStationName — приближение, без точных границ вход/выход).
     // Также — значки станций на линии сигналов (TrackProfileView.setStations).
-    private val stations by lazy { StationAssetLoader.loadStations(this) }
+    //
+    // Все поля ниже раньше были "by lazy" (читались из assets один раз за всё время жизни
+    // Activity) — машинист: "если я файл изменил... в базе данных, и у меня в приложении тоже
+    // оно поменялось". MainActivity НЕ уничтожается при переходе на "База данных" и обратно
+    // (это просто соседняя Activity в стеке, тот же процесс) — с "by lazy" однажды прочитанные
+    // данные держались бы в памяти до перезапуска всего приложения, несмотря на новый файл.
+    // Теперь это обычные var, перечитываются целиком в reloadRouteData() — при запуске и на
+    // каждом onResume (см. там же).
+    private var stations: List<Station> = emptyList()
 
     // Линия сигналов и профиль рельефа (ТЗ раздел 7/8/9/15) — портировано из HTML-макета, см.
     // TrackProfileView. Блок-посты — доп. сигналы (не пиктограмма, машинист поправил), переезды
     // загружаются, но визуально пока не нарисованы (нужен настоящий PNG знака, см. README/чат).
-    private val signals by lazy { SignalAssetLoader.loadMainTrackSignals(this) }
-    private val blockPosts by lazy { BlockPostAssetLoader.loadBlockPosts(this) }
-    private val relief by lazy { ReliefAssetLoader.loadRelief(this) }
-    private val crossings by lazy { CrossingAssetLoader.loadCrossings(this) }
-    private val airGaps by lazy { AirGapAssetLoader.loadAirGaps(this) }
-    private val washouts by lazy { WashoutAssetLoader.loadWashouts(this) }
-    private val neutralInserts by lazy { NeutralInsertAssetLoader.loadNeutralInserts(this) }
+    private var signals: List<Signal> = emptyList()
+    private var blockPosts: List<BlockPost> = emptyList()
+    private var relief: ReliefProfile = ReliefProfile(emptyList())
+    private var crossings: List<Crossing> = emptyList()
+    private var airGaps: List<AirGap> = emptyList()
+    private var washouts: List<Washout> = emptyList()
+    private var neutralInserts: List<NeutralInsert> = emptyList()
 
     // "Ограничения" (ТЗ раздел 11) — временные ограничения скорости, введённые машинистом.
     // Живут только в памяти на время сессии (ни ТЗ, ни макет не говорят о сохранении между
@@ -200,9 +214,11 @@ class MainActivity : AppCompatActivity() {
         val relevant = restrictions.filter { it.path == null || it.path == directionSelection.physicalPath }
         trackProfileView.setRestrictions(relevant)
         // Список ограничений может поменяться в любой момент (RestrictionsActivity), не только
-        // при смене направления/пути — пересобираем планировщик здесь же, вместе с остальной
+        // при смене направления/пути — обновляем планировщик здесь же, вместе с остальной
         // работой со списком (а не только из updateDirectionUi, как переезды/пробы тормозов).
-        tempLimitScheduler = PointAnnouncementScheduler(relevant, { it.startM }, thresholdOf = { 2000.0 })
+        // updatePoints (не пересоздание объекта) сохраняет "уже объявлено" для точек, которых
+        // это не коснулось, см. doc-комментарий у PointAnnouncementScheduler.updatePoints.
+        tempLimitScheduler.updatePoints(relevant)
     }
 
     // Направление/путь задаёт машинист вручную (ТЗ раздел 3) — по GPS это не определить.
@@ -265,17 +281,12 @@ class MainActivity : AppCompatActivity() {
     private fun formatCoordinate(chainageM: Double): String =
         if (showKlubU) ChainageFormatter.formatKlubU(chainageM) else ChainageFormatter.format(chainageM)
 
-    // Калибровка (см. RouteTrack.Companion) приблизительная — см. README.
-    private val routeTrack: RouteTrack by lazy {
-        RouteTrack(
-            rawPoints = RouteAssetLoader.loadLatLonList(this, RouteTrack.HILOK_CHERNYSHEVSK_ASSET),
-            startChainageM = RouteTrack.HILOK_START_KM * 1000.0,
-            lengthCorrectionFactor = RouteTrack.HILOK_CHERNYSHEVSK_LENGTH_CORRECTION
-        )
-    }
+    // Калибровка (см. RouteTrack.Companion) приблизительная — см. README. Пересобирается в
+    // reloadRouteData() — см. doc-комментарий там же про то, почему это уже не "by lazy".
+    private lateinit var routeTrack: RouteTrack
 
-    private val speedLimits by lazy { SpeedLimitAssetLoader.loadSpeedLimits(this) }
-    private val speedLimitResolver by lazy { SpeedLimitResolver(speedLimits) }
+    private var speedLimits: List<SpeedLimit> = emptyList()
+    private var speedLimitResolver: SpeedLimitResolver = SpeedLimitResolver(emptyList())
 
     // Голосовые оповещения (ТЗ раздел 6). Координаты впереди по маршруту пока есть только для
     // пробы тормозов (brake_tests.json, шаг 5) и предвходного станции (station_announcements.json,
@@ -285,16 +296,16 @@ class MainActivity : AppCompatActivity() {
     // планировщика пересобираются при смене направления/пути (см. updateDirectionUi) — какие
     // именно точки "впереди" зависит от effectiveDataset.
     private val voiceAnnouncer by lazy { VoiceAnnouncer(this) }
-    private val brakeTests by lazy { BrakeTestAssetLoader.loadBrakeTests(this) }
-    private var brakeTestScheduler = PointAnnouncementScheduler<BrakeTest>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
+    private var brakeTests: List<BrakeTest> = emptyList()
+    private val brakeTestScheduler = PointAnnouncementScheduler<BrakeTest>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
 
     // КТСМ (ТЗ, голос Announcement.KTSM) — тот же статичный asset-список, что и проба тормозов/
     // обрывные места, тот же порог 2000м (отдельного порога машинист не продиктовал — взял по
     // аналогии с остальными точечными оповещениями). Пересобирается в updateDirectionUi.
-    private val ktsmPoints by lazy { KtsmAssetLoader.loadKtsm(this) }
-    private var ktsmScheduler = PointAnnouncementScheduler<Ktsm>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
-    private val stationAnnouncements by lazy { StationAnnouncementAssetLoader.loadStationAnnouncements(this) }
-    private var stationScheduler =
+    private var ktsmPoints: List<Ktsm> = emptyList()
+    private val ktsmScheduler = PointAnnouncementScheduler<Ktsm>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
+    private var stationAnnouncements: List<StationAnnouncement> = emptyList()
+    private val stationScheduler =
         PointAnnouncementScheduler<StationAnnouncement>(emptyList(), { it.chainageM }, thresholdOf = { it.thresholdM })
 
     // Переезд — ТЗ раздел 6: "Внимание! Впереди переезд!" за 1500 м (CROSSING_FAR), и та же
@@ -302,27 +313,27 @@ class MainActivity : AppCompatActivity() {
     // один порог, а три — отдельный планировщик на каждый порог, иначе PointAnnouncementScheduler
     // пометил бы переезд объявленным уже на первом (дальнем) срабатывании и дальние два не
     // выстрелили бы вовсе (см. doc-комментарий класса — он разовый per-point per-scheduler).
-    private var crossingFarScheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 1500.0 })
-    private var crossingNear800Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 800.0 })
-    private var crossingNear300Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 300.0 })
+    private val crossingFarScheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 1500.0 })
+    private val crossingNear800Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 800.0 })
+    private val crossingNear300Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 300.0 })
 
     // Нейтральная вставка (ТЗ раздел 8) — "Впереди нейтральная вставка!" за 600 м (голос
     // появился только сейчас — см. doc-комментарий у Announcement.NEUTRAL). Направление — КАК
     // ЕСТЬ (s.direction), а не effectiveDataset, см. doc-комментарий у NeutralInsert/
     // TrackProfileView.setRawDirection — та же причина, по которой рисование уже фильтрует по
     // rawDirection, а не по эффективному датасету.
-    private var neutralInsertScheduler = PointAnnouncementScheduler<NeutralInsert>(emptyList(), { it.chainageM }, thresholdOf = { 600.0 })
+    private val neutralInsertScheduler = PointAnnouncementScheduler<NeutralInsert>(emptyList(), { it.chainageM }, thresholdOf = { 600.0 })
 
     // Временное ограничение (ТЗ раздел 6/11) — "Внимание! Впереди временное ограничение
     // скорости!" за 2000 м до НАЧАЛА ограничения ([Restriction.startM]). В отличие от
     // переездов/проб тормозов список точек не статичный asset, а меняется в любой момент
     // (машинист может добавить ограничение через RestrictionsActivity прямо во время движения) —
     // пересобирается там же, где и остальная работа со списком, см. refreshTrackProfileRestrictions.
-    private var tempLimitScheduler = PointAnnouncementScheduler<Restriction>(emptyList(), { it.startM }, thresholdOf = { 2000.0 })
+    private val tempLimitScheduler = PointAnnouncementScheduler<Restriction>(emptyList(), { it.startM }, thresholdOf = { 2000.0 })
 
     // Обрывное место (ТЗ раздел 6) — "Внимание! Впереди обрывное место!" за 2000 м, тот же
     // статичный asset-список, что и переезды — пересобирается в updateDirectionUi.
-    private var washoutScheduler = PointAnnouncementScheduler<Washout>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
+    private val washoutScheduler = PointAnnouncementScheduler<Washout>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
 
     // Осмотр поезда бригадой — в отличие от ВСЕХ остальных оповещений выше, это НЕ заблаговременное
     // предупреждение (машинист: "голосовое срабатывает в момент начала этого осмотра", а не за
@@ -335,10 +346,10 @@ class MainActivity : AppCompatActivity() {
     // список каждой роли должен быть отдельным, иначе точка одной роли считалась бы объявленной
     // и для другой.
     private val trainInspectionThresholdM = 50.0
-    private val trainInspectionPoints by lazy { TrainInspectionAssetLoader.loadTrainInspectionPoints(this) }
-    private var trainInspectionMachinistScheduler =
+    private var trainInspectionPoints: List<TrainInspectionPoint> = emptyList()
+    private val trainInspectionMachinistScheduler =
         PointAnnouncementScheduler<TrainInspectionPoint>(emptyList(), { it.chainageM }, thresholdOf = { trainInspectionThresholdM })
-    private var trainInspectionAssistantScheduler =
+    private val trainInspectionAssistantScheduler =
         PointAnnouncementScheduler<TrainInspectionPoint>(emptyList(), { it.chainageM }, thresholdOf = { trainInspectionThresholdM })
 
     // "Параметры" (ТЗ раздел 5 / раздел 12.2) — отдельный полноэкранный экран (TrainParamsActivity),
@@ -662,18 +673,8 @@ class MainActivity : AppCompatActivity() {
         stopwatchResetButton.setOnClickListener { resetStopwatch() }
 
         trainParams = trainParamsStore.load()
-        trackProfileView.setSpeedLimits(speedLimits)
         trackProfileView.setTrainLengthM(trainParams.composition.lengthM)
-        trackProfileView.setStations(stations)
-        trackProfileView.setSignals(signals)
-        trackProfileView.setBlockPosts(blockPosts)
-        trackProfileView.setRelief(relief)
-        trackProfileView.setCrossings(crossings)
-        trackProfileView.setAirGaps(airGaps)
-        trackProfileView.setNeutralInserts(neutralInserts)
-        trackProfileView.setWashouts(washouts)
-        trackProfileView.setBrakeTests(brakeTests)
-        trackProfileView.setKtsm(ktsmPoints)
+        reloadRouteData()
         timeHandler.post(timeUpdater)
 
         directionButton.setOnClickListener {
@@ -708,7 +709,10 @@ class MainActivity : AppCompatActivity() {
             historyPanelVisible = !historyPanelVisible
             refreshStopHistory()
         }
-        updateDirectionUi()
+        // Отдельный вызов updateDirectionUi() здесь был раньше нужен, чтобы один раз
+        // проставить текст кнопок/график сразу после загрузки данных — теперь это делает сам
+        // reloadRouteData() выше, а следом сразу же вызовется onResume() (обычный жизненный
+        // цикл Activity), который его и так вызовет ещё раз — отдельного вызова не нужно.
 
         if (hasLocationPermission()) {
             startLocationUpdates()
@@ -723,15 +727,18 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Список ограничений и параметры состава теперь вводятся на отдельных экранах
-    // (RestrictionsActivity/TrainParamsActivity) — после возврата оттуда нужно заново
-    // перечитать параметры из хранилища (TrainParamsActivity сохраняет их напрямую, эта копия
-    // в памяти о том не узнает сама) и отрисовать график с учётом изменений.
+    // Ограничения/параметры состава/любые данные из "База данных" теперь вводятся или
+    // обновляются на отдельных экранах (RestrictionsActivity/TrainParamsActivity/
+    // DatabaseActivity) — после возврата оттуда нужно заново перечитать всё, что эти экраны
+    // могли изменить (TrainParamsActivity/DataOverrideStore сохраняют напрямую, эта копия в
+    // памяти о том не узнает сама) и отрисовать график с учётом изменений. reloadRouteData()
+    // сама вызывает refreshTrackProfileRestrictions() (через updateDirectionUi()), отдельно
+    // вызывать её здесь больше не нужно.
     override fun onResume() {
         super.onResume()
         trainParams = trainParamsStore.load()
         trackProfileView.setTrainLengthM(trainParams.composition.lengthM)
-        refreshTrackProfileRestrictions()
+        reloadRouteData()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -1022,6 +1029,61 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * (Пере)читает ВСЕ справочные данные (сигналы/станции/скорости/КТСМ/переезды/... — всё, что
+     * можно обновить через "База данных", см. DataOverrideStore.Category) и применяет их — к
+     * самому графику (TrackProfileView.set*) и ко всем голосовым планировщикам (пересобираются
+     * внутри updateDirectionUi()). Вызывается и при запуске (onCreate), и на каждом onResume —
+     * машинист: "если я файл изменил... в базе данных, и у меня в приложении тоже оно
+     * поменялось". MainActivity не уничтожается при переходе на "База данных" и обратно (это
+     * просто соседняя Activity в том же процессе) — без принудительной перезагрузки здесь
+     * старые данные держались бы в памяти до перезапуска всего приложения, несмотря на новый
+     * файл (см. doc-комментарий у stations выше про то, почему это больше не "by lazy").
+     */
+    private fun reloadRouteData() {
+        stations = StationAssetLoader.loadStations(this)
+        signals = SignalAssetLoader.loadMainTrackSignals(this)
+        blockPosts = BlockPostAssetLoader.loadBlockPosts(this)
+        relief = ReliefAssetLoader.loadRelief(this)
+        crossings = CrossingAssetLoader.loadCrossings(this)
+        airGaps = AirGapAssetLoader.loadAirGaps(this)
+        washouts = WashoutAssetLoader.loadWashouts(this)
+        neutralInserts = NeutralInsertAssetLoader.loadNeutralInserts(this)
+        brakeTests = BrakeTestAssetLoader.loadBrakeTests(this)
+        ktsmPoints = KtsmAssetLoader.loadKtsm(this)
+        stationAnnouncements = StationAnnouncementAssetLoader.loadStationAnnouncements(this)
+        trainInspectionPoints = TrainInspectionAssetLoader.loadTrainInspectionPoints(this)
+
+        // ВАЖНО: калибровочные константы RouteTrack.HILOK_START_KM/
+        // HILOK_CHERNYSHEVSK_LENGTH_CORRECTION при обновлении линии маршрута НЕ пересчитываются
+        // автоматически — см. doc-комментарий у RouteTrack.HILOK_CHERNYSHEVSK_ASSET.
+        routeTrack = RouteTrack(
+            rawPoints = RouteAssetLoader.loadLatLonList(this, RouteTrack.HILOK_CHERNYSHEVSK_ASSET),
+            startChainageM = RouteTrack.HILOK_START_KM * 1000.0,
+            lengthCorrectionFactor = RouteTrack.HILOK_CHERNYSHEVSK_LENGTH_CORRECTION
+        )
+
+        speedLimits = SpeedLimitAssetLoader.loadSpeedLimits(this)
+        speedLimitResolver = SpeedLimitResolver(speedLimits)
+
+        trackProfileView.setSpeedLimits(speedLimits)
+        trackProfileView.setStations(stations)
+        trackProfileView.setSignals(signals)
+        trackProfileView.setBlockPosts(blockPosts)
+        trackProfileView.setRelief(relief)
+        trackProfileView.setCrossings(crossings)
+        trackProfileView.setAirGaps(airGaps)
+        trackProfileView.setNeutralInserts(neutralInserts)
+        trackProfileView.setWashouts(washouts)
+        trackProfileView.setBrakeTests(brakeTests)
+        trackProfileView.setKtsm(ktsmPoints)
+
+        // Пересобирает ВСЕ планировщики голосовых оповещений (проба тормозов/КТСМ/переезды/
+        // станции/нейтральная вставка/осмотр поезда/временные ограничения) из свежих списков
+        // выше, и обновляет шапку/график — см. doc-комментарий у updateDirectionUi.
+        updateDirectionUi()
+    }
+
     private fun updateDirectionUi() {
         val s = directionSelection
         // Короче, чем "Чётное"/"Нечётное" — машинист попросил, чтобы влезало компактнее.
@@ -1035,41 +1097,34 @@ class MainActivity : AppCompatActivity() {
         trackProfileView.setRawDirection(s.direction)
 
         // Смена направления/пути меняет, какой датасет действует (effectiveDataset) — значит
-        // и какие именно точки впереди по пути вообще относятся к делу. Пересобираем оба
-        // планировщика с нуля (а не просто фильтруем на лету) — иначе точки, уже объявленные
-        // при старом направлении, ошибочно считались бы объявленными и при новом.
+        // и какие именно точки впереди по пути вообще относятся к делу; данные тоже могли
+        // обновиться (см. reloadRouteData). updatePoints (не пересоздание объекта) сохраняет
+        // "уже объявлено" для точек, которых это не коснулось — см. doc-комментарий у
+        // PointAnnouncementScheduler.updatePoints.
         val relevantBrakeTests = brakeTests.filter { it.direction == s.effectiveDataset }
-        brakeTestScheduler = PointAnnouncementScheduler(relevantBrakeTests, { it.chainageM }, thresholdOf = { 2000.0 })
+        brakeTestScheduler.updatePoints(relevantBrakeTests)
 
         val relevantKtsm = ktsmPoints.filter { it.direction == s.effectiveDataset }
-        ktsmScheduler = PointAnnouncementScheduler(relevantKtsm, { it.chainageM }, thresholdOf = { 2000.0 })
+        ktsmScheduler.updatePoints(relevantKtsm)
 
         // Направление КАК ЕСТЬ (s.direction), не effectiveDataset — см. doc-комментарий у поля.
         val relevantNeutralInserts = neutralInserts.filter { it.direction == s.direction }
-        neutralInsertScheduler = PointAnnouncementScheduler(relevantNeutralInserts, { it.chainageM }, thresholdOf = { 600.0 })
+        neutralInsertScheduler.updatePoints(relevantNeutralInserts)
 
         val relevantStations = stationAnnouncements.filter { it.direction == s.effectiveDataset }
-        stationScheduler = PointAnnouncementScheduler(relevantStations, { it.chainageM }, thresholdOf = { it.thresholdM })
+        stationScheduler.updatePoints(relevantStations)
 
         val relevantCrossings = crossings.filter { it.direction == s.effectiveDataset }
-        crossingFarScheduler = PointAnnouncementScheduler(relevantCrossings, { it.chainageM }, thresholdOf = { 1500.0 })
-        crossingNear800Scheduler = PointAnnouncementScheduler(relevantCrossings, { it.chainageM }, thresholdOf = { 800.0 })
-        crossingNear300Scheduler = PointAnnouncementScheduler(relevantCrossings, { it.chainageM }, thresholdOf = { 300.0 })
+        crossingFarScheduler.updatePoints(relevantCrossings)
+        crossingNear800Scheduler.updatePoints(relevantCrossings)
+        crossingNear300Scheduler.updatePoints(relevantCrossings)
 
         val relevantWashouts = washouts.filter { it.direction == s.effectiveDataset }
-        washoutScheduler = PointAnnouncementScheduler(relevantWashouts, { it.chainageM }, thresholdOf = { 2000.0 })
+        washoutScheduler.updatePoints(relevantWashouts)
 
         val relevantInspectionPoints = trainInspectionPoints.filter { it.direction == s.effectiveDataset }
-        trainInspectionMachinistScheduler = PointAnnouncementScheduler(
-            relevantInspectionPoints.filter { it.inspector == InspectorRole.MACHINIST },
-            { it.chainageM },
-            thresholdOf = { trainInspectionThresholdM }
-        )
-        trainInspectionAssistantScheduler = PointAnnouncementScheduler(
-            relevantInspectionPoints.filter { it.inspector == InspectorRole.ASSISTANT },
-            { it.chainageM },
-            thresholdOf = { trainInspectionThresholdM }
-        )
+        trainInspectionMachinistScheduler.updatePoints(relevantInspectionPoints.filter { it.inspector == InspectorRole.MACHINIST })
+        trainInspectionAssistantScheduler.updatePoints(relevantInspectionPoints.filter { it.inspector == InspectorRole.ASSISTANT })
 
         refreshTrackProfileRestrictions()
     }

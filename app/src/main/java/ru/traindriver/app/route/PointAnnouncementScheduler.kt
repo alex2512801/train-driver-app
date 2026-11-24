@@ -18,11 +18,26 @@ package ru.traindriver.app.route
  * README), не только для [BrakeTest].
  */
 class PointAnnouncementScheduler<T>(
-    private val points: List<T>,
+    private var points: List<T>,
     private val chainageOf: (T) -> Double,
     private val thresholdOf: (T) -> Double
 ) {
     private val announced = mutableSetOf<T>()
+
+    /**
+     * Подменяет список точек целиком (направление/путь изменились, либо данные обновились через
+     * "База данных" — см. MainActivity.reloadRouteData) БЕЗ сброса состояния "уже объявлено" для
+     * точек, которые есть и в старом, и в новом списке (сравнение структурное, как у data class).
+     * Раньше вместо этого MainActivity просто создавал НОВЫЙ PointAnnouncementScheduler с пустым
+     * announced — если это происходило, пока машинист был внутри уже активной зоны оповещения
+     * (600-2000 м до точки, например просто заглянул в "Параметры" и закрыл их), объявление
+     * звучало ПОВТОРНО при следующем тике. Точки, которых в новом списке больше нет, убираются
+     * из announced — иначе [announced] рос бы бесконечно при каждом обновлении данных.
+     */
+    fun updatePoints(newPoints: List<T>) {
+        points = newPoints
+        announced.retainAll(newPoints.toSet())
+    }
 
     /** Точка, которую нужно объявить именно сейчас (впервые вошла в зону), или null. */
     fun update(positionM: Double, growing: Boolean): T? {

@@ -20,7 +20,14 @@ import java.io.File
  */
 object DataOverrideStore {
 
-    /** Категории данных, которые можно обновить с устройства — см. DatabaseActivity. */
+    /**
+     * Категории данных, которые можно обновить с устройства — см. DatabaseActivity. Машинист:
+     * "нужно чтобы все данные были там, и ничего не было зашито в саму программу кроме
+     * голосовых подсказок и пиктограмм" — поэтому здесь ВСЕ категории с собственным JSON-файлом
+     * (не только те шесть, что были раньше), голосовые mp3 (res/raw) и картинки пиктограмм
+     * сюда не входят — это не JSON-данные, а медиа-ресурсы приложения, их эта схема
+     * (DataOverrideStore.applyOverride принимает только JSON) в принципе не касается.
+     */
     enum class Category(val label: String, val assetFileName: String) {
         RELIEF("Режимная карта (профиль пути)", "track_relief.json"),
         SPEED_LIMITS("Скорости (постоянные ограничения)", "speed_limits.json"),
@@ -28,6 +35,15 @@ object DataOverrideStore {
         CROSSINGS("Переезды", "crossings.json"),
         WASHOUTS("Обрывные места", "washouts.json"),
         NEUTRAL_INSERTS("Нейтральные вставки", "neutral_inserts.json"),
+        SIGNALS("Сигналы (светофоры)", "track_signals.json"),
+        CONDITIONAL_SIGNALS("Условно разрешающие сигналы", "conditional_signals.json"),
+        BLOCK_POSTS("Блок-посты", "block_posts.json"),
+        STATIONS("Станции", "track_stations.json"),
+        STATION_ANNOUNCEMENTS("Оповещения о станциях (голос)", "station_announcements.json"),
+        BRAKE_TESTS("Пробы тормозов", "brake_tests.json"),
+        KTSM("КТСМ", "ktsm.json"),
+        TRAIN_INSPECTION("Осмотр поезда бригадой", "train_inspection.json"),
+        ROUTE("Линия маршрута (GPS)", "route_hilok_chernyshevsk.json"),
     }
 
     private fun overrideFile(context: Context, assetFileName: String): File =
