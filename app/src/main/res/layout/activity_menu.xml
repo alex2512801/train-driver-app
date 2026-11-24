@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
     Стартовое меню (ТЗ раздел 12) — первый экран при запуске приложения, до главного экрана.
-    Машинист сначала убрал этот пункт из планов (не мог вспомнить, зачем он нужен), потом
-    вспомнил и описал подробнее: запуск приложения, экран обновления базы данных (сам может
-    закинуть файл с новыми данными без участия Claude) — третий пункт, настройки, пока не
-    продуман и не сделан (см. ОТЛОЖЕНО.md).
+    "База данных" отсюда убрана (машинист: "я же специально перенёс туда" — в "Меню" из
+    главного экрана, см. AppMenuActivity.kt) — здесь остаётся только запуск самого приложения.
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
@@ -26,12 +24,6 @@
     <Button
         android:id="@+id/menuLaunchButton"
         style="@style/MenuButton"
-        android:text="Запустить приложение"
-        android:layout_marginBottom="20dp" />
-
-    <Button
-        android:id="@+id/menuDatabaseButton"
-        style="@style/MenuButton"
-        android:text="База данных" />
+        android:text="Запустить приложение" />
 
 </LinearLayout>

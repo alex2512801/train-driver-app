@@ -9,7 +9,8 @@ import androidx.appcompat.app.AppCompatActivity
 /**
  * Стартовое меню (ТЗ раздел 12) — первый экран при запуске приложения (см. doc-комментарий в
  * activity_menu.xml и AndroidManifest.xml — именно этот Activity теперь LAUNCHER, а не
- * MainActivity). Два пункта сделаны, третий (настройки) — ещё нет, см. ОТЛОЖЕНО.md.
+ * MainActivity). "База данных" отсюда убрана — она теперь только в "Меню" из главного экрана
+ * (AppMenuActivity, машинист: "я же специально перенёс туда").
  */
 class MenuActivity : AppCompatActivity() {
 
@@ -20,9 +21,6 @@ class MenuActivity : AppCompatActivity() {
 
         findViewById<Button>(R.id.menuLaunchButton).setOnClickListener {
             startActivity(Intent(this, MainActivity::class.java))
-        }
-        findViewById<Button>(R.id.menuDatabaseButton).setOnClickListener {
-            startActivity(Intent(this, DatabaseActivity::class.java))
         }
     }
 

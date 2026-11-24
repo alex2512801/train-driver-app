@@ -334,6 +334,10 @@ class MainActivity : AppCompatActivity() {
     // rawDirection, а не по эффективному датасету.
     private val neutralInsertScheduler = PointAnnouncementScheduler<NeutralInsert>(emptyList(), { it.chainageM }, thresholdOf = { 600.0 })
 
+    // Воздушный промежуток (ТЗ раздел 8) — "Впереди воздушный промежуток!" за 600 м, тот же
+    // статичный asset-список, что и переезды/КТСМ — пересобирается в updateDirectionUi.
+    private val airGapScheduler = PointAnnouncementScheduler<AirGap>(emptyList(), { it.chainageM }, thresholdOf = { 600.0 })
+
     // Временное ограничение (ТЗ раздел 6/11) — "Внимание! Впереди временное ограничение
     // скорости!" за 2000 м до НАЧАЛА ограничения ([Restriction.startM]). В отличие от
     // переездов/проб тормозов список точек не статичный asset, а меняется в любой момент
@@ -496,6 +500,7 @@ class MainActivity : AppCompatActivity() {
         if (tempLimitScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.TEMP_LIMIT)
         if (washoutScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.WASHOUT)
         if (ktsmScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.KTSM)
+        if (airGapScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.AIR_GAP)
         if (neutralInsertScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.NEUTRAL)
 
         if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
@@ -1128,6 +1133,9 @@ class MainActivity : AppCompatActivity() {
         crossingFarScheduler.updatePoints(relevantCrossings)
         crossingNear800Scheduler.updatePoints(relevantCrossings)
         crossingNear300Scheduler.updatePoints(relevantCrossings)
+
+        val relevantAirGaps = airGaps.filter { it.direction == s.effectiveDataset }
+        airGapScheduler.updatePoints(relevantAirGaps)
 
         val relevantWashouts = washouts.filter { it.direction == s.effectiveDataset }
         washoutScheduler.updatePoints(relevantWashouts)
