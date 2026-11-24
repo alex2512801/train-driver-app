@@ -165,7 +165,7 @@ class TrackProfileView @JvmOverloads constructor(
     private data class Pictogram(val chainageM: Double, val kind: PictogramKind)
 
     private enum class PictogramKind {
-        OPASNOE_START, YELLOW_SHIELD, GREEN_SHIELD, AIR_GAP, NEUTRAL,
+        OPASNOE_START, OPASNOE_END, YELLOW_SHIELD, GREEN_SHIELD, AIR_GAP, NEUTRAL,
         CROSSING_GUARDED, CROSSING_UNGUARDED, BRAKE_TEST, KTSM
     }
 
@@ -284,6 +284,13 @@ class TrackProfileView @JvmOverloads constructor(
     private val pictogramMinHatchWidthPx = dp(PICTOGRAM_MIN_HATCH_WIDTH_DP)
     private val iconHalfPx = dp(ICON_HALF_DP)
     private val iconGapPx = dp(ICON_GAP_DP)
+    // Минимальный зазор по X, при котором два значка на рельефе ещё не легли бы вплотную друг
+    // на друга — используется и чтобы развести по двум вертикальным местам соседние значки из
+    // РАЗНЫХ источников (см. drawReliefAndTrain — машинист нашёл баг: постоянный значок пробы
+    // тормозов пропадал, пока рядом было активно временное ограничение, т.к. его значок
+    // рисовался поверх в тех же пикселях и полностью его закрывал), и чтобы решить, стоит ли
+    // вообще показывать "конец опасного места" у короткого ограничения (см. buildPictograms).
+    private val minPictogramGapPx = iconHalfPx * 2f + iconGapPx
 
     private val stepPaint = Paint().apply { color = Color.rgb(160, 159, 164) }
     // Тёмное "поле" от низа шкалы скорости до линии сигналов — визуально одна сплошная зона
@@ -893,7 +900,7 @@ class TrackProfileView @JvmOverloads constructor(
         // его вижу, светофоры за ним" (раньше было наоборот: сигналы рисовались поверх пояса).
         drawTrainSignalStripe(canvas, ::xFor, lineY, trainStripeHeight)
 
-        val pictograms = buildPictograms(fromM, toM)
+        val pictograms = buildPictograms(fromM, toM, ::xFor)
         val (headY, tailY) = drawReliefAndTrain(canvas, fromM, toM, ::xFor, ::mFor, reliefTop, reliefH, pictograms)
 
         drawPerpendiculars(canvas, fromM, toM, ::xFor, stepRegionBottoms, pictograms, headY, tailY)
@@ -1335,7 +1342,7 @@ class TrackProfileView @JvmOverloads constructor(
      *  промежутки/нейтральные вставки) + динамические (ограничения, ТЗ раздел 11). Переезды —
      *  оба знака ГОСТ Р 52290, по [Crossing.guarded]: 1.1 со шлагбаумом (решётка) для охраняемых,
      *  1.2 с паровозом (без шлагбаума) для неохраняемых — машинист прислал образцы обоих. */
-    private fun buildPictograms(fromM: Double, toM: Double): List<Pictogram> {
+    private fun buildPictograms(fromM: Double, toM: Double, xFor: (Double) -> Float): List<Pictogram> {
         val result = mutableListOf<Pictogram>()
         for (c in crossings) if (c.direction == direction && c.chainageM in fromM..toM) {
             val kind = if (c.guarded) PictogramKind.CROSSING_GUARDED else PictogramKind.CROSSING_UNGUARDED
@@ -1362,13 +1369,19 @@ class TrackProfileView @JvmOverloads constructor(
             result.add(Pictogram(signChainageM, PictogramKind.NEUTRAL))
         }
         for (r in restrictions) {
-            // Знак "конец опасного места" убран совсем (машинист: при коротких ограничениях
-            // он вставал почти вплотную к "началу" и перекрывал его — проще не показывать
-            // "конец" вообще, чем городить порог "насколько коротко уже нельзя". Жёлтый и
-            // зелёный щиты остаются на тех же местах — за км до начала и через км после конца.
+            // Знак "конец опасного места" (машинист уточнил правило): показываем, только если
+            // участок достаточно длинный, чтобы значки начала и конца не легли вплотную друг на
+            // друга на экране — иначе, как и раньше, его просто нет (решаем по месту на экране,
+            // в пикселях, а не фиксированным числом метров, чтобы правило было верным при любом
+            // масштабе графика). Жёлтый и зелёный щиты остаются на тех же местах — за км до
+            // начала и через км после конца, их это решение не касается.
             val yellowM = r.startM - SHIELD_OFFSET_M
             val greenM = r.endM + SHIELD_OFFSET_M
             if (r.startM in fromM..toM) result.add(Pictogram(r.startM, PictogramKind.OPASNOE_START))
+            if (r.endM in fromM..toM) {
+                val pxGap = kotlin.math.abs(xFor(r.endM) - xFor(r.startM))
+                if (pxGap >= minPictogramGapPx) result.add(Pictogram(r.endM, PictogramKind.OPASNOE_END))
+            }
             if (yellowM in fromM..toM) result.add(Pictogram(yellowM, PictogramKind.YELLOW_SHIELD))
             if (greenM in fromM..toM) result.add(Pictogram(greenM, PictogramKind.GREEN_SHIELD))
         }
@@ -1490,14 +1503,36 @@ class TrackProfileView @JvmOverloads constructor(
             canvas.drawPath(traceTrainPath(trainReliefGreenPaint.strokeWidth), trainReliefGreenPaint)
         }
 
-        // пиктограммы — низ полосы (обычно) либо верх (если рельеф там слишком низкий)
+        // пиктограммы — низ полосы (обычно) либо верх (если рельеф там слишком низкий). Если
+        // два значка из РАЗНЫХ источников (например, постоянная проба тормозов и временное
+        // ограничение) легли бы ближе minPictogramGapPx друг к другу на экране, более поздний
+        // при рисовании просто закрашивал бы более ранний своей непрозрачной заливкой — у
+        // Canvas нет "расступись сам" (машинист нашёл это на реальном тесте: "была проба
+        // тормозов, поставил ограничение рядом — значок пробы тормозов исчез, как только убрал
+        // ограничение — опять появился"). Разводим жадным проходом СЛЕВА НАПРАВО ПО ЭКРАНУ (не
+        // по пикетажу — при нечётном направлении экран зеркалится, см. xFor/isReversed): если
+        // предпочтительное место (низ/верх по рельефу) занято слишком близко соседним значком,
+        // пробуем противоположное; если и там тесно — остаёмся на предпочтительном (частичное
+        // наложение лучше полной потери значка, и это редкий край случая — три и более значка
+        // ровно в одной точке).
         val bottomY = top + bandH - iconGapPx - iconHalfPx
         val topY = top + iconGapPx + iconHalfPx
-        for (p in pictograms) {
-            val px = xFor(p.chainageM)
-            val fitsAtBottom = reliefY(p.chainageM) <= bottomY - iconHalfPx
-            val py = if (fitsAtBottom) bottomY else topY
-            drawPictogramGlyph(canvas, px, py, iconHalfPx, p.kind)
+        val pictogramsByScreenX = pictograms
+            .map { Triple(it.chainageM, xFor(it.chainageM), it.kind) }
+            .sortedBy { it.second }
+        var lastBottomPx = Float.NEGATIVE_INFINITY
+        var lastTopPx = Float.NEGATIVE_INFINITY
+        for ((chainageM, px, kind) in pictogramsByScreenX) {
+            var useBottom = reliefY(chainageM) <= bottomY - iconHalfPx
+            val collidesPreferred =
+                if (useBottom) px - lastBottomPx < minPictogramGapPx else px - lastTopPx < minPictogramGapPx
+            if (collidesPreferred) {
+                val collidesOther =
+                    if (useBottom) px - lastTopPx < minPictogramGapPx else px - lastBottomPx < minPictogramGapPx
+                if (!collidesOther) useBottom = !useBottom
+            }
+            if (useBottom) lastBottomPx = px else lastTopPx = px
+            drawPictogramGlyph(canvas, px, if (useBottom) bottomY else topY, iconHalfPx, kind)
         }
 
         // Обрывное место — в отличие от обычных пиктограмм выше (фиксированное место внизу
@@ -1544,6 +1579,7 @@ class TrackProfileView @JvmOverloads constructor(
     private fun drawPictogramGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, kind: PictogramKind) {
         when (kind) {
             PictogramKind.OPASNOE_START -> drawOpasnoeGlyph(canvas, cx, cy, s)
+            PictogramKind.OPASNOE_END -> drawOpasnoeGlyph(canvas, cx, cy, s, rotationDeg = 90f)
             PictogramKind.YELLOW_SHIELD -> drawShieldGlyph(canvas, cx, cy, s, yellowShieldColor)
             PictogramKind.GREEN_SHIELD -> drawShieldGlyph(canvas, cx, cy, s, greenShieldColor)
             PictogramKind.AIR_GAP -> drawAirGapGlyph(canvas, cx, cy, s)
@@ -1555,11 +1591,16 @@ class TrackProfileView @JvmOverloads constructor(
         }
     }
 
-    private fun drawOpasnoeGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
+    /** [rotationDeg] — 0 для "начала" (горизонтальная перекладина с тремя точками), 90 для
+     *  "конца" (та же перекладина становится вертикальной) — ровно так настоящий знак
+     *  "Опасное место" отличает начало от конца (сверено с присланными PNG обоих вариантов);
+     *  кольцо и 8 точек по кругу при повороте на 90° не меняются (расставлены через 45°). */
+    private fun drawOpasnoeGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, rotationDeg: Float = 0f) {
         val ringW = s * (100f / 275f)
         val r = s - ringW / 2f
         canvas.save()
         canvas.translate(cx, cy)
+        if (rotationDeg != 0f) canvas.rotate(rotationDeg)
 
         canvas.drawCircle(0f, 0f, s, opasnoeWhitePaint)
         opasnoeRingPaint.strokeWidth = ringW
