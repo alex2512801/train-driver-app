@@ -1,6 +1,8 @@
 package ru.traindriver.app.ui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -14,10 +16,8 @@ import android.view.MotionEvent
 import android.view.View
 import kotlin.math.abs
 import kotlin.math.ceil
-import kotlin.math.cos
 import kotlin.math.floor
 import kotlin.math.max
-import kotlin.math.sin
 import ru.traindriver.app.route.AirGap
 import ru.traindriver.app.route.BlockPost
 import ru.traindriver.app.route.Crossing
@@ -30,6 +30,7 @@ import ru.traindriver.app.route.Signal
 import ru.traindriver.app.route.isVisibleFor
 import ru.traindriver.app.route.SpeedLimit
 import ru.traindriver.app.route.SpeedLimitResolver
+import ru.traindriver.app.R
 import ru.traindriver.app.route.Station
 import ru.traindriver.app.route.BrakeTest
 import ru.traindriver.app.route.Ktsm
@@ -58,8 +59,12 @@ import ru.traindriver.app.route.Washout
  * рельеф высокий и заливка доходит до низа), или верх полосы (когда рельеф опускается
  * настолько, что иконка на нижнем месте повисла бы в пустом поле).
  *
- * Переезды (пиктограмма-чертёж, реальный PNG знак в HTML-макете) и блок-посты (пока без поля
- * "какой сигнал заменён") здесь сознательно НЕ дорисованы/упрощены — см. README/чат.
+ * Большинство пиктограмм (опасное место начало/конец, жёлтый/зелёный щит, КТСМ, проба
+ * тормозов, нейтральная вставка, воздушный промежуток) — настоящие присланные PNG
+ * (drawBitmapCentered), не рисуются вручную. Переезд (точного рисунка не присылали) и сигнал
+ * главного пути (капсула/картинка — см. drawSignalTags) — переезд остался рисованным, сигнал
+ * теперь тоже настоящая картинка. Блок-посты (пока без поля "какой сигнал заменён") — см.
+ * README/чат.
  *
  * Внешний вид ПРОВЕРЕН пока только на HTML-макете (см. чат), не на реальном устройстве — в
  * этой среде разработки нет Android SDK (не получилось даже собрать проект, чтобы прогнать
@@ -115,12 +120,13 @@ class TrackProfileView @JvmOverloads constructor(
         private const val ICON_HALF_DP = 16f
         private const val ICON_GAP_DP = 6f
 
-        // Геометрия значка сигнала/станции (капсула/кольцо) — те же пропорции, что в
-        // HTML-макете (rx:ry:столбик = 5:7:8), но крупнее в dp; станция крупнее сигнала в
-        // 7/6 раза по полной высоте, ножка:радиус = 50:45 — оба выводятся из этого отношения,
-        // а не масштабируются от сигнала по отдельности (см. HTML-макет).
+        // Геометрия значка станции (кольцо) и высоты столбика сигнала — те же пропорции, что в
+        // HTML-макете, но крупнее в dp; станция крупнее сигнала в 7/6 раза по полной высоте,
+        // ножка:радиус = 50:45 — оба выводятся из этого отношения, а не масштабируются от
+        // сигнала по отдельности (см. HTML-макет). Ширина самого значка сигнала (было rx=7 у
+        // рисованной капсулы) больше не задаётся отдельной константой — у присланной картинки
+        // сигнала своя собственная пропорция, см. drawBitmapCentered.
         private const val SIGNAL_RY_DP = 10f
-        private const val SIGNAL_RX_DP = 7f
         private const val SIGNAL_POLE_DP = 12f
         private const val SIGNAL_TOTAL_H_DP = SIGNAL_RY_DP * 2f + SIGNAL_POLE_DP
         private const val STATION_TOTAL_H_DP = SIGNAL_TOTAL_H_DP * 7f / 6f
@@ -291,6 +297,33 @@ class TrackProfileView @JvmOverloads constructor(
     // рисовался поверх в тех же пикселях и полностью его закрывал), и чтобы решить, стоит ли
     // вообще показывать "конец опасного места" у короткого ограничения (см. buildPictograms).
     private val minPictogramGapPx = iconHalfPx * 2f + iconGapPx
+
+    // Настоящие картинки сигнала/пиктограмм (машинист прислал PNG вместо того, что раньше
+    // рисовалось вручную через Canvas — капсула-"стадион" для сигнала, нарисованные от руки
+    // щиты/КТСМ/НТ и т.п.). Грузятся один раз при создании View, а не на каждый drawXxxGlyph —
+    // decodeResource на каждый кадр заметно нагрузил бы отрисовку. День/ночь эти картинки не
+    // инвертирует (так же, как раньше не инвертировались их рисованные предшественники —
+    // opasnoe*/shield*/airGap*/neutralGlyph* в applyPalette, см. комментарий там).
+    private val signalBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_signal)
+    private val opasnoeStartBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_opasnoe_start)
+    private val opasnoeEndBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_opasnoe_end)
+    private val yellowShieldBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_yellow_shield)
+    private val greenShieldBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_green_shield)
+    private val ktsmBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_ktsm)
+    private val brakeTestBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_brake_test)
+    private val neutralBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_neutral)
+    private val airGapBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_air_gap)
+    private val bitmapPaint = Paint().apply { isAntiAlias = true; isFilterBitmap = true }
+
+    /** Рисует [bitmap] с центром в (cx,cy), высотой 2×[targetHalfHeight], ширина — по
+     *  собственной пропорции картинки (не растягиваем в чужой прямоугольник, иначе фигура
+     *  искажается — у присланных PNG соотношение сторон у каждого своё). */
+    private fun drawBitmapCentered(canvas: Canvas, bitmap: Bitmap, cx: Float, cy: Float, targetHalfHeight: Float) {
+        val targetH = targetHalfHeight * 2f
+        val targetW = targetH * (bitmap.width.toFloat() / bitmap.height.toFloat())
+        val dst = RectF(cx - targetW / 2f, cy - targetH / 2f, cx + targetW / 2f, cy + targetH / 2f)
+        canvas.drawBitmap(bitmap, null, dst, bitmapPaint)
+    }
 
     private val stepPaint = Paint().apply { color = Color.rgb(160, 159, 164) }
     // Тёмное "поле" от низа шкалы скорости до линии сигналов — визуально одна сплошная зона
@@ -526,43 +559,6 @@ class TrackProfileView @JvmOverloads constructor(
         strokeWidth = dp(2f)
     }
 
-    // Пиктограмма "опасное место" (ТЗ раздел 8) — см. drawOpasnoeGlyph.
-    private val opasnoeWhitePaint = Paint().apply { color = Color.WHITE; isAntiAlias = true }
-    private val opasnoeBlackPaint = Paint().apply { color = Color.rgb(17, 17, 17); isAntiAlias = true }
-    private val opasnoeRingPaint = Paint().apply {
-        color = Color.rgb(17, 17, 17)
-        style = Paint.Style.STROKE
-        isAntiAlias = true
-    }
-
-    // Жёлтый/зелёный щит (ТЗ раздел 8).
-    private val shieldWhitePaint = Paint().apply { color = Color.WHITE }
-    private val shieldBlackPaint = Paint().apply { color = Color.BLACK }
-
-    // Проба тормозов (ТЗ раздел 6) — белый квадрат, красная окантовка, буквы "НТ" внутри.
-    // Точного чертежа с размерами не присылали (та же оговорка, что и в README про этот
-    // значок) — форма как в README-описании ("белый квадрат/красная окантовка + буквы НТ").
-    private val brakeTestRedPaint = Paint().apply { color = Color.rgb(213, 0, 0); isAntiAlias = true }
-    private val brakeTestTextPaint = Paint().apply {
-        color = Color.rgb(213, 0, 0)
-        textAlign = Paint.Align.CENTER
-        typeface = Typeface.DEFAULT_BOLD
-        isAntiAlias = true
-    }
-
-    // КТСМ (комплекс контроля букс) — точного чертежа с размерами машинист не присылал ("у нас
-    // пиктограмма есть", имея в виду сам слот в ТЗ, а не готовый рисунок) — тот же приём, что и
-    // у пробы тормозов выше: синий квадрат, белая окантовка, буква "К" внутри — пока заметно
-    // отличается от красной пробы тормозов цветом, этого достаточно, чтобы не путать на
-    // графике. Если нужен другой рисунок — машинист поправит.
-    private val ktsmBluePaint = Paint().apply { color = Color.rgb(30, 90, 200); isAntiAlias = true }
-    private val ktsmTextPaint = Paint().apply {
-        color = Color.rgb(30, 90, 200)
-        textAlign = Paint.Align.CENTER
-        typeface = Typeface.DEFAULT_BOLD
-        isAntiAlias = true
-    }
-
     // Переезд (знак 1.1 ГОСТ Р 52290) — красный треугольник с белой каймой и чёрной решёткой-
     // шлагбаумом внутри, образец прислал машинист (см. doc-комментарий у drawCrossingGlyph).
     private val crossingWhitePaint = Paint().apply { color = Color.WHITE; isAntiAlias = true }
@@ -574,31 +570,6 @@ class TrackProfileView @JvmOverloads constructor(
         strokeWidth = dp(1f)
         isAntiAlias = true
     }
-    private val shieldColorPaint = Paint()
-    private val yellowShieldColor = Color.rgb(255, 230, 0)
-    private val greenShieldColor = Color.rgb(58, 194, 90)
-
-    // Воздушный промежуток (ТЗ раздел 8) — сетка 3×7, чёрные строки 1/3/5/7 + сплошная чёрная
-    // средняя колонка целиком сверху донизу (см. drawAirGapGlyph).
-    private val airGapWhitePaint = Paint().apply { color = Color.WHITE }
-    private val airGapBlackPaint = Paint().apply { color = Color.rgb(17, 17, 17) }
-    private val airGapBorderPaint = Paint().apply {
-        color = Color.rgb(136, 136, 136)
-        style = Paint.Style.STROKE
-        strokeWidth = dp(1.5f)
-    }
-
-    // Нейтральная вставка — пиктограмма "включить ток" (ГОСТ 8442-65): синий ромб, чёрная
-    // окантовка + серый контур снаружи, внутри — 2 белых квадрата сверху + 1 пошире снизу.
-    private val neutralGlyphOuterPaint = Paint().apply {
-        color = Color.rgb(136, 136, 136)
-        style = Paint.Style.STROKE
-        strokeWidth = dp(1.5f)
-    }
-    private val neutralGlyphWhitePaint = Paint().apply { color = Color.WHITE }
-    private val neutralGlyphBlackPaint = Paint().apply { color = Color.rgb(0, 0, 0) }
-    private val neutralGlyphBluePaint = Paint().apply { color = Color.rgb(40, 80, 200) }
-
     private val backgroundPaint = Paint().apply { color = Color.BLACK }
 
     // День/ночь (ТЗ раздел 14) — см. doc-комментарий у isDayMode в предыдущей версии: полный
@@ -642,9 +613,10 @@ class TrackProfileView @JvmOverloads constructor(
         thinPerpendicularPaint.color = if (isDayMode) Color.argb(128, 55, 55, 55) else Color.argb(128, 200, 200, 200)
         thickPerpendicularPaint.color = c(Color.rgb(160, 159, 164))
         trainMarkerPaint.color = c(Color.rgb(160, 159, 164))
-        // trainSignalStripePaint/trainReliefGreenPaint/trainReliefOutlinePaint, все
-        // opasnoe*/shield*/airGap*/neutralGlyph*, и signalTagBg/Border/Text — сознательно НЕ
-        // входят сюда, см. комментарий у isDayMode выше. trainMarkerPaint раньше тоже не
+        // trainSignalStripePaint/trainReliefGreenPaint/trainReliefOutlinePaint, пиктограммы
+        // (теперь присланные PNG — их палитра дня/ночи вообще не касается, см.
+        // drawBitmapCentered) и signalTagBg/Border/Text — сознательно НЕ входят сюда, см.
+        // комментарий у isDayMode выше. trainMarkerPaint раньше тоже не
         // входил (был зелёным, фиксированным цветом) — после того как машинист попросил
         // сделать его обычным серым (как thickPerpendicularPaint), стал обычным цветом
         // интерфейса и тоже инвертируется днём/ночью.
@@ -1196,8 +1168,9 @@ class TrackProfileView @JvmOverloads constructor(
         // остаётся в 7/6 раза крупнее сигнала, а не только сигнал подрос.
         val signalTotalH = trainStripeHeight * SIGNAL_TO_TRAIN_HEIGHT_RATIO
         val signalScale = signalTotalH / dp(SIGNAL_TOTAL_H_DP)
+        // signalRxPx (ширина капсулы) больше не нужен — у присланной картинки сигнала своя
+        // собственная пропорция, см. drawBitmapCentered.
         val signalRyPx = dp(SIGNAL_RY_DP) * signalScale
-        val signalRxPx = dp(SIGNAL_RX_DP) * signalScale
         val signalPolePx = dp(SIGNAL_POLE_DP) * signalScale
         val stationROuterPx = dp(STATION_R_OUTER_DP) * signalScale
         val stationRInnerPx = dp(STATION_R_INNER_DP) * signalScale
@@ -1294,7 +1267,12 @@ class TrackProfileView @JvmOverloads constructor(
             if (tag.isStation) {
                 drawStationIcon(canvas, x, iconCy, stationROuterPx, stationRInnerPx)
             } else {
-                drawCapsule(canvas, x, iconCy, signalRxPx, signalRyPx)
+                // Машинист прислал настоящую картинку сигнала (три огня + "лепесток" снизу) —
+                // заменяет прежнюю рисованную капсулу-"стадион" целиком (машинист подтвердил:
+                // "заменить все сигналы на графике этим PNG"). Высота та же, что была у капсулы
+                // (signalRyPx*2 — ровно в 2 раза выше пояса поезда, см. SIGNAL_TO_TRAIN_HEIGHT_RATIO),
+                // ширина — по собственной пропорции картинки, не по прежней signalRxPx.
+                drawBitmapCentered(canvas, signalBitmap, x, iconCy, signalRyPx)
             }
 
             val extraGap = if (tag.isStation) dp(7f) else 0f
@@ -1308,11 +1286,6 @@ class TrackProfileView @JvmOverloads constructor(
         }
     }
 
-    /** Капсула-стадион (rx < ry — вытянута вертикально, скруглена и сверху, и снизу): round-rect
-     *  с радиусом скругления = rx (половина ширины) даёт ровно такую форму. */
-    private fun drawCapsule(canvas: Canvas, cx: Float, cy: Float, rx: Float, ry: Float) {
-        canvas.drawRoundRect(cx - rx, cy - ry, cx + rx, cy + ry, rx, rx, signalIconPaint)
-    }
 
     /** Два концентрических кольца, разделённых пополам (ТЗ раздел 7): одна половина светлая
      *  с тёмным внутренним кольцом, другая — тёмная со светлым внутренним кольцом, плюс
@@ -1578,148 +1551,24 @@ class TrackProfileView @JvmOverloads constructor(
 
     private fun drawPictogramGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, kind: PictogramKind) {
         when (kind) {
-            PictogramKind.OPASNOE_START -> drawOpasnoeGlyph(canvas, cx, cy, s)
-            PictogramKind.OPASNOE_END -> drawOpasnoeGlyph(canvas, cx, cy, s, rotationDeg = 90f)
-            PictogramKind.YELLOW_SHIELD -> drawShieldGlyph(canvas, cx, cy, s, yellowShieldColor)
-            PictogramKind.GREEN_SHIELD -> drawShieldGlyph(canvas, cx, cy, s, greenShieldColor)
-            PictogramKind.AIR_GAP -> drawAirGapGlyph(canvas, cx, cy, s)
-            PictogramKind.NEUTRAL -> drawNeutralGlyph(canvas, cx, cy, s)
+            PictogramKind.OPASNOE_START -> drawBitmapCentered(canvas, opasnoeStartBitmap, cx, cy, s)
+            PictogramKind.OPASNOE_END -> drawBitmapCentered(canvas, opasnoeEndBitmap, cx, cy, s)
+            PictogramKind.YELLOW_SHIELD -> drawBitmapCentered(canvas, yellowShieldBitmap, cx, cy, s)
+            PictogramKind.GREEN_SHIELD -> drawBitmapCentered(canvas, greenShieldBitmap, cx, cy, s)
+            PictogramKind.AIR_GAP -> drawBitmapCentered(canvas, airGapBitmap, cx, cy, s)
+            PictogramKind.NEUTRAL -> drawBitmapCentered(canvas, neutralBitmap, cx, cy, s)
             PictogramKind.CROSSING_GUARDED -> drawCrossingGlyph(canvas, cx, cy, s, guarded = true)
             PictogramKind.CROSSING_UNGUARDED -> drawCrossingGlyph(canvas, cx, cy, s, guarded = false)
-            PictogramKind.BRAKE_TEST -> drawBrakeTestGlyph(canvas, cx, cy, s)
-            PictogramKind.KTSM -> drawKtsmGlyph(canvas, cx, cy, s)
+            PictogramKind.BRAKE_TEST -> drawBitmapCentered(canvas, brakeTestBitmap, cx, cy, s)
+            PictogramKind.KTSM -> drawBitmapCentered(canvas, ktsmBitmap, cx, cy, s)
         }
-    }
-
-    /** [rotationDeg] — 0 для "начала" (горизонтальная перекладина с тремя точками), 90 для
-     *  "конца" (та же перекладина становится вертикальной) — ровно так настоящий знак
-     *  "Опасное место" отличает начало от конца (сверено с присланными PNG обоих вариантов);
-     *  кольцо и 8 точек по кругу при повороте на 90° не меняются (расставлены через 45°). */
-    private fun drawOpasnoeGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, rotationDeg: Float = 0f) {
-        val ringW = s * (100f / 275f)
-        val r = s - ringW / 2f
-        canvas.save()
-        canvas.translate(cx, cy)
-        if (rotationDeg != 0f) canvas.rotate(rotationDeg)
-
-        canvas.drawCircle(0f, 0f, s, opasnoeWhitePaint)
-        opasnoeRingPaint.strokeWidth = ringW
-        canvas.drawCircle(0f, 0f, r, opasnoeRingPaint)
-        canvas.drawRect(-s, -ringW / 2f, s, ringW / 2f, opasnoeBlackPaint)
-
-        val dotR = s * (51f / 2f / 275f)
-        for (i in 0 until 8) {
-            val angle = Math.toRadians((-90 + i * 45).toDouble())
-            canvas.drawCircle((cos(angle) * r).toFloat(), (sin(angle) * r).toFloat(), dotR, opasnoeWhitePaint)
-        }
-        for (f in floatArrayOf(-0.5f, 0f, 0.5f)) {
-            canvas.drawCircle(f * r, 0f, dotR, opasnoeWhitePaint)
-        }
-        canvas.restore()
-    }
-
-    private fun drawShieldGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, fillColor: Int) {
-        val halfMm = 235f
-        val borderMm = 25f
-        val inset1 = s * (borderMm / halfMm)
-        val inset2 = s * ((borderMm * 2f) / halfMm)
-        canvas.drawRect(cx - s, cy - s, cx + s, cy + s, shieldWhitePaint)
-        canvas.drawRect(cx - s + inset1, cy - s + inset1, cx + s - inset1, cy + s - inset1, shieldBlackPaint)
-        shieldColorPaint.color = fillColor
-        canvas.drawRect(cx - s + inset2, cy - s + inset2, cx + s - inset2, cy + s - inset2, shieldColorPaint)
-    }
-
-    /** Проба тормозов — белый квадрат с красной окантовкой и буквами "НТ" внутри, см.
-     *  doc-комментарий у brakeTestRedPaint. Раньше загружался только для голосового
-     *  оповещения, на графике не рисовался вообще (машинист: "оповещение есть, а на
-     *  режимной карте не указаны"). */
-    private fun drawBrakeTestGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
-        val inset = s * 0.16f
-        canvas.drawRect(cx - s, cy - s, cx + s, cy + s, brakeTestRedPaint)
-        canvas.drawRect(cx - s + inset, cy - s + inset, cx + s - inset, cy + s - inset, shieldWhitePaint)
-        brakeTestTextPaint.textSize = s * 0.95f
-        canvas.drawText("НТ", cx, cy + brakeTestTextPaint.textSize * 0.35f, brakeTestTextPaint)
-    }
-
-    /** КТСМ — белый квадрат с синей окантовкой и буквой "К" внутри, см. doc-комментарий у
-     *  ktsmBluePaint (та же форма, что у пробы тормозов, другой цвет — точного рисунка не
-     *  присылали). */
-    private fun drawKtsmGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
-        val inset = s * 0.16f
-        canvas.drawRect(cx - s, cy - s, cx + s, cy + s, ktsmBluePaint)
-        canvas.drawRect(cx - s + inset, cy - s + inset, cx + s - inset, cy + s - inset, shieldWhitePaint)
-        ktsmTextPaint.textSize = s * 0.95f
-        canvas.drawText("К", cx, cy + ktsmTextPaint.textSize * 0.35f, ktsmTextPaint)
-    }
-
-    /** 3×7 клеток, строки 1/3/5/7 (индексы 0,2,4,6) чёрные во всю ширину + сплошная чёрная
-     *  средняя колонка сверху донизу (машинист, со слов — не по чертежу с размерами). */
-    private fun drawAirGapGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
-        val rows = 7
-        val h = s * 2f
-        val cellH = h / rows
-        val cellW = cellH
-        val w = cellW * 3
-        val left = cx - w / 2f
-        val top = cy - h / 2f
-
-        canvas.drawRect(left, top, left + w, top + h, airGapWhitePaint)
-        for (row in 0 until rows) {
-            if (row % 2 != 0) continue
-            canvas.drawRect(left, top + row * cellH, left + w, top + (row + 1) * cellH, airGapBlackPaint)
-        }
-        canvas.drawRect(left + cellW, top, left + 2 * cellW, top + h, airGapBlackPaint)
-        canvas.drawRect(left, top, left + w, top + h, airGapBorderPaint)
-    }
-
-    /** Ромб "включить ток" (ГОСТ 8442-65) — синяя заливка, чёрная окантовка, серый контур
-     *  снаружи; внутри 2 белых скруглённых квадрата сверху + 1 пошире снизу, все пустые. */
-    private fun drawNeutralGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float) {
-        val path = Path()
-        path.moveTo(cx, cy - s - 1.5f)
-        path.lineTo(cx + s + 1.5f, cy)
-        path.lineTo(cx, cy + s + 1.5f)
-        path.lineTo(cx - s - 1.5f, cy)
-        path.close()
-        canvas.drawPath(path, neutralGlyphOuterPaint)
-
-        fun diamond(r: Float, paint: Paint) {
-            val p = Path()
-            p.moveTo(cx, cy - r)
-            p.lineTo(cx + r, cy)
-            p.lineTo(cx, cy + r)
-            p.lineTo(cx - r, cy)
-            p.close()
-            canvas.drawPath(p, paint)
-        }
-        val inradius = s / 1.41421356f
-        fun insetR(mm: Float): Float {
-            val sideLen = s * 1.41421356f
-            val dUnits = mm * (sideLen / 450f)
-            return s * (1f - dUnits / inradius)
-        }
-        diamond(s, neutralGlyphWhitePaint)
-        diamond(insetR(20f), neutralGlyphBlackPaint)
-        diamond(insetR(40f), neutralGlyphBluePaint)
-
-        val sideLen = s * 1.41421356f
-        val sq = sideLen * (90f / 450f)
-        val gap = sideLen * (80f / 450f)
-        val contentW = sideLen * (260f / 450f)
-        val cornerR = sideLen * (40f / 450f)
-        val barH = sq * 0.6f
-        val totalH = sq + gap + barH
-        val sqTop = cy - totalH / 2f
-        val barTop = sqTop + sq + gap
-        canvas.drawRoundRect(cx - gap / 2f - sq, sqTop, cx - gap / 2f, sqTop + sq, cornerR, cornerR, neutralGlyphWhitePaint)
-        canvas.drawRoundRect(cx + gap / 2f, sqTop, cx + gap / 2f + sq, sqTop + sq, cornerR, cornerR, neutralGlyphWhitePaint)
-        canvas.drawRoundRect(cx - contentW / 2f, barTop, cx + contentW / 2f, barTop + barH, cornerR, cornerR, neutralGlyphWhitePaint)
     }
 
     /** Переезд — красный треугольник с белой каймой (общая рамка для обоих знаков ГОСТ Р 52290:
      *  1.1 со шлагбаумом — [drawFenceGlyph], 1.2 без шлагбаума, с паровозом — [drawLocomotiveGlyph],
      *  см. [Crossing.guarded]). Пропорции треугольника подобраны по картинке на глаз, не по
-     *  чертежу с миллиметрами (та же оговорка, что и у drawAirGapGlyph). Уменьшенные
+     *  чертежу с миллиметрами (точного рисунка переезда, в отличие от остальных пиктограмм,
+     *  машинист не присылал — остаётся рисованным). Уменьшенные
      *  концентрические треугольники (а не настоящий отступ от каждой стороны) — на размере
      *  значка разница не видна, а код проще. Canvas остаётся переведённым в (cx,cy) после
      *  вызова — внутренний рисунок (решётка/паровоз) рисуется прямо в этих же координатах. */
