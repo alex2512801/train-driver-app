@@ -316,6 +316,10 @@ class TrackProfileView @JvmOverloads constructor(
     // раньше рисовались вручную (drawCrossingGlyph/drawFenceGlyph/drawLocomotiveGlyph).
     private val crossingGuardedBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_crossing_guarded)
     private val crossingUnguardedBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_crossing_unguarded)
+    // Обрывное место — шарик+стрелка, присланы одной картинкой, уже "смотрящей" вниз (шарик
+    // сверху, остриё снизу). См. drawWashoutGlyph про то, как её переворачивают, когда стрелка
+    // должна стоять СНИЗУ и указывать вверх.
+    private val washoutBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_washout)
     private val bitmapPaint = Paint().apply { isAntiAlias = true; isFilterBitmap = true }
 
     /** Рисует [bitmap] с центром в (cx,cy), высотой 2×[targetHalfHeight], ширина — по
@@ -367,18 +371,6 @@ class TrackProfileView @JvmOverloads constructor(
     }
     private val headMarkerPinHolePaint = Paint().apply {
         color = Color.WHITE
-        style = Paint.Style.FILL
-        isAntiAlias = true
-    }
-    // Обрывное место (см. doc-комментарий у washouts/drawWashoutGlyph) — красная стрелка с
-    // шариком на конце, касается рельефа именно в своей точке. Цвет красный ЗАФИКСИРОВАН
-    // (не зависит от applyPalette/день-ночь) — та же причина, что и у headMarker выше.
-    private val washoutLinePaint = Paint().apply {
-        color = Color.RED
-        strokeWidth = dp(3f)
-    }
-    private val washoutBallPaint = Paint().apply {
-        color = Color.RED
         style = Paint.Style.FILL
         isAntiAlias = true
     }
@@ -1516,29 +1508,20 @@ class TrackProfileView @JvmOverloads constructor(
         return reliefY(trainPositionM) to reliefY(tailM)
     }
 
-    /** Короткая красная стрелка с шариком на хвосте — остриё стрелки касается кривой рельефа,
-     *  шарик висит отдельно над ним (вверх, если стрелка "висит сверху", вниз — если "растёт
-     *  снизу"), см. doc-комментарий у вызова выше. */
-    // Машинист поправил: "не шарик должен касаться линии, а стрелка, наоборот" — раньше
-    // ballCy стоял ровно в одном радиусе шарика от tipY, из-за чего нижний край шарика попадал
-    // точно на curveY и визуально ИМЕННО шарик, а не остриё "усов", лежал на линии профиля
-    // (сама V-образная стрелка была нулевой высоты, пряталась внутри шарика). Теперь между
-    // шариком и остриём есть настоящий зазор (arrowLen) — усы заметно тянутся от шарика вниз
-    // к линии, шарик при этом явно висит над ней, не касаясь.
+    /** Присланная картинка (шарик+стрелка) — остриё стрелки касается кривой рельефа РОВНО в
+     *  своей точке (curveY), а не в одном из двух фиксированных мест, как обычные пиктограммы
+     *  (см. doc-комментарий у вызова выше). [pointingDown]=true — рисуем как прислано (шарик
+     *  сверху, остриё снизу касается curveY); false — переворачиваем по вертикали вокруг
+     *  точки касания (canvas.scale(1,-1)), чтобы шарик оказался снизу, а остриё указывало
+     *  вверх, по-прежнему касаясь curveY. */
     private fun drawWashoutGlyph(canvas: Canvas, cx: Float, curveY: Float, pointingDown: Boolean) {
-        val ballR = dp(6f)
-        val arrowLen = dp(10f)
-        val shaftLen = dp(14f)
-        val dir = if (pointingDown) 1f else -1f
-        val tipY = curveY
-        val arrowBaseY = tipY - dir * arrowLen
-        val ballCy = arrowBaseY - dir * ballR
-        val shaftFarY = ballCy - dir * (ballR + shaftLen)
-
-        canvas.drawLine(cx, shaftFarY, cx, ballCy, washoutLinePaint)
-        canvas.drawLine(cx - ballR, arrowBaseY, cx, tipY, washoutLinePaint)
-        canvas.drawLine(cx + ballR, arrowBaseY, cx, tipY, washoutLinePaint)
-        canvas.drawCircle(cx, ballCy, ballR, washoutBallPaint)
+        val targetH = iconHalfPx * 2f
+        val targetW = targetH * (washoutBitmap.width.toFloat() / washoutBitmap.height.toFloat())
+        val dst = RectF(cx - targetW / 2f, curveY - targetH, cx + targetW / 2f, curveY)
+        canvas.save()
+        if (!pointingDown) canvas.scale(1f, -1f, cx, curveY)
+        canvas.drawBitmap(washoutBitmap, null, dst, bitmapPaint)
+        canvas.restore()
     }
 
     private fun drawPictogramGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, kind: PictogramKind) {
