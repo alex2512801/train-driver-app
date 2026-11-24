@@ -59,12 +59,11 @@ import ru.traindriver.app.route.Washout
  * рельеф высокий и заливка доходит до низа), или верх полосы (когда рельеф опускается
  * настолько, что иконка на нижнем месте повисла бы в пустом поле).
  *
- * Большинство пиктограмм (опасное место начало/конец, жёлтый/зелёный щит, КТСМ, проба
- * тормозов, нейтральная вставка, воздушный промежуток) — настоящие присланные PNG
- * (drawBitmapCentered), не рисуются вручную. Переезд (точного рисунка не присылали) и сигнал
- * главного пути (капсула/картинка — см. drawSignalTags) — переезд остался рисованным, сигнал
- * теперь тоже настоящая картинка. Блок-посты (пока без поля "какой сигнал заменён") — см.
- * README/чат.
+ * Все пиктограммы (опасное место начало/конец, жёлтый/зелёный щит, КТСМ, проба тормозов,
+ * нейтральная вставка, воздушный промежуток, переезд охраняемый/неохраняемый) и значок сигнала
+ * главного пути (на линии сигналов, см. drawSignalTags) — настоящие присланные PNG
+ * (см. drawBitmapCentered), не рисуются вручную. Блок-посты (пока без поля "какой сигнал
+ * заменён") — см. README/чат.
  *
  * Внешний вид ПРОВЕРЕН пока только на HTML-макете (см. чат), не на реальном устройстве — в
  * этой среде разработки нет Android SDK (не получилось даже собрать проект, чтобы прогнать
@@ -313,6 +312,10 @@ class TrackProfileView @JvmOverloads constructor(
     private val brakeTestBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_brake_test)
     private val neutralBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_neutral)
     private val airGapBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_air_gap)
+    // Переезд (ГОСТ Р 52290, знаки 1.1/1.2) — машинист прислал оба позже, отдельным сообщением;
+    // раньше рисовались вручную (drawCrossingGlyph/drawFenceGlyph/drawLocomotiveGlyph).
+    private val crossingGuardedBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_crossing_guarded)
+    private val crossingUnguardedBitmap = BitmapFactory.decodeResource(resources, R.drawable.pic_crossing_unguarded)
     private val bitmapPaint = Paint().apply { isAntiAlias = true; isFilterBitmap = true }
 
     /** Рисует [bitmap] с центром в (cx,cy), высотой 2×[targetHalfHeight], ширина — по
@@ -559,17 +562,6 @@ class TrackProfileView @JvmOverloads constructor(
         strokeWidth = dp(2f)
     }
 
-    // Переезд (знак 1.1 ГОСТ Р 52290) — красный треугольник с белой каймой и чёрной решёткой-
-    // шлагбаумом внутри, образец прислал машинист (см. doc-комментарий у drawCrossingGlyph).
-    private val crossingWhitePaint = Paint().apply { color = Color.WHITE; isAntiAlias = true }
-    private val crossingRedPaint = Paint().apply { color = Color.rgb(213, 0, 0); isAntiAlias = true }
-    private val crossingBlackPaint = Paint().apply { color = Color.BLACK; isAntiAlias = true }
-    private val crossingOutlinePaint = Paint().apply {
-        color = Color.BLACK
-        style = Paint.Style.STROKE
-        strokeWidth = dp(1f)
-        isAntiAlias = true
-    }
     private val backgroundPaint = Paint().apply { color = Color.BLACK }
 
     // День/ночь (ТЗ раздел 14) — см. doc-комментарий у isDayMode в предыдущей версии: полный
@@ -1557,120 +1549,10 @@ class TrackProfileView @JvmOverloads constructor(
             PictogramKind.GREEN_SHIELD -> drawBitmapCentered(canvas, greenShieldBitmap, cx, cy, s)
             PictogramKind.AIR_GAP -> drawBitmapCentered(canvas, airGapBitmap, cx, cy, s)
             PictogramKind.NEUTRAL -> drawBitmapCentered(canvas, neutralBitmap, cx, cy, s)
-            PictogramKind.CROSSING_GUARDED -> drawCrossingGlyph(canvas, cx, cy, s, guarded = true)
-            PictogramKind.CROSSING_UNGUARDED -> drawCrossingGlyph(canvas, cx, cy, s, guarded = false)
+            PictogramKind.CROSSING_GUARDED -> drawBitmapCentered(canvas, crossingGuardedBitmap, cx, cy, s)
+            PictogramKind.CROSSING_UNGUARDED -> drawBitmapCentered(canvas, crossingUnguardedBitmap, cx, cy, s)
             PictogramKind.BRAKE_TEST -> drawBitmapCentered(canvas, brakeTestBitmap, cx, cy, s)
             PictogramKind.KTSM -> drawBitmapCentered(canvas, ktsmBitmap, cx, cy, s)
-        }
-    }
-
-    /** Переезд — красный треугольник с белой каймой (общая рамка для обоих знаков ГОСТ Р 52290:
-     *  1.1 со шлагбаумом — [drawFenceGlyph], 1.2 без шлагбаума, с паровозом — [drawLocomotiveGlyph],
-     *  см. [Crossing.guarded]). Пропорции треугольника подобраны по картинке на глаз, не по
-     *  чертежу с миллиметрами (точного рисунка переезда, в отличие от остальных пиктограмм,
-     *  машинист не присылал — остаётся рисованным). Уменьшенные
-     *  концентрические треугольники (а не настоящий отступ от каждой стороны) — на размере
-     *  значка разница не видна, а код проще. Canvas остаётся переведённым в (cx,cy) после
-     *  вызова — внутренний рисунок (решётка/паровоз) рисуется прямо в этих же координатах. */
-    private fun drawCrossingGlyph(canvas: Canvas, cx: Float, cy: Float, s: Float, guarded: Boolean) {
-        val baseHalf = s * 1.1547f // равносторонний треугольник высотой 2s: baseHalf = 2s/√3
-        val topY = -s
-        val baseY = s
-        val centroidY = (topY + baseY + baseY) / 3f
-
-        fun triangle(f: Float): Path {
-            val tY = centroidY + f * (topY - centroidY)
-            val bY = centroidY + f * (baseY - centroidY)
-            val bHalf = f * baseHalf
-            val p = Path()
-            p.moveTo(0f, tY)
-            p.lineTo(bHalf, bY)
-            p.lineTo(-bHalf, bY)
-            p.close()
-            return p
-        }
-
-        canvas.save()
-        canvas.translate(cx, cy)
-        canvas.drawPath(triangle(1f), crossingWhitePaint)
-        canvas.drawPath(triangle(1f), crossingOutlinePaint)
-        canvas.drawPath(triangle(0.88f), crossingRedPaint)
-        canvas.drawPath(triangle(0.64f), crossingWhitePaint)
-
-        if (guarded) drawFenceGlyph(canvas, s) else drawLocomotiveGlyph(canvas, s)
-        canvas.restore()
-    }
-
-    /** Знак 1.1 — решётка-шлагбаум (5 кольев с острым верхом + 2 горизонтальные перекладины) в
-     *  нижней половине поля. Canvas уже переведён в центр значка, см. [drawCrossingGlyph]. */
-    private fun drawFenceGlyph(canvas: Canvas, s: Float) {
-        val postCount = 5
-        val fenceHalfW = s * 0.58f
-        val fenceTopY = s * 0.05f
-        val fenceBottomY = s * 0.58f
-        val postW = fenceHalfW * 2f / (postCount * 2f - 1f) // столб:зазор = 1:1
-        val spikeH = postW * 0.9f
-        val barH = postW * 0.55f
-
-        for (i in 0 until postCount) {
-            val left = -fenceHalfW + i * postW * 2f
-            val mid = left + postW / 2f
-            val right = left + postW
-            val path = Path()
-            path.moveTo(left, fenceTopY + spikeH)
-            path.lineTo(mid, fenceTopY)
-            path.lineTo(right, fenceTopY + spikeH)
-            path.lineTo(right, fenceBottomY)
-            path.lineTo(left, fenceBottomY)
-            path.close()
-            canvas.drawPath(path, crossingBlackPaint)
-        }
-        canvas.drawRect(-fenceHalfW, fenceTopY + spikeH * 0.3f, fenceHalfW, fenceTopY + spikeH * 0.3f + barH, crossingBlackPaint)
-        canvas.drawRect(-fenceHalfW, fenceBottomY - barH, fenceHalfW, fenceBottomY, crossingBlackPaint)
-    }
-
-    /** Знак 1.2 — силуэт паровоза (котёл+труба слева, будка с окошком справа, 3 колеса-кольца
-     *  на подножке) внизу поля + цепочка клубов дыма по диагонали вверх-вправо от трубы, почти
-     *  до вершины треугольника. Образец прислал машинист — тот самый классический ГОСТовский
-     *  силуэт. Canvas уже переведён в центр значка, см. [drawCrossingGlyph]. */
-    private fun drawLocomotiveGlyph(canvas: Canvas, s: Float) {
-        val wheelR = s * 0.135f
-        val baseY = s * 0.62f
-        val wheelCy = baseY - wheelR
-        val bodyBottom = wheelCy - wheelR * 0.75f
-        val boilerTop = bodyBottom - s * 0.32f
-        val boilerLeft = -s * 0.56f
-        val boilerRight = s * 0.18f
-
-        // подножка (узкая полоса под колёсами) + 3 колеса-кольца
-        canvas.drawRect(boilerLeft - s * 0.06f, baseY - s * 0.07f, s * 0.5f, baseY, crossingBlackPaint)
-        val wheelXs = floatArrayOf(boilerLeft + s * 0.14f, (boilerLeft + s * 0.5f) / 2f + s * 0.1f, s * 0.34f)
-        for (wx in wheelXs) {
-            canvas.drawCircle(wx, wheelCy, wheelR, crossingBlackPaint)
-            canvas.drawCircle(wx, wheelCy, wheelR * 0.4f, crossingWhitePaint)
-        }
-
-        // котёл (цилиндр слева) + будка (повыше, справа, с окошком)
-        canvas.drawRoundRect(boilerLeft, boilerTop, boilerRight, bodyBottom, s * 0.05f, s * 0.05f, crossingBlackPaint)
-        val cabLeft = boilerRight - s * 0.02f
-        val cabRight = s * 0.5f
-        val cabTop = boilerTop - s * 0.14f
-        canvas.drawRoundRect(cabLeft, cabTop, cabRight, bodyBottom, s * 0.04f, s * 0.04f, crossingBlackPaint)
-        canvas.drawRect(cabLeft + s * 0.08f, cabTop + s * 0.06f, cabRight - s * 0.08f, cabTop + s * 0.24f, crossingWhitePaint)
-
-        // труба (маленький столбик на левом конце котла)
-        val stackCx = boilerLeft + s * 0.12f
-        canvas.drawRect(stackCx - s * 0.06f, boilerTop - s * 0.14f, stackCx + s * 0.06f, boilerTop + s * 0.02f, crossingBlackPaint)
-
-        // дым — цепочка клубов по диагонали вверх-вправо от трубы, почти до вершины
-        var px = stackCx
-        var py = boilerTop - s * 0.16f
-        var r = s * 0.1f
-        for (i in 0 until 4) {
-            canvas.drawCircle(px, py, r, crossingBlackPaint)
-            px += r * 0.9f
-            py -= r * 1.6f
-            r *= 1.12f
         }
     }
 
