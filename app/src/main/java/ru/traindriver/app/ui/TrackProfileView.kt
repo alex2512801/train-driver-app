@@ -41,15 +41,20 @@ import ru.traindriver.app.route.Washout
  * постоянных ограничений скорости, линия сигналов и профиль рельефа (ТЗ раздел 7/8/9/15),
  * портировано из HTML-макета "Ступени Хилока" (см. чат).
  *
- * Два яруса, пропорция верх:низ = [STEPS_TO_RELIEF_RATIO] = 2,5:1 (машинист продиктовал по
- * измерению на экране, см. companion object): верх — от верха блоков скорости до линии
- * сигналов (ступени + тёмное "поле" + сама линия сигналов/км), низ — под линией сигналов, где
- * сетка пикетов и рельеф. km-линейка/засечки рисуются ПРЯМО на линии сигналов, отдельной
+ * Два яруса: верх — от верха блоков скорости до линии сигналов (серая шкала скорости + тёмное
+ * "поле" с иконками/табличками сигналов + сама линия сигналов/км), низ — под линией сигналов,
+ * где сетка пикетов и рельеф. km-линейка/засечки рисуются ПРЯМО на линии сигналов, отдельной
  * полосы-линейки больше нет.
  *
- * Сам этот View — только средняя часть экрана (эта пропорция 7,5:3 — только между ступенями и
- * рельефом внутри него); высота самого View относительно шапки и нижней статусной строки
- * задаётся весами LinearLayout в activity_main.xml (та же продиктованная пропорция целиком).
+ * Границу между ярусами (computeStepsH) машинист попросил СЭКОНОМИТЬ: "можем выиграть
+ * расстояние... увеличить площадь, где профиль, чтобы там было больше места по высоте" — серая
+ * шкала скорости держит свой прежний фиксированный размер (см. grayScaleHeightPx, та же
+ * пропорция, что раньше давало старое деление верх:низ=2,5:1 с SCALE_BOTTOM_FRACTION=0,62
+ * внутри него), а тёмное поле ниже нёё теперь РОВНО по содержимому (см. darkFieldHeightPx) — не
+ * фиксированная доля экрана, как раньше. Освободившаяся высота достаётся полосе рельефа.
+ *
+ * Сам этот View — только средняя часть экрана; высота самого View относительно шапки и нижней
+ * статусной строки задаётся весами LinearLayout в activity_main.xml.
  *
  * Раздел 9 ("короткий участок повышенной скорости") — эффективная скорость считается
  * [ShortSegmentSpeedResolver] (уже было), здесь дорисована зеркальная штриховка "\".
@@ -82,14 +87,20 @@ class TrackProfileView @JvmOverloads constructor(
         private const val KM_LINE_LENGTH_M = 1000.0
         private const val PICKET_LENGTH_M = 100.0
 
-        // Верх:низ = 7,5:3 = 2,5:1 (машинист продиктовал по измерению на экране: вся высота
-        // экрана 15,5 условных единиц — шапка 1,3, график 10,5 (из них скорости+сигналы 7,5 и
-        // рельеф 3), нижняя строка 3,7 — см. doc-комментарий класса и activity_main.xml).
+        // Высота серой шкалы скорости (0..100) — ФИКСИРОВАННАЯ доля высоты всего View, та же
+        // величина, что раньше получалась при жёстком делении верх:низ=2,5:1 (см. историю ниже)
+        // и SCALE_BOTTOM_FRACTION=0,62 внутри него: height*(2,5/3,5)*0,62 ≈ height*0,443 — сам
+        // вид шкалы не менялся, см. grayScaleHeightPx().
         private const val STEPS_TO_RELIEF_RATIO = 2.5f
-        // Доля верхнего яруса, занятая самой шкалой скорости (0..100) — ниже неё, до линии
-        // сигналов, тёмное "поле" без делений, где сидят иконки/таблички сигналов (см.
-        // HTML-макет, drawStepsAndSignalLine: scaleBottom = top + bandH*0.62).
         private const val SCALE_BOTTOM_FRACTION = 0.62f
+        // Высота таблички сигнала/станции (общая для обеих, станция отличается только значком,
+        // не подписью) — вынесена в константу, чтобы одна и та же цифра использовалась и при
+        // рисовании (drawSignalTags), и при расчёте нужной высоты тёмного поля (см.
+        // darkFieldHeightPx) — раньше было отдельное "val boxH = dp(18f)" только в drawSignalTags.
+        private const val SIGNAL_TAG_BOX_HEIGHT_DP = 18f
+        // Небольшой запас над самой верхней табличкой (станции) в тёмном поле — чтобы она не
+        // упиралась прямо в серую шкалу скорости, см. darkFieldHeightPx.
+        private const val DARK_FIELD_TOP_MARGIN_DP = 4f
 
         private const val SHIELD_OFFSET_M = 1000.0
 
@@ -737,7 +748,7 @@ class TrackProfileView @JvmOverloads constructor(
     private fun maybeAddHeadMarker(x: Float, y: Float) {
         val graphWidth = width.toFloat()
         if (graphWidth <= 0f) return
-        val stepsH = height * (STEPS_TO_RELIEF_RATIO / (STEPS_TO_RELIEF_RATIO + 1f))
+        val stepsH = computeStepsH(trainStripeHeightPx())
         if (y > stepsH) return
         val (fromM, toM, isReversed) = visibleWindow()
         val spanM = toM - fromM
@@ -834,11 +845,12 @@ class TrackProfileView @JvmOverloads constructor(
         val graphLeft = 0f
         val graphWidth = width.toFloat()
 
-        val stepsH = height * (STEPS_TO_RELIEF_RATIO / (STEPS_TO_RELIEF_RATIO + 1f))
+        val trainStripeHeight = trainStripeHeightPx()
+        val stepsH = computeStepsH(trainStripeHeight)
         val lineY = stepsH
         val reliefTop = stepsH
         val reliefH = height - stepsH
-        val scaleBottomY = stepsH * SCALE_BOTTOM_FRACTION
+        val scaleBottomY = grayScaleHeightPx()
 
         // isReversed (нечётное направление движения, см. visibleWindow) — "вперёд" (вправо на
         // экране) соответствует МЕНЬШЕМУ реальному км, поэтому и xFor, и обратная к ней mFor
@@ -866,7 +878,6 @@ class TrackProfileView @JvmOverloads constructor(
         val segments = computeSegments(fromM, toM)
         val stepRegionBottoms = drawSpeedSteps(canvas, segments, ::xFor, ::yForSpeed)
         drawRestrictionHatching(canvas, fromM, toM, ::xFor, ::yForSpeed)
-        val trainStripeHeight = trainStripeHeightPx()
         drawSignalLineTicksAndNumbers(canvas, fromM, toM, ::xFor, lineY, trainStripeHeight)
         drawNeutralInsertBar(canvas, fromM, toM, ::xFor, lineY)
         drawSignalTags(canvas, fromM, toM, ::xFor, lineY, trainStripeHeight)
@@ -1104,6 +1115,34 @@ class TrackProfileView @JvmOverloads constructor(
         return referenceWidthPx * TRAIN_STRIPE_HEIGHT_RATIO.toFloat() * (2f / 3f)
     }
 
+    /** Высота серой шкалы скорости (0..100), px — см. doc-комментарий класса/companion object:
+     *  тот же фиксированный размер, что раньше давало старое жёсткое деление верх:низ=2,5:1 с
+     *  SCALE_BOTTOM_FRACTION внутри него, но теперь считается напрямую от ВСЕЙ высоты View, а не
+     *  от стопроцентно зарезервированного верхнего яруса. */
+    private fun grayScaleHeightPx(): Float =
+        height * (STEPS_TO_RELIEF_RATIO / (STEPS_TO_RELIEF_RATIO + 1f)) * SCALE_BOTTOM_FRACTION
+
+    /** Нужная высота тёмного "поля" сигналов (между низом серой шкалы и линией сигналов) — РОВНО
+     *  по содержимому (значок сигнала/станции + номер км + табличка сигнала + табличка станции,
+     *  всё с минимальными зазорами [labelLayerGapPx], см. drawSignalTags/drawSignalLineTicks-
+     *  AndNumbers), плюс небольшой запас сверху ([DARK_FIELD_TOP_MARGIN_DP]) — а не фиксированная
+     *  доля экрана, как раньше. Машинист: "можем выиграть расстояние... увеличить площадь, где
+     *  профиль, чтобы там было больше места по высоте" — освободившаяся так высота отдаётся
+     *  полосе рельефа (см. onDraw: stepsH = grayScaleHeightPx() + darkFieldHeightPx(...),
+     *  reliefH = height - stepsH). Формула ПОВТОРЯЕТ (не переиспользует код, но те же константы
+     *  и те же шаги) расчёт в drawSignalTags, чтобы высота, которую мы здесь РЕЗЕРВИРУЕМ, точно
+     *  совпадала с тем, что там реально РИСУЕТСЯ. */
+    private fun darkFieldHeightPx(trainStripeHeight: Float): Float {
+        val signalTotalH = trainStripeHeight * SIGNAL_TO_TRAIN_HEIGHT_RATIO
+        val kmMetrics = kmTextPaint.fontMetrics
+        val tagBaseGap = (kmMetrics.descent - kmMetrics.ascent) + 2 * labelLayerGapPx
+        val boxH = dp(SIGNAL_TAG_BOX_HEIGHT_DP)
+        return signalTotalH + tagBaseGap + boxH + labelLayerGapPx + boxH + dp(DARK_FIELD_TOP_MARGIN_DP)
+    }
+
+    private fun computeStepsH(trainStripeHeight: Float): Float =
+        grayScaleHeightPx() + darkFieldHeightPx(trainStripeHeight)
+
     /** Серая полоска физической длины поезда НА линии сигналов (ТЗ раздел 7) + белая окантовка.
      *  С головной стороны (x1, куда едет поезд) — не прямой угол, а скос под 45° от середины
      *  боковой грани вверх до верхнего края, как кабина локомотива (машинист: "с правой
@@ -1247,7 +1286,7 @@ class TrackProfileView @JvmOverloads constructor(
             placed.add(PlacedTag(tag, x, text, boxW))
         }
 
-        val boxH = dp(18f)
+        val boxH = dp(SIGNAL_TAG_BOX_HEIGHT_DP)
         // Зазор между верхом значка сигнала и низом его таблички — раньше был фиксированным
         // dp(1.5f), теперь достаточно широкий, чтобы между ними поместился номер км своей
         // полной высотой (fontMetrics, не "на глаз") плюс такой же минимальный зазор с каждой
