@@ -98,9 +98,6 @@ class TrackProfileView @JvmOverloads constructor(
         // рисовании (drawSignalTags), и при расчёте нужной высоты тёмного поля (см.
         // darkFieldHeightPx) — раньше было отдельное "val boxH = dp(18f)" только в drawSignalTags.
         private const val SIGNAL_TAG_BOX_HEIGHT_DP = 18f
-        // Небольшой запас над самой верхней табличкой (станции) в тёмном поле — чтобы она не
-        // упиралась прямо в серую шкалу скорости, см. darkFieldHeightPx.
-        private const val DARK_FIELD_TOP_MARGIN_DP = 4f
 
         private const val SHIELD_OFFSET_M = 1000.0
 
@@ -1075,31 +1072,34 @@ class TrackProfileView @JvmOverloads constructor(
         for (kmIndex in firstKmIndex..lastKmIndex) {
             val kmM = kmIndex * KM_LINE_LENGTH_M
             if (kmM in fromM..toM) {
-                // Номер км — чуть ВЫШЕ самого светофора (не только своего столбика, который
-                // теперь короче светофора, см. kmTickH выше), чтобы не пересекаться со
-                // значком сигнала, если тот окажется рядом (машинист: "номер километра... чуть
-                // выше, чем светофор, но стоит над столбиком, чтобы не пересекался со
-                // светофором"). См. kmNumberBaselineY — та же точка отсчёта (верх тier-0
-                // светофора) используется и в drawSignalTags, чтобы подпись сигнала
-                // гарантированно легла ещё чуть выше этого номера, а не просто выше своего
-                // столбика.
-                canvas.drawText((kmIndex - 1).toString(), xFor(kmM), kmNumberBaselineY(lineY, signalTotalH), kmTextPaint)
+                // Номер км — ПРЯМО над своим столбиком (минимальный зазор, см. doc-комментарий
+                // у kmNumberBaselineY) — машинист: "цифры километра... на минимальном, еле
+                // заметном расстоянии от самого километрового столбика". Раньше отталкивался от
+                // высоты ЗНАЧКА сигнала (signalTotalH, "на всякий случай", чтобы не пересечься с
+                // соседним сигналом) — машинист явно отменил этот запас в пользу минимального
+                // зазора; см. doc-комментарий у kmNumberBaselineY про редкий край случай.
+                canvas.drawText((kmIndex - 1).toString(), xFor(kmM), kmNumberBaselineY(lineY, kmTickH), kmTextPaint)
             }
         }
     }
 
-    /** Положение (baseline) номера км — чуть выше верха тier-0 светофора (не своего столбика,
-     *  см. doc-комментарий у вызова в drawSignalLineTicksAndNumbers). Эта же точка отсчёта
-     *  (а не просто "высота столбика") используется и в drawSignalTags для подписи сигнала —
-     *  чтобы гарантировать порядок снизу вверх "светофор → номер км → подпись светофора →
-     *  подпись станции", как продиктовал машинист ("буквально чуть-чуть, чтобы только видно
-     *  было, что не сливается"). [labelLayerGapPx] — тот самый минимальный зазор между каждой
-     *  парой соседних слоёв. */
+    /** Положение (baseline) номера км — минимальный зазор [labelLayerGapPx] над САМИМ столбиком
+     *  (kmTickH), а не над значком сигнала, как раньше (машинист явно попросил именно так, см.
+     *  doc-комментарий у вызова выше). Та же точка отсчёта используется и в drawSignalTags для
+     *  подписи сигнала — цепочка снизу вверх "столбик → номер км → подпись светофора → подпись
+     *  станции", каждая пара с тем же минимальным зазором (машинист: "на таком же минимальном
+     *  расстоянии").
+     *
+     *  Редкий край случай: значок сигнала (signalTotalH) немного выше столбика (kmTickH,
+     *  KM_TICK_TO_SIGNAL_HEIGHT_RATIO=3.7/4.3 ≈86%), поэтому теоретически при очень широком
+     *  экране номер км/табличка сигнала могли бы наложиться на сам значок — на практике высота
+     *  текста+зазоров (десятки dp) намного превышает эту разницу (всего ~14% от signalTotalH,
+     *  которая сама по себе невелика), так что на реальных телефонах наложения не будет. */
     private val labelLayerGapPx = dp(3f)
 
-    private fun kmNumberBaselineY(lineY: Float, signalTotalH: Float): Float {
+    private fun kmNumberBaselineY(lineY: Float, kmTickH: Float): Float {
         val descent = kmTextPaint.fontMetrics.descent
-        return lineY - signalTotalH - descent - labelLayerGapPx
+        return lineY - kmTickH - descent - labelLayerGapPx
     }
 
     /** Высота пояса поезда на линии сигналов, px — см. doc-комментарий у REFERENCE_TRAIN_LENGTH_M.
@@ -1125,7 +1125,7 @@ class TrackProfileView @JvmOverloads constructor(
     /** Нужная высота тёмного "поля" сигналов (между низом серой шкалы и линией сигналов) — РОВНО
      *  по содержимому (значок сигнала/станции + номер км + табличка сигнала + табличка станции,
      *  всё с минимальными зазорами [labelLayerGapPx], см. drawSignalTags/drawSignalLineTicks-
-     *  AndNumbers), плюс небольшой запас сверху ([DARK_FIELD_TOP_MARGIN_DP]) — а не фиксированная
+     *  AndNumbers), плюс минимальный зазор [labelLayerGapPx] сверху — а не фиксированная
      *  доля экрана, как раньше. Машинист: "можем выиграть расстояние... увеличить площадь, где
      *  профиль, чтобы там было больше места по высоте" — освободившаяся так высота отдаётся
      *  полосе рельефа (см. onDraw: stepsH = grayScaleHeightPx() + darkFieldHeightPx(...),
@@ -1134,10 +1134,17 @@ class TrackProfileView @JvmOverloads constructor(
      *  совпадала с тем, что там реально РИСУЕТСЯ. */
     private fun darkFieldHeightPx(trainStripeHeight: Float): Float {
         val signalTotalH = trainStripeHeight * SIGNAL_TO_TRAIN_HEIGHT_RATIO
+        val kmTickH = signalTotalH * KM_TICK_TO_SIGNAL_HEIGHT_RATIO
         val kmMetrics = kmTextPaint.fontMetrics
-        val tagBaseGap = (kmMetrics.descent - kmMetrics.ascent) + 2 * labelLayerGapPx
+        val kmNumberTextH = kmMetrics.descent - kmMetrics.ascent
         val boxH = dp(SIGNAL_TAG_BOX_HEIGHT_DP)
-        return signalTotalH + tagBaseGap + boxH + labelLayerGapPx + boxH + dp(DARK_FIELD_TOP_MARGIN_DP)
+        // Столбик → [зазор] → номер км → [зазор] → табличка сигнала → [зазор] → табличка
+        // станции → [зазор] → низ серой шкалы — та же цепочка минимальных зазоров, что и в
+        // drawSignalLineTicksAndNumbers/drawSignalTags (см. их doc-комментарии), повторена
+        // здесь, чтобы высота, которую мы РЕЗЕРВИРУЕМ, точно совпадала с тем, что реально
+        // РИСУЕТСЯ — включая последний зазор перед серой шкалой (машинист: "линия [ограничения]
+        // на таком же минимальном расстоянии от надписи станции").
+        return kmTickH + labelLayerGapPx + kmNumberTextH + labelLayerGapPx + boxH + labelLayerGapPx + boxH + labelLayerGapPx
     }
 
     private fun computeStepsH(trainStripeHeight: Float): Float =
@@ -1287,21 +1294,21 @@ class TrackProfileView @JvmOverloads constructor(
         }
 
         val boxH = dp(SIGNAL_TAG_BOX_HEIGHT_DP)
-        // Зазор между верхом значка сигнала и низом его таблички — раньше был фиксированным
-        // dp(1.5f), теперь достаточно широкий, чтобы между ними поместился номер км своей
-        // полной высотой (fontMetrics, не "на глаз") плюс такой же минимальный зазор с каждой
-        // стороны — гарантирует порядок "светофор → номер км → подпись светофора", а не просто
-        // "подпись светофора выше своего значка" (машинист мог бы иначе наложиться на номер км
-        // где-то рядом).
+        // Машинист: "цифры километра... на минимальном... расстоянии от самого километрового
+        // столбика. [Табличка] сигналов... на таком же минимальном расстоянии выше, чем цифры
+        // километра. Название станции... на минимальном таком же расстоянии от надписи сигналов"
+        // — цепочка СНИЗУ ВВЕРХ: столбик км (kmTickH) → [labelLayerGapPx] → номер км →
+        // [labelLayerGapPx] → табличка сигнала → [labelLayerGapPx] → табличка станции. Раньше
+        // табличка сигнала отталкивалась от ВЫСОТЫ ЗНАЧКА (signalTotalH) с отдельным запасом
+        // "на номер км" — читалось как лишний зазор именно между столбиком и номером км. Теперь
+        // — от ФАКТИЧЕСКОГО верха номера км (kmNumberBaselineY+ascent), той же точки, где номер
+        // реально рисуется в drawSignalLineTicksAndNumbers (см. doc-комментарий там же).
+        val kmTickH = signalTotalH * KM_TICK_TO_SIGNAL_HEIGHT_RATIO
         val kmMetrics = kmTextPaint.fontMetrics
-        val tagBaseGap = (kmMetrics.descent - kmMetrics.ascent) + 2 * labelLayerGapPx
-        // Верх таблички сигнала — ОДНА и та же высота у ВСЕХ сигналов/блок-постов (signalTotalH,
-        // tagBaseGap и boxH тут не зависят от конкретного тега), поэтому считаем один раз и
-        // используем как опорную точку для станции ниже (машинист: "название станции... на
-        // минимальном расстоянии выше подписи сигналов" — именно над табличкой сигнала, а не
-        // над собственным столбиком станции, который сам по себе выше и крупнее, см.
-        // STATION_TOTAL_H_DP).
-        val signalTagTop = (lineY - signalTotalH) - tagBaseGap - boxH
+        val kmNumberTopY = kmNumberBaselineY(lineY, kmTickH) + kmMetrics.ascent
+        val signalTagBottom = kmNumberTopY - labelLayerGapPx
+        val signalTagTop = signalTagBottom - boxH
+        val stationTagBottom = signalTagTop - labelLayerGapPx
         for ((tag, x, text, boxW) in placed) {
 
             val poleLen = if (tag.isStation) stationPolePx else signalPolePx
@@ -1322,12 +1329,7 @@ class TrackProfileView @JvmOverloads constructor(
                 drawBitmapCentered(canvas, signalBitmap, x, iconCy, signalRyPx)
             }
 
-            // Станция — минимальный зазор [labelLayerGapPx] НАД табличкой сигнала (а не над
-            // собственным значком станции, который выше и может даже перекрываться с табличкой
-            // сигнала по высоте, если сигнал и станция окажутся рядом по x — это не страшно,
-            // т.к. табличка станции всё равно гарантированно выше табличку сигнала). Сигнал —
-            // как и раньше, минимальный зазор (после номера км) над СВОИМ собственным значком.
-            val tagBottom = if (tag.isStation) signalTagTop - labelLayerGapPx else (iconCy - rOuter) - tagBaseGap
+            val tagBottom = if (tag.isStation) stationTagBottom else signalTagBottom
             val tagTop = tagBottom - boxH
 
             canvas.drawLine(x, tagBottom, x, iconCy - rOuter, signalPolePaint)
