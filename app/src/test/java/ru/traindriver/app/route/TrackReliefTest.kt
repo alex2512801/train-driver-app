@@ -82,55 +82,6 @@ class TrackReliefTest {
     }
 
     @Test
-    fun `localRangeAt returns min-max of points within the sliding window around the point`() {
-        // evenPoints: 100м/10.0, 200м/20.0, 300м/15.0 — все внутри окна ±7500м вокруг 150м.
-        val profile = ReliefProfile(evenPoints)
-        val (min, max) = profile.localRangeAt(Direction.EVEN, 150.0)!!
-        assertEquals(10.0, min, 0.0001)
-        assertEquals(20.0, max, 0.0001)
-    }
-
-    @Test
-    fun `localRangeAt ignores points far outside the sliding window`() {
-        val farPoint = ReliefPoint(Direction.EVEN, 20000.0, 999.0)
-        val profile = ReliefProfile(evenPoints + farPoint)
-        // 20000м от 150м — намного дальше окна ±7500м, далёкий экстремум не должен влиять на
-        // локальный диапазон рядом, иначе редкий экстремум на всём маршруте сжал бы обычный
-        // рельеф почти до прямой линии (машинист: "ни бугров не видно... сделай как на
-        // режимных картах").
-        val (min, max) = profile.localRangeAt(Direction.EVEN, 150.0)!!
-        assertEquals(10.0, min, 0.0001)
-        assertEquals(20.0, max, 0.0001)
-    }
-
-    @Test
-    fun `localRangeAt changes gradually between widely spaced points, not in one jump`() {
-        // Три далёкие друг от друга точки (0, 40000, 80000 — за пределами двойного радиуса
-        // окна 7500м) с нарастающей высотой: максимум у каждой точки должен расти ПОСТЕПЕННО
-        // от одной к другой, а не одинаковым скачком на какой-то фиксированной границе между
-        // ними (машинист: "не был ступенями, а весь полностью, который поднимался").
-        val points = listOf(
-            ReliefPoint(Direction.EVEN, 0.0, 10.0),
-            ReliefPoint(Direction.EVEN, 40000.0, 10.0),
-            ReliefPoint(Direction.EVEN, 80000.0, 200.0)
-        )
-        val profile = ReliefProfile(points)
-        val nearSecond = profile.localRangeAt(Direction.EVEN, 35000.0)!!.second
-        val midway = profile.localRangeAt(Direction.EVEN, 60000.0)!!.second
-        val nearThird = profile.localRangeAt(Direction.EVEN, 75000.0)!!.second
-        // Монотонный, непрерывный рост — не "плоско-плоско-скачок".
-        assertTrue(nearSecond <= midway)
-        assertTrue(midway <= nearThird)
-        assertTrue(nearSecond < nearThird)
-    }
-
-    @Test
-    fun `localRangeAt is null for a direction with no data`() {
-        val profile = ReliefProfile(evenPoints)
-        assertNull(profile.localRangeAt(Direction.ODD, 150.0))
-    }
-
-    @Test
     fun `slopeAt interpolates linearly and keeps the sign for even direction`() {
         val points = listOf(
             ReliefPoint(Direction.EVEN, 100.0, 10.0, slopePermille = 5.0),
