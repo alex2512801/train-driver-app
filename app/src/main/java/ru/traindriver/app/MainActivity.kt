@@ -226,6 +226,12 @@ class MainActivity : AppCompatActivity() {
     // Направление/путь задаёт машинист вручную (ТЗ раздел 3) — по GPS это не определить.
     private var directionSelection = DirectionSelection(Direction.EVEN, 2)
 
+    // К1 — переключает, какой из двух физически разных путей сейчас показывать там, где
+    // маршрут на время раздваивается (средний путь Тургутуй — Яблоновая, путь 4/10 по
+    // Карымской/Чита-2 и т.п.), см. doc-комментарий у Signal.track. По умолчанию выключена —
+    // показываются сигналы пути по умолчанию (track=="без_к1" либо обычные track==null).
+    private var k1Enabled = false
+
     // По тапу на координату (см. onCreate) переключается обычный км+пк / формат КЛУБ-У.
     private var showKlubU = false
 
@@ -711,11 +717,14 @@ class MainActivity : AppCompatActivity() {
             directionSelection = DirectionSelection(directionSelection.direction, newPath)
             updateDirectionUi()
         }
-        // К1 (сигналы среднего пути Тургутуй—Яблоновая/Карымская) — кнопка пока без реальной
-        // логики переключения путей (см. doc-комментарий в activity_main.xml/README), поэтому
-        // только сообщает об этом, а не молчит без всякой реакции на нажатие.
+        // К1 — переключает путь там, где маршрут физически раздваивается (см. doc-комментарий
+        // у k1Enabled/Signal.track). alpha, а не отдельный selector-drawable — та же лёгкая
+        // индикация состояния, что проще всего добавить без новых стилей/ресурсов.
+        k1Button.alpha = if (k1Enabled) 1f else 0.5f
         k1Button.setOnClickListener {
-            Toast.makeText(this, "К1: логика переключения путей ещё не готова", Toast.LENGTH_SHORT).show()
+            k1Enabled = !k1Enabled
+            k1Button.alpha = if (k1Enabled) 1f else 0.5f
+            reloadRouteData()
         }
         menuButton.setOnClickListener { startActivity(Intent(this, AppMenuActivity::class.java)) }
         recenterButton.setOnClickListener { trackProfileView.recenter() }
@@ -1066,7 +1075,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun reloadRouteData() {
         stations = StationAssetLoader.loadStations(this)
-        signals = SignalAssetLoader.loadMainTrackSignals(this)
+        signals = SignalAssetLoader.loadMainTrackSignals(this, k1Enabled)
         blockPosts = BlockPostAssetLoader.loadBlockPosts(this)
         relief = ReliefAssetLoader.loadRelief(this)
         crossings = CrossingAssetLoader.loadCrossings(this)
