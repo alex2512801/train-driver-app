@@ -491,14 +491,22 @@ class MainActivity : AppCompatActivity() {
 
         val brakeTest = brakeTestScheduler.update(chainageM, directionSelection.picketsGrowing)
         if (brakeTest != null) {
-            voiceAnnouncer.play(if (brakeTest.doubleTrain) Announcement.BRAKE_TEST_DOUBLE else Announcement.BRAKE_TEST)
+            // Машинист: "впереди проба тормозов со скорости 45-50 км/ч" — называет вслух годные
+            // диапазоны скорости самой пробы, см. doc-комментарий у BrakeTest.validSpeedRangesKmh.
+            voiceAnnouncer.playWithSpeedRanges(
+                if (brakeTest.doubleTrain) Announcement.BRAKE_TEST_DOUBLE else Announcement.BRAKE_TEST,
+                brakeTest.validSpeedRangesKmh
+            )
         }
 
         val forward = directionSelection.picketsGrowing
         if (crossingFarScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.CROSSING_FAR)
         if (crossingNear800Scheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.CROSSING_NEAR)
         if (crossingNear300Scheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.CROSSING_NEAR)
-        if (tempLimitScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.TEMP_LIMIT)
+        // Машинист: "впереди временное ограничение скорости" + сама цифра (например, "40
+        // километров в час") — см. doc-комментарий у VoiceAnnouncer.playWithSpeed.
+        val tempLimit = tempLimitScheduler.update(chainageM, forward)
+        if (tempLimit != null) voiceAnnouncer.playWithSpeed(Announcement.TEMP_LIMIT, tempLimit.speedKmh)
         if (washoutScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.WASHOUT)
         if (ktsmScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.KTSM)
         if (airGapScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.AIR_GAP)

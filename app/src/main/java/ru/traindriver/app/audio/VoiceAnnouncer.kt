@@ -2,6 +2,7 @@ package ru.traindriver.app.audio
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.MediaPlayer
 import android.media.SoundPool
 import ru.traindriver.app.R
 
@@ -14,7 +15,7 @@ import ru.traindriver.app.R
  * Что именно играть и когда — снаружи (см. MainActivity): этот класс только грузит клипы и
  * умеет проиграть любой из них по запросу.
  */
-class VoiceAnnouncer(context: Context) {
+class VoiceAnnouncer(private val context: Context) {
 
     private val soundPool = SoundPool.Builder()
         .setMaxStreams(2)
@@ -34,7 +35,82 @@ class VoiceAnnouncer(context: Context) {
         soundPool.play(id, 1f, 1f, /* priority = */ 1, /* loop = */ 0, /* rate = */ 1f)
     }
 
-    fun release() = soundPool.release()
+    // Составные фразы (проба тормозов "со скорости A Б километров в час", временное ограничение
+    // "N километров в час") — несколько клипов подряд, БЕЗ наложения. SoundPool.play() играет
+    // только один клип за раз и не умеет сказать "начни этот клип ровно когда закончился
+    // предыдущий" — для очереди нужен MediaPlayer с [MediaPlayer.setOnCompletionListener],
+    // который и запускает следующий клип строго по завершении, а не по таймеру/оценке длины.
+    private var sequencePlayer: MediaPlayer? = null
+    private val sequenceQueue = ArrayDeque<Int>()
+
+    private fun playSequence(resIds: List<Int>) {
+        if (resIds.isEmpty()) return
+        stopSequence()
+        sequenceQueue.addAll(resIds)
+        playNextInSequence()
+    }
+
+    private fun playNextInSequence() {
+        val resId = sequenceQueue.removeFirstOrNull() ?: return
+        sequencePlayer = MediaPlayer.create(context, resId)?.apply {
+            setOnCompletionListener {
+                it.release()
+                playNextInSequence()
+            }
+            start()
+        }
+    }
+
+    private fun stopSequence() {
+        sequencePlayer?.setOnCompletionListener(null)
+        sequencePlayer?.release()
+        sequencePlayer = null
+        sequenceQueue.clear()
+    }
+
+    /** Клип с числом (announce_number_N в res/raw) — null, если для этого N клип не записан
+     *  (машинист диктует числа по мере необходимости, не сразу все сто). См. вызывающий код
+     *  (playWithSpeed/playWithSpeedRanges) — диапазон/число без клипа просто пропускается. */
+    private fun numberResId(n: Int): Int? {
+        val id = context.resources.getIdentifier("announce_number_$n", "raw", context.packageName)
+        return if (id != 0) id else null
+    }
+
+    /** "[announcement] со скорости A Б километров в час" — по одной фразе на каждый диапазон
+     *  (машинист: "впереди проба тормозов со скорости 45-50 км/ч", см. doc-комментарий у
+     *  BrakeTest.validSpeedRangesKmh), подряд без паузы, если диапазонов несколько. Диапазон,
+     *  для которого хотя бы одно число не записано, целиком пропускается — лучше без одного
+     *  диапазона, чем оборванная на середине фраза. */
+    fun playWithSpeedRanges(announcement: Announcement, ranges: List<IntRange>) {
+        val resIds = mutableListOf(announcement.rawResId)
+        for (range in ranges) {
+            val fromId = numberResId(range.first) ?: continue
+            val toId = numberResId(range.last) ?: continue
+            resIds += R.raw.announce_from_speed
+            resIds += fromId
+            resIds += toId
+            resIds += R.raw.announce_km_per_hour
+        }
+        playSequence(resIds)
+    }
+
+    /** "[announcement] N километров в час" (временное ограничение — машинист: "впереди
+     *  временное ограничение скорости 40 километров в час"). Клипа для N нет — проговаривает
+     *  [announcement] без числа, а не молчит совсем. */
+    fun playWithSpeed(announcement: Announcement, speedKmh: Int) {
+        val numberId = numberResId(speedKmh)
+        val resIds = if (numberId != null) {
+            listOf(announcement.rawResId, numberId, R.raw.announce_km_per_hour)
+        } else {
+            listOf(announcement.rawResId)
+        }
+        playSequence(resIds)
+    }
+
+    fun release() {
+        soundPool.release()
+        stopSequence()
+    }
 }
 
 /**
@@ -82,16 +158,16 @@ enum class Announcement(val rawResId: Int) {
     TRAIN_INSPECTION_ASSISTANT(R.raw.announce_train_inspection_assistant),
 }
 
+// announce_km_per_hour/announce_from_speed/announce_number_N — больше не "заготовки на будущее",
+// используются прямо сейчас составными фразами playWithSpeed/playWithSpeedRanges (проба
+// тормозов, временное ограничение), см. их вызовы в MainActivity.
+//
 // Остаются пока НЕ подключены (лежат в res/raw):
 // - announce_density_check/_winter (замер плотности, обычный и зимний) — нет данных о
 //   местах, где это делается (ни одного файла с км+пк для этого не присылали);
-// - announce_yellow_signal_speed_prefix + announce_km_per_hour +
-//   announce_number_{5,10,15,20,25,30,35,40,50} — заготовки под составную фразу условного
-//   жёлтого сигнала ("скорость проследования сигнала с жёлтым показанием не более <число>
-//   километров в час", см. doc-комментарий у Announcement выше про "сотни сочетаний, целиком
-//   не записать"). Данные о границах участков есть (присланная таблица "Сигналы с жёлтым
-//   показанием"), но они привязаны к ЛИТЕРАМ сигналов (например "от Н1 до т.З"), а не к км+пк
-//   напрямую — нужно сопоставить с track_signals.json по имени сигнала, это ещё предстоит
-//   сделать аккуратно (риск ошибиться в сопоставлении), плюс сама составная фраза требует
-//   проигрывания НЕСКОЛЬКИХ клипов подряд без наложения — SoundPool.play() играет только один
-//   клип за раз, для очереди нужен отдельный механизм.
+// - announce_yellow_signal_speed_prefix — заготовка под составную фразу условного жёлтого
+//   сигнала ("скорость проследования сигнала с жёлтым показанием не более <число> километров
+//   в час", см. doc-комментарий у Announcement выше про "сотни сочетаний, целиком не записать").
+//   Очередь клипов теперь есть (playSequence), но сопоставление границ участков (таблица
+//   "Сигналы с жёлтым показанием", привязана к ЛИТЕРАМ сигналов, например "от Н1 до т.З") с
+//   км+пк по track_signals.json ещё не сделано аккуратно — риск ошибиться в сопоставлении.
