@@ -69,8 +69,11 @@ data class Signal(
  * нужны сигналы ТОЛЬКО своего направления движения, а не оба сразу, и правильный критерий —
  * не тег документа, а сама литера/номер:
  *  - буква Ч → чётное, буква Н → нечётное (однозначно, сама буква это и означает);
- *  - голый номер (автоблокировка, без буквы) → по чётности числа: чётный номер — чётное
- *    направление, нечётный — нечётное (ровно то, что машинист продиктовал).
+ *  - голый номер (автоблокировка, без буквы Ч/Н) → по чётности числа: чётный номер — чётное
+ *    направление, нечётный — нечётное (ровно то, что машинист продиктовал). Сюда же входят
+ *    условно разрешающие проходные с суффиксом "Т" в самом имени (например "12Т" — литера
+ *    из track_signals.json, не из conditional_signals.json, см. doc-комментарий у
+ *    [Signal.conditionallyPermissive]) — берём ведущие цифры числа, "Т" на чётность не влияет.
  */
 val Signal.effectiveDirection: Direction
     get() {
@@ -78,7 +81,8 @@ val Signal.effectiveDirection: Direction
         return when (letter) {
             'Ч' -> Direction.EVEN
             'Н' -> Direction.ODD
-            else -> name.toIntOrNull()?.let { if (it % 2 == 0) Direction.EVEN else Direction.ODD } ?: direction
+            else -> name.takeWhile { it.isDigit() }.toIntOrNull()
+                ?.let { if (it % 2 == 0) Direction.EVEN else Direction.ODD } ?: direction
         }
     }
 
