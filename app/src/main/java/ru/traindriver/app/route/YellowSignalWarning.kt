@@ -60,6 +60,12 @@ object YellowSignalWarningAssetLoader {
         for (i in 0 until array.length()) {
             val obj = array.getJSONObject(i)
             if (obj.isNull("from_km") || obj.isNull("from_pk")) continue
+            // main_track=false — машинист явно разобрал весь список и исключил записи,
+            // относящиеся не к главному пути (боковые/парковые пути станций, например
+            // "вх. 1Ч ст. Чита-2" или ЧМ4А/ЧМ5А/ЧМ6А на Шилке-товарной): "у нас только
+            // главные пути". Поле проставлено вручную (см. git log), match_yellow_signals.py
+            // его не трогает — переживает повторный запуск скрипта.
+            if (!obj.optBoolean("main_track", true)) continue
             val direction = if (obj.getString("direction") == "even") Direction.EVEN else Direction.ODD
             val chainageM = ChainageFormatter.toMeters(obj.getInt("from_km"), obj.getInt("from_pk"))
             val track = if (obj.isNull("track")) null else obj.getString("track")
@@ -73,6 +79,10 @@ object YellowSignalWarningAssetLoader {
                 )
             )
         }
-        return result
+        // Несколько строк исходной таблицы делят один и тот же FROM (например три разных
+        // "ЧМ2Г" на Шилке-товарной, ведущие к разным путям станции) — раз озвучиваем только
+        // начало зоны, такие строки дают абсолютно одинаковое предупреждение в одной и той же
+        // точке; без distinct() машинист услышал бы одну и ту же фразу подряд несколько раз.
+        return result.distinct()
     }
 }
