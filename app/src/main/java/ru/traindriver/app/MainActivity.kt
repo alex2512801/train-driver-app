@@ -90,6 +90,8 @@ import ru.traindriver.app.route.VoiceSettings
 import ru.traindriver.app.route.VoiceSettingsStore
 import ru.traindriver.app.route.Washout
 import ru.traindriver.app.route.WashoutAssetLoader
+import ru.traindriver.app.route.YellowSignalWarning
+import ru.traindriver.app.route.YellowSignalWarningAssetLoader
 import ru.traindriver.app.route.nearestStationName
 import ru.traindriver.app.route.nextStationAhead
 import ru.traindriver.app.ui.BatteryIconView
@@ -371,6 +373,17 @@ class MainActivity : AppCompatActivity() {
     // статичный asset-список, что и переезды — пересобирается в updateDirectionUi.
     private val washoutScheduler = PointAnnouncementScheduler<Washout>(emptyList(), { it.chainageM }, thresholdOf = { voiceSettings.washoutM })
 
+    // Сигнал с жёлтым показанием (ТЗ раздел 6) — "скорость проследования сигнала с жёлтым
+    // показанием не более N км/ч", см. doc-комментарий у YellowSignalWarning и у
+    // tools/match_yellow_signals.py (там же вся логика сопоставления с track_signals.json).
+    // Порог за сколько метров предупреждать явно не продиктован — взят как у временного
+    // ограничения/пробы тормозов (2000 м, той же природы: нужно время заранее снизить
+    // скорость), а не как у более коротких "просто к сведению" оповещений (переезд/КТСМ/
+    // станция, 1500 м). НЕ входит в настраиваемые пороги "Настроек" (машинист явно исключил
+    // именно это оповещение, см. doc-комментарий у VoiceSettings) — здесь захардкожен.
+    private var yellowSignalWarnings: List<YellowSignalWarning> = emptyList()
+    private val yellowSignalScheduler = PointAnnouncementScheduler<YellowSignalWarning>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
+
     // Осмотр поезда бригадой — в отличие от ВСЕХ остальных оповещений выше, это НЕ заблаговременное
     // предупреждение (машинист: "голосовое срабатывает в момент начала этого осмотра", а не за
     // 600-2000 м до него). Порог поэтому не "расстояние для предупреждения заранее", а просто
@@ -534,6 +547,10 @@ class MainActivity : AppCompatActivity() {
         if (ktsmScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.KTSM)
         if (airGapScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.AIR_GAP)
         if (neutralInsertScheduler.update(chainageM, forward) != null) voiceAnnouncer.play(Announcement.NEUTRAL)
+        // Машинист: "скорость проследования сигнала с жёлтым показанием не более N км/ч" —
+        // та же составная фраза с числом, что и у временного ограничения (playWithSpeed).
+        val yellowSignal = yellowSignalScheduler.update(chainageM, forward)
+        if (yellowSignal != null) voiceAnnouncer.playWithSpeed(Announcement.YELLOW_SIGNAL, yellowSignal.speedKmh)
 
         if (stationScheduler.update(chainageM, directionSelection.picketsGrowing) != null) {
             voiceAnnouncer.play(Announcement.STATION)
@@ -1105,6 +1122,7 @@ class MainActivity : AppCompatActivity() {
         neutralInserts = NeutralInsertAssetLoader.loadNeutralInserts(this)
         brakeTests = BrakeTestAssetLoader.loadBrakeTests(this)
         ktsmPoints = KtsmAssetLoader.loadKtsm(this)
+        yellowSignalWarnings = YellowSignalWarningAssetLoader.loadYellowSignalWarnings(this)
         stationAnnouncements = StationAnnouncementAssetLoader.loadStationAnnouncements(this)
         trainInspectionPoints = TrainInspectionAssetLoader.loadTrainInspectionPoints(this)
 
@@ -1181,6 +1199,13 @@ class MainActivity : AppCompatActivity() {
 
         val relevantWashouts = washouts.filter { it.direction == s.effectiveDataset }
         washoutScheduler.updatePoints(relevantWashouts)
+
+        // Неправильный путь (wrongPath) и кнопка К1 (track) — оба сразу внутри isVisibleFor,
+        // та же механика, что и у Signal (см. doc-комментарий у YellowSignalWarning.isVisibleFor).
+        val relevantYellowSignals = yellowSignalWarnings.filter {
+            it.isVisibleFor(s.effectiveDataset, s.direction, k1Enabled)
+        }
+        yellowSignalScheduler.updatePoints(relevantYellowSignals)
 
         val relevantInspectionPoints = trainInspectionPoints.filter { it.direction == s.effectiveDataset }
         trainInspectionMachinistScheduler.updatePoints(relevantInspectionPoints.filter { it.inspector == InspectorRole.MACHINIST })

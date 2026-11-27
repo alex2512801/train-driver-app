@@ -29,6 +29,26 @@ parse_yellow_signals.py — тот перезаписывает файл цел�
     станции, чем location записи (пограничный случай двух смежных станций) — извлекается
     STATION_SUFFIX_RE и используется вместо location.
 
+Машинист уточнил логику фичи целиком (голосовая фраза "скорость проследования сигнала с
+жёлтым показанием не более N км/ч"): звучит она один раз, перед НАЧАЛОМ зоны (from_signal) —
+конец зоны (to_signal) только размечает, где она кончается, и приложению не нужен вообще.
+Это значит, что реальная резолюция для фичи — именно from_km/from_pk, а не оба конца сразу.
+Чтобы не терять диапазоны/ненайденные начала там, где КОНЕЦ резолвится однозначно (обычно
+именно так — конец чаще входной/маршрутный сигнал станции, а не голый номер автоблокировки
+горловины), добавлена derived_from_to/derived_from_from: когда один конец резолвится напрямую
+(unique/nearest_station), а другой — нет, второй вычисляется через уже известный
+block_length_m (физическая длина участка между ними) и чётность направления (см.
+km_pk_from_chainage/main). Это и есть пример машиниста "от Ч51, Ч55 до входного ЧА станции
+Чита-2" — from_signal — диапазон (unresolved:range), но to_signal "вх. ЧА ст. Чита-2"
+резолвится однозначно, поэтому from теперь можно вычислить.
+
+Кнопка К1 (Signal.track у track_signals.json) — по этой же причине track того конца, который
+совпал НАПРЯМУЮ с литерой в track_signals.json, прописывается в entry['track'] на весь warning
+целиком (оба конца — одна и та же горловина/путь). Машинист, тот же пример: "это когда мы
+включаем кнопку К1 и переключаемся на четвёртый путь, по которому стоит ЧА, то он нам эту
+фразу говорит" — ЧА в track_signals.json помечен track="к1", так что это теперь автоматически
+проставляется и сюда, без ручного списка путей.
+
 ЧЕСТНО НЕ РЕШЕНО (важно, посмотри resolution перед тем как доверять числу):
   - Профили пути, которые есть у нас, покрывают только Хилок — Карымская —
     Чернышевск-Забайкальский. Все записи yellow_signal_warnings для станций дальше
@@ -117,8 +137,21 @@ def build_indices(track_signals, track_stations):
     return signals_idx, stations_idx
 
 
+DIRECT_RESOLUTIONS = {'unique', 'nearest_station'}
+
+
+def km_pk_from_chainage(chainage_m):
+    """Обратная операция к [chainage]."""
+    km, remainder_m = divmod(chainage_m, 1000)
+    pk = remainder_m // 100 + 1
+    return km, pk
+
+
 def resolve_one(raw_name, direction_key, location, signals_idx, stations_idx, location_to_station):
-    """Возвращает (km, pk, resolution) или (None, None, 'unresolved:<reason>')."""
+    """Возвращает (km, pk, resolution, track) или (None, None, 'unresolved:<reason>', None).
+    [track] — поле track у НАЙДЕННОГО сигнала (track_signals.json), только для прямого
+    совпадения по имени (unique/nearest_station) — см. doc-комментарий у main() про
+    pereдачу track на весь warning целиком (кнопка К1)."""
     name = raw_name.strip()
 
     station_override = STATION_SUFFIX_RE.match(name)
@@ -133,32 +166,42 @@ def resolve_one(raw_name, direction_key, location, signals_idx, stations_idx, lo
         name = m.group(1)
 
     if RANGE_RE.search(name) and not STATION_SUFFIX_RE.match(raw_name):
-        return None, None, 'unresolved:range'
+        return None, None, 'unresolved:range', None
 
     name = normalize_signal_name(name)
 
     station_name = location_to_station.get(location)
     if station_name is None:
-        return None, None, 'unresolved:out_of_scope'
+        return None, None, 'unresolved:out_of_scope', None
 
     candidates = signals_idx.get((direction_key, name), [])
     if not candidates:
-        return None, None, 'unresolved:not_found'
-
-    if len(candidates) == 1:
-        c = candidates[0]
-        return c['km'], c['pk'], 'unique'
+        return None, None, 'unresolved:not_found', None
 
     station_rows = stations_idx.get((direction_key, station_name), [])
     if not station_rows:
-        return None, None, 'unresolved:ambiguous_no_station'
+        # Нет данных по станции вообще — доверяем единственному кандидату как раньше (больше
+        # перепроверить нечем), но при НЕСКОЛЬКИХ кандидатах без станции выбрать правильного
+        # нечем совсем.
+        if len(candidates) == 1:
+            c = candidates[0]
+            return c['km'], c['pk'], 'unique', c.get('track')
+        return None, None, 'unresolved:ambiguous_no_station', None
 
+    # ВАЖНО: проверяем расстояние до станции даже при ЕДИНСТВЕННОМ кандидате — иначе "unique"
+    # означает только "во всём track_signals.json такое имя встречается один раз", а не "этот
+    # кандидат действительно у этой станции". Баг нашёлся на реальных данных: "ЧМ4А" в
+    # track_signals.json единственный на всём участке — у Карымской (км6292), а запись
+    # yellow_signal_warnings с этим именем помечена location="Шилка-товарная" (км6442+, 150 км
+    # дальше) — без этой проверки получили бы "unique" и озвучили бы предупреждение в
+    # совершенно не том месте.
     station_chainage = sum(chainage(s['km'], s['pk']) for s in station_rows) / len(station_rows)
     best = min(candidates, key=lambda c: abs(chainage(c['km'], c['pk']) - station_chainage))
     dist = abs(chainage(best['km'], best['pk']) - station_chainage)
     if dist > STATION_TOLERANCE_M:
-        return None, None, 'unresolved:ambiguous_too_far'
-    return best['km'], best['pk'], 'nearest_station'
+        return None, None, 'unresolved:ambiguous_too_far', None
+    resolution = 'unique' if len(candidates) == 1 else 'nearest_station'
+    return best['km'], best['pk'], resolution, best.get('track')
 
 
 def main():
@@ -179,25 +222,65 @@ def main():
     resolution_counts = defaultdict(int)
     for entry in yellow:
         direction_key = DIR_MAP[entry['direction']]
+        ends = {}
         for prefix, field in (('from', 'from_signal'), ('to', 'to_signal')):
-            km, pk, resolution = resolve_one(
+            km, pk, resolution, track = resolve_one(
                 entry[field], direction_key, entry['location'], signals_idx, stations_idx,
                 location_to_station,
             )
-            entry[f'{prefix}_km'] = km
-            entry[f'{prefix}_pk'] = pk
-            entry[f'{prefix}_resolution'] = resolution
-            resolution_counts[resolution] += 1
+            ends[prefix] = {'km': km, 'pk': pk, 'resolution': resolution, 'track': track}
+
+        # machinist (яблоновая/Чита-2 example, "от Ч51, Ч55 до входного ЧА... когда мы включаем
+        # кнопку К1 и переключаемся на четвёртый путь, по которому стоит ЧА, то он нам эту фразу
+        # говорит"): реально важна только позиция НАЧАЛА зоны (см. doc-комментарий у
+        # YellowSignalWarning в Kotlin) — конец просто размечает, где зона кончается. Поэтому
+        # если КОНЕЦ резолвится напрямую (unique/nearest_station), а начало — нет (не найдено,
+        # диапазон "А51 - А55", слишком далеко от станции), можно вычислить начало через уже
+        # известный [block_length_m] (физическая длина участка, та же единица, что и чётность
+        # км/пк) — и наоборот. Для "чётное" номера км растут по ходу движения (конец дальше по
+        # маршруту, чем начало), для "нечётное" — наоборот (см. doc-комментарий у effectiveDirection
+        # в Signal.kt — та же чётность-зависимая логика направления).
+        block_m = entry.get('block_length_m')
+        from_e, to_e = ends['from'], ends['to']
+        if from_e['resolution'] not in DIRECT_RESOLUTIONS and to_e['resolution'] in DIRECT_RESOLUTIONS and block_m:
+            to_chainage = chainage(to_e['km'], to_e['pk'])
+            delta = -block_m if direction_key == 'чётное' else block_m
+            km, pk = km_pk_from_chainage(round(to_chainage + delta))
+            from_e.update(km=km, pk=pk, resolution='derived_from_to', track=to_e['track'])
+        elif to_e['resolution'] not in DIRECT_RESOLUTIONS and from_e['resolution'] in DIRECT_RESOLUTIONS and block_m:
+            from_chainage = chainage(from_e['km'], from_e['pk'])
+            delta = block_m if direction_key == 'чётное' else -block_m
+            km, pk = km_pk_from_chainage(round(from_chainage + delta))
+            to_e.update(km=km, pk=pk, resolution='derived_from_from', track=from_e['track'])
+
+        for prefix, e in ends.items():
+            entry[f'{prefix}_km'] = e['km']
+            entry[f'{prefix}_pk'] = e['pk']
+            entry[f'{prefix}_resolution'] = e['resolution']
+            resolution_counts[e['resolution']] += 1
+        # Кнопка К1 (см. doc-комментарий у Signal.track) — какой бы конец зоны ни совпал
+        # напрямую с литерой track_signals.json, её track распространяется на весь warning
+        # целиком (оба конца физически один и тот же путь/горловина). "to" в приоритете —
+        # обычно именно входной/маршрутный сигнал станции несёт осмысленный track, тогда как
+        # "from" чаще голый номер автоблокировки (track всегда null).
+        entry['track'] = to_e['track'] if to_e['track'] is not None else from_e['track']
 
     with open(yellow_path, 'w', encoding='utf-8') as f:
         json.dump(yellow, f, ensure_ascii=False, separators=(',', ':'))
 
     total = len(yellow) * 2
-    resolved = sum(n for r, n in resolution_counts.items() if r in ('unique', 'nearest_station'))
+    good = DIRECT_RESOLUTIONS | {'derived_from_to', 'derived_from_from'}
+    resolved = sum(n for r, n in resolution_counts.items() if r in good)
+    # Единственное, что реально нужно фиче (см. doc-комментарий выше) — позиция НАЧАЛА зоны,
+    # "to" только размечает конец и в приложении не используется — поэтому именно эта метрика,
+    # а не общий resolved/total по обоим концам, решает, сколько записей реально озвучатся.
+    from_usable = sum(1 for e in yellow if e['from_km'] is not None)
     print(f'{len(yellow)} warning entries, {total} signal fields to resolve:')
     for r, n in sorted(resolution_counts.items(), key=lambda kv: -kv[1]):
         print(f'  {r}: {n}')
-    print(f'\nResolved: {resolved}/{total} ({100 * resolved / total:.0f}%)')
+    print(f'\nResolved (either end): {resolved}/{total} ({100 * resolved / total:.0f}%)')
+    print(f'Usable by the app (FROM resolved — only the start of the zone is announced):'
+          f' {from_usable}/{len(yellow)} ({100 * from_usable / len(yellow):.0f}%)')
     print(f'Wrote {yellow_path}')
 
 
