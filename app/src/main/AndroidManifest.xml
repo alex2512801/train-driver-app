@@ -78,6 +78,15 @@
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout" />
 
+        <!-- "Настройки" (день/ночь + пороги голосовых оповещений + "База данных") — та же
+             причина, что и у "Параметров"/"Ограничений" (см. doc-комментарий в
+             SettingsActivity.kt). -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout" />
+
         <!-- GpsForegroundService — см. doc-комментарий в GpsForegroundService.kt. -->
         <service
             android:name=".location.GpsForegroundService"

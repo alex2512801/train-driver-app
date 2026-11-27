@@ -86,6 +86,8 @@ import ru.traindriver.app.route.TrainInspectionPoint
 import ru.traindriver.app.route.TrainInspectionAssetLoader
 import ru.traindriver.app.route.TrainParams
 import ru.traindriver.app.route.TrainParamsStore
+import ru.traindriver.app.route.VoiceSettings
+import ru.traindriver.app.route.VoiceSettingsStore
 import ru.traindriver.app.route.Washout
 import ru.traindriver.app.route.WashoutAssetLoader
 import ru.traindriver.app.route.nearestStationName
@@ -118,7 +120,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var menuButton: Button
     private lateinit var recenterButton: RecenterIconView
     private lateinit var restrictionsButton: OpasnoeIconView
-    private lateinit var dayNightButton: Button
 
     // Уровень сигнала SIM (ТЗ раздел 7, шапка) — своя замена системной строке состояния,
     // которую мы теперь скрываем целиком (см. hideSystemUi). ДВА слота — у машиниста две
@@ -143,7 +144,13 @@ class MainActivity : AppCompatActivity() {
     // SignalBarsView обновлять) — храним пары, чтобы корректно отписаться в onDestroy.
     private val activeSimListeners = mutableListOf<Pair<TelephonyManager, PhoneStateListener>>()
 
-    private var isDayMode = false
+    // Настройки (экран SettingsActivity — день/ночь + пороги голосовых оповещений,
+    // машинист: "если закрываешь программу, чтобы эти настройки оставались") — загружаются в
+    // onCreate/onResume, как и trainParams (см. там же). Пороги читаются планировщиками ниже
+    // через лямбды (thresholdOf = { voiceSettings.xxxM }), поэтому порядок объявления полей
+    // не важен — значение читается не при создании планировщика, а при каждом его update().
+    private val settingsStore by lazy { VoiceSettingsStore(this) }
+    private var voiceSettings = VoiceSettings.DEFAULT
     private lateinit var trackProfileView: TrackProfileView
 
     // Окошко прибытия/отправления + история остановок (ТЗ раздел 10).
@@ -314,47 +321,55 @@ class MainActivity : AppCompatActivity() {
     // именно точки "впереди" зависит от effectiveDataset.
     private val voiceAnnouncer by lazy { VoiceAnnouncer(this) }
     private var brakeTests: List<BrakeTest> = emptyList()
-    private val brakeTestScheduler = PointAnnouncementScheduler<BrakeTest>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
+    private val brakeTestScheduler = PointAnnouncementScheduler<BrakeTest>(emptyList(), { it.chainageM }, thresholdOf = { voiceSettings.brakeTestM })
 
     // КТСМ (ТЗ, голос Announcement.KTSM) — тот же статичный asset-список, что и проба тормозов/
     // обрывные места, тот же порог 2000м (отдельного порога машинист не продиктовал — взял по
     // аналогии с остальными точечными оповещениями). Пересобирается в updateDirectionUi.
     private var ktsmPoints: List<Ktsm> = emptyList()
-    private val ktsmScheduler = PointAnnouncementScheduler<Ktsm>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
+    private val ktsmScheduler = PointAnnouncementScheduler<Ktsm>(emptyList(), { it.chainageM }, thresholdOf = { voiceSettings.ktsmM })
     private var stationAnnouncements: List<StationAnnouncement> = emptyList()
+    // it.thresholdM — обычно 1500 (DEFAULT_THRESHOLD_M в StationAnnouncementAssetLoader), но у
+    // Лесной/Яблоновой увеличен до 3000 (нет т.2/т.1, см. doc-комментарий у StationAnnouncement).
+    // Настройка — это новая БАЗА вместо захардкоженных 1500, а не замена самого порога целиком:
+    // добавляем ту же разницу (it.thresholdM - 1500.0), что и раньше, чтобы исключение для
+    // Лесной/Яблоновой не потерялось при изменении настройки.
     private val stationScheduler =
-        PointAnnouncementScheduler<StationAnnouncement>(emptyList(), { it.chainageM }, thresholdOf = { it.thresholdM })
+        PointAnnouncementScheduler<StationAnnouncement>(
+            emptyList(), { it.chainageM },
+            thresholdOf = { voiceSettings.stationM + (it.thresholdM - 1500.0) }
+        )
 
     // Переезд — ТЗ раздел 6: "Внимание! Впереди переезд!" за 1500 м (CROSSING_FAR), и та же
     // короткая фраза "Впереди переезд!" ДВА раза — за 800 м и за 300 м (CROSSING_NEAR). Это не
     // один порог, а три — отдельный планировщик на каждый порог, иначе PointAnnouncementScheduler
     // пометил бы переезд объявленным уже на первом (дальнем) срабатывании и дальние два не
     // выстрелили бы вовсе (см. doc-комментарий класса — он разовый per-point per-scheduler).
-    private val crossingFarScheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 1500.0 })
-    private val crossingNear800Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 800.0 })
-    private val crossingNear300Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { 300.0 })
+    private val crossingFarScheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { voiceSettings.crossingFarM })
+    private val crossingNear800Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { voiceSettings.crossingNear800M })
+    private val crossingNear300Scheduler = PointAnnouncementScheduler<Crossing>(emptyList(), { it.chainageM }, thresholdOf = { voiceSettings.crossingNear300M })
 
     // Нейтральная вставка (ТЗ раздел 8) — "Впереди нейтральная вставка!" за 600 м (голос
     // появился только сейчас — см. doc-комментарий у Announcement.NEUTRAL). Направление — КАК
     // ЕСТЬ (s.direction), а не effectiveDataset, см. doc-комментарий у NeutralInsert/
     // TrackProfileView.setRawDirection — та же причина, по которой рисование уже фильтрует по
     // rawDirection, а не по эффективному датасету.
-    private val neutralInsertScheduler = PointAnnouncementScheduler<NeutralInsert>(emptyList(), { it.chainageM }, thresholdOf = { 600.0 })
+    private val neutralInsertScheduler = PointAnnouncementScheduler<NeutralInsert>(emptyList(), { it.chainageM }, thresholdOf = { voiceSettings.neutralM })
 
     // Воздушный промежуток (ТЗ раздел 8) — "Впереди воздушный промежуток!" за 1000 м, тот же
     // статичный asset-список, что и переезды/КТСМ — пересобирается в updateDirectionUi.
-    private val airGapScheduler = PointAnnouncementScheduler<AirGap>(emptyList(), { it.chainageM }, thresholdOf = { 1000.0 })
+    private val airGapScheduler = PointAnnouncementScheduler<AirGap>(emptyList(), { it.chainageM }, thresholdOf = { voiceSettings.airGapM })
 
     // Временное ограничение (ТЗ раздел 6/11) — "Внимание! Впереди временное ограничение
     // скорости!" за 2000 м до НАЧАЛА ограничения ([Restriction.startM]). В отличие от
     // переездов/проб тормозов список точек не статичный asset, а меняется в любой момент
     // (машинист может добавить ограничение через RestrictionsActivity прямо во время движения) —
     // пересобирается там же, где и остальная работа со списком, см. refreshTrackProfileRestrictions.
-    private val tempLimitScheduler = PointAnnouncementScheduler<Restriction>(emptyList(), { it.startM }, thresholdOf = { 2000.0 })
+    private val tempLimitScheduler = PointAnnouncementScheduler<Restriction>(emptyList(), { it.startM }, thresholdOf = { voiceSettings.tempLimitM })
 
     // Обрывное место (ТЗ раздел 6) — "Внимание! Впереди обрывное место!" за 2000 м, тот же
     // статичный asset-список, что и переезды — пересобирается в updateDirectionUi.
-    private val washoutScheduler = PointAnnouncementScheduler<Washout>(emptyList(), { it.chainageM }, thresholdOf = { 2000.0 })
+    private val washoutScheduler = PointAnnouncementScheduler<Washout>(emptyList(), { it.chainageM }, thresholdOf = { voiceSettings.washoutM })
 
     // Осмотр поезда бригадой — в отличие от ВСЕХ остальных оповещений выше, это НЕ заблаговременное
     // предупреждение (машинист: "голосовое срабатывает в момент начала этого осмотра", а не за
@@ -665,7 +680,6 @@ class MainActivity : AppCompatActivity() {
         menuButton = findViewById(R.id.menuButton)
         recenterButton = findViewById(R.id.recenterButton)
         restrictionsButton = findViewById(R.id.restrictionsButton)
-        dayNightButton = findViewById(R.id.dayNightButton)
         simSlot0Group = findViewById(R.id.simSlot0Group)
         simSlot0Bars = findViewById(R.id.simSlot0Bars)
         simSlot0Text = findViewById(R.id.simSlot0Text)
@@ -704,6 +718,8 @@ class MainActivity : AppCompatActivity() {
 
         trainParams = trainParamsStore.load()
         trackProfileView.setTrainLengthM(trainParams.composition.lengthM)
+        voiceSettings = settingsStore.load()
+        trackProfileView.setDayMode(voiceSettings.dayMode)
         reloadRouteData()
         timeHandler.post(timeUpdater)
 
@@ -729,11 +745,6 @@ class MainActivity : AppCompatActivity() {
         menuButton.setOnClickListener { startActivity(Intent(this, AppMenuActivity::class.java)) }
         recenterButton.setOnClickListener { trackProfileView.recenter() }
         restrictionsButton.setOnClickListener { openRestrictionsScreen() }
-        dayNightButton.setOnClickListener {
-            isDayMode = !isDayMode
-            dayNightButton.text = if (isDayMode) "☀️" else "🌙"
-            trackProfileView.setDayMode(isDayMode)
-        }
         arrivalToggleButton.setOnClickListener {
             arrivalWindowVisible = !arrivalWindowVisible
             refreshArrivalWindow()
@@ -760,17 +771,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // Ограничения/параметры состава/любые данные из "База данных" теперь вводятся или
+    // Ограничения/параметры состава/любые данные из "База данных"/настройки теперь вводятся или
     // обновляются на отдельных экранах (RestrictionsActivity/TrainParamsActivity/
-    // DatabaseActivity) — после возврата оттуда нужно заново перечитать всё, что эти экраны
-    // могли изменить (TrainParamsActivity/DataOverrideStore сохраняют напрямую, эта копия в
-    // памяти о том не узнает сама) и отрисовать график с учётом изменений. reloadRouteData()
-    // сама вызывает refreshTrackProfileRestrictions() (через updateDirectionUi()), отдельно
-    // вызывать её здесь больше не нужно.
+    // DatabaseActivity/SettingsActivity) — после возврата оттуда нужно заново перечитать всё,
+    // что эти экраны могли изменить (они сохраняют напрямую, эта копия в памяти о том не узнает
+    // сама) и отрисовать график с учётом изменений. reloadRouteData() сама вызывает
+    // refreshTrackProfileRestrictions() (через updateDirectionUi()), отдельно вызывать её здесь
+    // больше не нужно.
     override fun onResume() {
         super.onResume()
         trainParams = trainParamsStore.load()
         trackProfileView.setTrainLengthM(trainParams.composition.lengthM)
+        voiceSettings = settingsStore.load()
+        trackProfileView.setDayMode(voiceSettings.dayMode)
         reloadRouteData()
     }
 

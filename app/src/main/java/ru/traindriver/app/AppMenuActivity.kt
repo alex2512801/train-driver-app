@@ -9,8 +9,9 @@ import androidx.appcompat.app.AppCompatActivity
 /**
  * Меню из главного экрана — открывается кнопкой "Меню" в нижней статусной строке MainActivity
  * (раньше там была прямая кнопка "Параметры", см. doc-комментарий в activity_app_menu.xml).
- * Пока два пункта (машинист: "у нас пока там 2 пункта, дальше ещё будем добавлять") — "Параметры"
- * первым, "База данных" последним, в этом порядке машинист их и назвал.
+ * "Параметры" остаётся как было, "База данных" переехала внутрь нового пункта "Настройки"
+ * (машинист: "кнопка «Параметры» также остается, как по-старому, и кнопка «Настройки»... база
+ * данных... чтобы она теперь была в настройках в самом низу") — см. SettingsActivity.
  */
 class AppMenuActivity : AppCompatActivity() {
 
@@ -22,8 +23,8 @@ class AppMenuActivity : AppCompatActivity() {
         findViewById<Button>(R.id.appMenuParamsButton).setOnClickListener {
             startActivity(Intent(this, TrainParamsActivity::class.java))
         }
-        findViewById<Button>(R.id.appMenuDatabaseButton).setOnClickListener {
-            startActivity(Intent(this, DatabaseActivity::class.java))
+        findViewById<Button>(R.id.appMenuSettingsButton).setOnClickListener {
+            startActivity(Intent(this, SettingsActivity::class.java))
         }
         findViewById<Button>(R.id.appMenuCloseButton).setOnClickListener { finish() }
     }

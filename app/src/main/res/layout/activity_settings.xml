@@ -1,0 +1,431 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    "Настройки" (новый экран, SettingsActivity) — машинист: "в меню... кнопка «Параметры»
+    также остается, как по-старому, и кнопка «Настройки»". Внутри:
+      1. Дневной/ночной режим — переехал сюда из шапки главного экрана целиком (машинист:
+         "убираем кнопку с шапки сверху дневной-ночной режим и уходим сюда в настройки").
+      2. Пороги голосовых оповещений (ТЗ раздел 6) — каждое оповещение, КРОМЕ сигнала с
+         жёлтым показанием (там переменная фраза, своей задачи нет), машинист: "то, что
+         сейчас есть у нас, они стоят, эти расстояния, по умолчанию. Но можно их изменить...
+         и если закрываешь программу, чтобы эти настройки оставались" — VoiceSettingsStore.
+      3. "База данных" — переехала сюда из "Меню", машинист: "чтобы она теперь была в
+         настройках в самом низу".
+
+    Макет — тот же приём, что и в "Параметрах"/"Ограничениях" (см. doc-комментарий в
+    activity_train_params.xml): слева подписанные поля в ScrollView, справа цифровая
+    клавиатура на всю высоту (её размер не зависит от того, сколько полей слева).
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:background="#000000">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#333333"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp"
+        android:text="Настройки"
+        android:textColor="#FFFFFF"
+        android:textSize="16sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:orientation="horizontal"
+        android:padding="16dp">
+
+        <ScrollView
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="3">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:paddingEnd="14dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="РЕЖИМ"
+                android:textColor="#5AAADC"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Дневной/ночной режим графика:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+
+                <Button
+                    android:id="@+id/settingsDayNightButton"
+                    style="@style/HeaderToggleButton"
+                    android:text="🌙" />
+
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="6dp"
+                android:background="#222222" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="ГОЛОСОВЫЕ ОПОВЕЩЕНИЯ, ЗА СКОЛЬКО МЕТРОВ"
+                android:textColor="#5AAADC"
+                android:textSize="12sp"
+                android:layout_marginBottom="4dp" />
+
+            <!-- Один и тот же ряд повторяется для каждого оповещения — подпись слева,
+                 поле ввода (метры) справа, тот же RestrictionDigitBox, что и в "Параметрах". -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Переезд (дальний):"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/crossingFarInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="56dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="4" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Переезд (ближний 1):"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/crossingNear800Input"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="56dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="4" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Переезд (ближний 2):"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/crossingNear300Input"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="56dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="4" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="КТСМ:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/ktsmInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="56dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="4" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Станция (предвходной):"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/stationInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="56dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="4" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Временное ограничение скорости:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/tempLimitInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="56dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="4" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Обрывное место:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/washoutInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="56dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="4" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Проба тормозов:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/brakeTestInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="56dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="4" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Нейтральная вставка:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/neutralInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="56dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="4" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+                <TextView
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="Воздушный промежуток:"
+                    android:textColor="#CCCCCC"
+                    android:textSize="13sp" />
+                <EditText
+                    android:id="@+id/airGapInput"
+                    style="@style/RestrictionDigitBox"
+                    android:layout_width="56dp"
+                    android:textSize="16sp"
+                    android:inputType="number"
+                    android:maxLength="4" />
+            </LinearLayout>
+
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="10dp"
+                android:layout_marginBottom="10dp"
+                android:background="#222222" />
+
+            <!-- "База данных" — машинист: "чтобы она теперь была в настройках в самом низу". -->
+            <Button
+                android:id="@+id/settingsDatabaseButton"
+                style="@style/MenuButton"
+                android:layout_width="match_parent"
+                android:text="База данных" />
+
+        </LinearLayout>
+
+        </ScrollView>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="2"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/setKey1" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="1" />
+                <Button android:id="@+id/setKey2" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="2" />
+                <Button android:id="@+id/setKey3" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="3" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/setKey4" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="4" />
+                <Button android:id="@+id/setKey5" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="5" />
+                <Button android:id="@+id/setKey6" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="6" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/setKey7" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="7" />
+                <Button android:id="@+id/setKey8" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="8" />
+                <Button android:id="@+id/setKey9" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="9" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:orientation="horizontal">
+                <Button android:id="@+id/setKeyUp" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="↑" />
+                <Button android:id="@+id/setKey0" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="0" />
+                <Button android:id="@+id/setKeyDown" style="@style/RestrictionKeypadButton" android:layout_height="match_parent" android:text="↓" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:layout_marginTop="3dp"
+                android:orientation="horizontal">
+                <Button
+                    android:id="@+id/setBackspaceButton"
+                    style="@style/RestrictionKeypadButton"
+                    android:layout_height="match_parent"
+                    android:text="Стереть" />
+                <Button
+                    android:id="@+id/setClearButton"
+                    style="@style/RestrictionKeypadButton"
+                    android:layout_height="match_parent"
+                    android:text="Очистить" />
+                <Button
+                    android:id="@+id/setSaveButton"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_margin="3dp"
+                    android:text="Сохранить" />
+            </LinearLayout>
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="#333333"
+        android:gravity="end"
+        android:padding="12dp">
+
+        <Button
+            android:id="@+id/setCloseButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@android:color/transparent"
+            android:textColor="#B39DDB"
+            android:textStyle="bold"
+            android:text="ЗАКРЫТЬ" />
+
+    </LinearLayout>
+
+</LinearLayout>
